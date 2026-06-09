@@ -1,0 +1,222 @@
+"""Tests for the genome data structure and mutation operators."""
+
+# pylint: disable=missing-function-docstring,protected-access
+
+from __future__ import annotations
+
+from random import Random
+
+import pytest
+
+from src.config import SimConfig
+from src.genome import (
+    HIDDEN,
+    INPUT,
+    OUTPUT,
+    ConnectionGene,
+    Genome,
+    InnovationTracker,
+    NodeGene,
+)
+
+NUM_INPUTS = 33
+NUM_OUTPUTS = 2
+
+
+@pytest.fixture(name="config")
+def config_fixture():
+    return SimConfig.from_yaml("config/default.yaml").genome
+
+
+@pytest.fixture(name="tracker")
+def tracker_fixture():
+    return InnovationTracker()
+
+
+def _has_cycle(genome: Genome) -> bool:
+    """Independent cycle detector over enabled connections (DFS, 3-colour)."""
+    adjacency: dict[int, list[int]] = {}
+    for conn in genome.connections:
+        if conn.enabled:
+            adjacency.setdefault(conn.in_node, []).append(conn.out_node)
+    visiting, done = set(), set()
+
+    def visit(node: int) -> bool:
+        if node in visiting:
+            return True
+        if node in done:
+            return False
+        visiting.add(node)
+        for nxt in adjacency.get(node, ()):
+            if visit(nxt):
+                return True
+        visiting.discard(node)
+        done.add(node)
+        return False
+
+    return any(visit(n.node_id) for n in genome.nodes)
+
+
+# --------------------------------------------------------------------------- #
+# Construction
+# --------------------------------------------------------------------------- #
+def test_new_fully_connected_shape(config, tracker):
+    rng = Random(1)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    inputs = [n for n in g.nodes if n.node_type == INPUT]
+    outputs = [n for n in g.nodes if n.node_type == OUTPUT]
+    assert len(inputs) == NUM_INPUTS
+    assert len(outputs) == NUM_OUTPUTS
+    assert len(g.connections) == NUM_INPUTS * NUM_OUTPUTS
+    assert all(c.enabled for c in g.connections)
+    assert not _has_cycle(g)
+
+
+def test_node_ids_are_unique(config, tracker):
+    rng = Random(1)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    ids = [n.node_id for n in g.nodes]
+    assert len(ids) == len(set(ids))
+    # Output ids follow input ids.
+    assert {n.node_id for n in g.nodes if n.node_type == OUTPUT} == {33, 34}
+
+
+def test_weights_within_init_range(config, tracker):
+    rng = Random(7)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    assert all(
+        -config.weight_init_range <= c.weight <= config.weight_init_range
+        for c in g.connections
+    )
+
+
+def test_clone_is_independent(config, tracker):
+    rng = Random(2)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    clone = g.clone()
+    clone.connections[0].weight += 100.0
+    clone.nodes.append(NodeGene(999, HIDDEN))
+    assert g.connections[0].weight != clone.connections[0].weight
+    assert len(g.nodes) != len(clone.nodes)
+
+
+# --------------------------------------------------------------------------- #
+# Serialisation
+# --------------------------------------------------------------------------- #
+def test_json_round_trip(config, tracker):
+    rng = Random(3)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    restored = Genome.from_json(g.to_json())
+    assert restored.to_dict() == g.to_dict()
+
+
+# --------------------------------------------------------------------------- #
+# Innovation tracker
+# --------------------------------------------------------------------------- #
+def test_innovation_same_edge_same_number(tracker):
+    first = tracker.innovation_for(0, 33)
+    again = tracker.innovation_for(0, 33)
+    other = tracker.innovation_for(1, 33)
+    assert first == again
+    assert other != first
+
+
+def test_tracker_node_floor(tracker):
+    tracker.bump_node_floor(35)
+    assert tracker.next_node_id() == 35
+    assert tracker.next_node_id() == 36
+
+
+def test_tracker_reset(tracker):
+    tracker.next_node_id()
+    tracker.innovation_for(0, 1)
+    tracker.reset()
+    assert tracker.next_node_id() == 0
+    assert tracker.innovation_for(5, 6) == 0
+
+
+# --------------------------------------------------------------------------- #
+# Mutations
+# --------------------------------------------------------------------------- #
+def test_mutate_weights_changes_weights(config, tracker):
+    rng = Random(4)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    before = [c.weight for c in g.connections]
+    g.mutate_weights(config, rng)
+    after = [c.weight for c in g.connections]
+    assert before != after
+
+
+def test_add_node_splits_connection(config, tracker):
+    rng = Random(5)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    n_nodes, n_conns = len(g.nodes), len(g.connections)
+    assert g.add_node(config, rng, tracker) is True
+    assert len(g.nodes) == n_nodes + 1
+    assert len(g.connections) == n_conns + 2
+    assert sum(1 for n in g.nodes if n.node_type == HIDDEN) == 1
+    assert sum(1 for c in g.connections if not c.enabled) == 1
+    assert not _has_cycle(g)
+
+
+def test_add_connection_no_duplicates_or_cycles(config, tracker):
+    rng = Random(6)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    # Add a hidden node so add_connection has valid targets/sources.
+    g.add_node(config, rng, tracker)
+    for _ in range(200):
+        g.add_connection(config, rng, tracker)
+    assert not _has_cycle(g)
+    seen = {(c.in_node, c.out_node) for c in g.connections}
+    assert len(seen) == len(g.connections)
+
+
+def test_creates_cycle_detection():
+    # Chain 0 -> 1 -> 2. Adding 2 -> 0 must be detected as a cycle.
+    nodes = [NodeGene(0, INPUT), NodeGene(1, HIDDEN), NodeGene(2, OUTPUT)]
+    conns = [
+        ConnectionGene(0, 1, 0.5, True, 0),
+        ConnectionGene(1, 2, 0.5, True, 1),
+    ]
+    g = Genome(nodes, conns)
+    assert g._creates_cycle(2, 0) is True
+    assert g._creates_cycle(0, 2) is False
+
+
+def test_remove_connection(config, tracker):
+    rng = Random(8)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    n = len(g.connections)
+    assert g.remove_connection(rng) is True
+    assert len(g.connections) == n - 1
+
+
+def test_remove_node_removes_incident_edges(config, tracker):
+    rng = Random(9)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    g.add_node(config, rng, tracker)
+    hidden_id = next(n.node_id for n in g.nodes if n.node_type == HIDDEN)
+    assert g.remove_node(rng) is True
+    assert all(n.node_type != HIDDEN for n in g.nodes)
+    assert not any(hidden_id in (c.in_node, c.out_node) for c in g.connections)
+
+
+def test_remove_node_no_hidden_returns_false(config, tracker):
+    rng = Random(10)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    assert g.remove_node(rng) is False
+
+
+# --------------------------------------------------------------------------- #
+# Determinism
+# --------------------------------------------------------------------------- #
+def test_mutation_is_deterministic_with_seed(config):
+    def build_and_mutate() -> dict:
+        tracker = InnovationTracker()
+        rng = Random(123)
+        g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+        for _ in range(10):
+            g.mutate(config, rng, tracker)
+        return g.to_dict()
+
+    assert build_and_mutate() == build_and_mutate()
