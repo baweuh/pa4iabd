@@ -5,13 +5,13 @@
 - [ ] config/default.yaml (tous les paramètres)
 - [ ] tests/test_config.py
 
-## Phase 2 — Génome ⬜
-- [ ] NodeGene, ConnectionGene
-- [ ] Genome (init fully connected 33×2, clone, sérialisation JSON)
-- [ ] Innovation counter global
-- [ ] 5 mutations (add_node, add_connection avec DFS, remove_node,
+## Phase 2 — Génome ✅
+- [x] NodeGene, ConnectionGene
+- [x] Genome (init fully connected 33×2, clone, sérialisation JSON)
+- [x] Innovation counter global
+- [x] 5 mutations (add_node, add_connection avec DFS, remove_node,
         remove_connection, mutate_weights)
-- [ ] tests/test_genome.py (mutations valides, pas de cycle, IDs uniques)
+- [x] tests/test_genome.py (mutations valides, pas de cycle, IDs uniques)
 
 ## Phase 3 — Réseau de neurones ⬜
 - [ ] Topological sort (cache à l'init)

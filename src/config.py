@@ -231,7 +231,7 @@ class SimConfig:
             <= self.population.max_size
         ):
             raise ConfigError(
-                "population sizes must satisfy " "min_size <= initial_size <= max_size"
+                "population sizes must satisfy min_size <= initial_size <= max_size"
             )
 
     @classmethod
