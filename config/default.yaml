@@ -1,0 +1,66 @@
+# Default simulation configuration.
+# Every value is a starting point; fine calibration happens in Phase 8.
+# Energy is expressed in apple-equivalent units (invariant n°2).
+
+world:
+  width: 1600          # pixels
+  height: 900          # pixels
+
+penalty_zone:
+  width: 100           # thickness from the wall, in pixels
+  max_drain: 0.05      # energy drained per tick at the wall
+
+agent:
+  radius: 8
+  max_speed: 3.0
+  initial_energy: 1.0
+  max_energy: 2.0
+  energy_drain_per_tick: 0.001
+  max_age: 5000        # ticks
+  reproduction_threshold: 1.5
+  reproduction_cost: 0.75
+  end_of_life_ticks: 500
+
+sensors:
+  num_rays: 16
+  max_distance: 200    # pixels
+  fov: 360             # degrees
+
+network:
+  num_inputs: 33       # 2 * num_rays + 1 (distance + type per ray, + energy)
+  num_outputs: 2       # vx_brut, vy_brut (normalised post-output)
+  activation: "tanh"
+
+apple:
+  count: 50
+  radius: 5
+  energy: 0.5
+
+genome:
+  weight_init_range: 1.0
+  weight_mutation_rate: 0.8
+  weight_perturbation: 0.2
+  add_node_rate: 0.03
+  add_connection_rate: 0.05
+  remove_node_rate: 0.01
+  remove_connection_rate: 0.02
+
+population:
+  initial_size: 30
+  min_size: 5
+  max_size: 100
+
+simulation:
+  ticks_per_second: 60
+  max_ticks: 0         # 0 = run forever
+  seed: 42
+
+logging:
+  csv_path: "logs/metrics.csv"
+  log_interval_ticks: 100
+  best_genome_path: "logs/best_genome.json"
+
+render:
+  fps: 60
+  window_width: 1600
+  window_height: 900
