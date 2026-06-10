@@ -24,11 +24,11 @@
 - [x] Zone pénalité gradient
 - [x] tests/test_environment.py (pommes hors zone penalty, gradient correct)
 
-## Phase 5 — Agent ⬜
-- [ ] Raycasts (16 rays, first-hit, (distance, type))
-- [ ] Énergie (drain/tick, manger, reproduction, mort)
-- [ ] Cycle de vie complet (naissance, reproduction, mort famine/vieillesse)
-- [ ] tests/test_agent.py
+## Phase 5 — Agent ✅
+- [x] Raycasts (16 rays, first-hit, (distance, type))
+- [x] Énergie (drain/tick, manger, reproduction, mort)
+- [x] Cycle de vie complet (naissance, reproduction, mort famine/vieillesse)
+- [x] tests/test_agent.py
 
 ## Phase 6 — Simulation (boucle principale) ⬜
 - [ ] Fixed timestep loop (découplé rendu)
