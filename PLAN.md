@@ -38,10 +38,13 @@
 - [x] tests/test_simulation.py (tick order, CSV produit)
 - [x] Respawn différé des pommes (patchs rétro Phase 4/5, CDC §5.2)
 
-## Phase 7 — Rendu ⬜
-- [ ] Renderer Pygame (agents, pommes, zone penalty, HUD)
-- [ ] Mode headless (renderer.py non instancié)
-- [ ] Indicateur visuel fin de vie (500 derniers ticks)
+## Phase 7 — Rendu ✅
+- [x] Renderer Pygame (agents, pommes, zone penalty, HUD)
+- [x] Raycasts visibles (reconstruits depuis Agent.sense(), zéro accès privé)
+- [x] Gradient couleur énergie (rouge→jaune→vert) + UI boutons vitesse
+- [x] tests/test_renderer_smoke_500_ticks_with_ui.py (5 tests, SDL dummy)
+- [ ] Mode headless (renderer.py non instancié) → Phase 8 (main.py CLI)
+- [ ] Indicateur visuel fin de vie (500 derniers ticks) → reporté
 
 ## Phase 8 — Intégration ⬜
 - [ ] main.py (CLI argparse)
