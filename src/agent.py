@@ -144,20 +144,24 @@ class Agent:
         self.energy = min(self.energy, self._config.agent.max_energy)
 
     def eat(self) -> int:
-        """Consume every apple whose body overlaps the agent; respawn each.
+        """Consume every apple whose body overlaps the agent; defer their respawn.
 
         Returns the number of apples eaten this tick. Energy is capped at
-        ``max_energy``.
+        ``max_energy``. Eaten apples are handed to ``Environment.mark_eaten`` so
+        they reappear after ``apple.respawn_delay`` ticks (CDC §5.2); they are
+        collected first to avoid mutating ``env.apples`` while iterating it.
         """
         reach = self._config.agent.radius + self._config.apple.radius
         gain = self._config.apple.energy
-        eaten = 0
-        for apple in self._env.apples:
-            if math.hypot(apple.x - self.x, apple.y - self.y) <= reach:
-                self.energy = min(self.energy + gain, self._config.agent.max_energy)
-                self._env.respawn(apple, self._rng)
-                eaten += 1
-        return eaten
+        bitten = [
+            apple
+            for apple in self._env.apples
+            if math.hypot(apple.x - self.x, apple.y - self.y) <= reach
+        ]
+        for apple in bitten:
+            self.energy = min(self.energy + gain, self._config.agent.max_energy)
+            self._env.mark_eaten(apple)
+        return len(bitten)
 
     # ------------------------------------------------------------------ #
     # Life cycle

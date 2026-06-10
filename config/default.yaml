@@ -35,6 +35,7 @@ apple:
   count: 50
   radius: 5
   energy: 0.5
+  respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
 
 genome:
   weight_init_range: 1.0

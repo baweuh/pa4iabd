@@ -4,6 +4,9 @@ Responsibilities:
 - Maintain the list of live apples, all guaranteed to spawn with their full body
   inside the safe zone (dist_to_wall >= penalty_zone.width + apple.radius).
 - Expose the gradient wall-penalty formula for use by agents (Phase 5).
+- Handle deferred respawn: an eaten apple leaves the live list for
+  ``apple.respawn_delay`` ticks (CDC §5.2), then reappears at a fresh safe
+  position. Energy stays apple-equivalent per tick (invariant n°2).
 - No eating, no agent state, no rendering.
 """
 
@@ -40,6 +43,8 @@ class Environment:
             Apple(*self._random_safe_position(rng))
             for _ in range(self._apple_cfg.count)
         ]
+        # Apples eaten this period, counting down to their respawn.
+        self._pending: list[Apple] = []
 
     # ------------------------------------------------------------------ #
     # Public geometry helpers
@@ -72,6 +77,34 @@ class Environment:
             new_x, new_y = self._random_safe_position(rng)
         apple.x = new_x
         apple.y = new_y
+
+    def mark_eaten(self, apple: Apple) -> None:
+        """Remove a just-eaten apple from play; it will respawn after the delay.
+
+        The apple leaves ``apples`` for ``_pending`` and starts its countdown.
+        Its position is left untouched until ``tick_respawns`` relocates it.
+        """
+        self.apples.remove(apple)
+        apple.respawn_timer = self._apple_cfg.respawn_delay
+        self._pending.append(apple)
+
+    def tick_respawns(self, rng: Random) -> None:
+        """Advance every pending apple's countdown; respawn the ones that are due.
+
+        Decrement each pending timer; when it reaches 0 the apple is relocated to
+        a fresh safe position and returned to ``apples``. Called once per tick
+        (Phase 6, step 8). Logs nothing — rendering is Phase 7.
+        """
+        still_pending: list[Apple] = []
+        for apple in self._pending:
+            apple.respawn_timer -= 1
+            if apple.respawn_timer <= 0:
+                apple.respawn_timer = 0
+                apple.x, apple.y = self._random_safe_position(rng)
+                self.apples.append(apple)
+            else:
+                still_pending.append(apple)
+        self._pending = still_pending
 
     # ------------------------------------------------------------------ #
     # Private helpers

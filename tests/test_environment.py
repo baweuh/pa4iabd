@@ -70,6 +70,52 @@ def test_respawn_stays_in_safe_zone(cfg, env):
 
 
 # ------------------------------------------------------------------ #
+# Deferred respawn (mark_eaten + tick_respawns)
+# ------------------------------------------------------------------ #
+
+
+def test_mark_eaten_removes_from_live_and_starts_timer(cfg, env):
+    apple = env.apples[0]
+    start = len(env.apples)
+    env.mark_eaten(apple)
+    assert apple not in env.apples
+    assert len(env.apples) == start - 1
+    assert apple.respawn_timer == cfg.apple.respawn_delay
+
+
+def test_tick_respawns_returns_apple_after_delay(cfg, env):
+    apple = env.apples[0]
+    env.mark_eaten(apple)
+    rng = random.Random(7)
+    # Not yet due for respawn_delay - 1 ticks.
+    for _ in range(cfg.apple.respawn_delay - 1):
+        env.tick_respawns(rng)
+        assert apple not in env.apples
+    # The final tick brings it back live.
+    env.tick_respawns(rng)
+    assert apple in env.apples
+    assert apple.respawn_timer == 0
+
+
+def test_respawn_returns_to_safe_zone(cfg, env):
+    zw = cfg.penalty_zone.width
+    r = cfg.apple.radius
+    apple = env.apples[0]
+    env.mark_eaten(apple)
+    rng = random.Random(11)
+    for _ in range(cfg.apple.respawn_delay):
+        env.tick_respawns(rng)
+    assert apple in env.apples
+    assert env.dist_to_wall(apple.x, apple.y) >= zw + r
+
+
+def test_tick_respawns_noop_without_pending(cfg, env):
+    before = len(env.apples)
+    env.tick_respawns(random.Random(1))
+    assert len(env.apples) == before
+
+
+# ------------------------------------------------------------------ #
 # Penalty field
 # ------------------------------------------------------------------ #
 

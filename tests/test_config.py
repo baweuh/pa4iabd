@@ -80,6 +80,17 @@ def test_local_validation_rate(raw: dict) -> None:
         SimConfig.from_dict(raw)
 
 
+def test_apple_respawn_delay_loaded(raw: dict) -> None:
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.apple.respawn_delay == 150
+
+
+def test_apple_respawn_delay_must_be_positive(raw: dict) -> None:
+    raw["apple"]["respawn_delay"] = 0
+    with pytest.raises(ConfigError, match="must be > 0"):
+        SimConfig.from_dict(raw)
+
+
 def test_cross_validation_inputs(raw: dict) -> None:
     raw["network"]["num_inputs"] = 10
     with pytest.raises(ConfigError, match="num_inputs"):

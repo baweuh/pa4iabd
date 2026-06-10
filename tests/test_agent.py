@@ -121,15 +121,18 @@ def test_metabolize_penalty_zone(cfg, env, genome):
     assert agent.energy == pytest.approx(expected)
 
 
-def test_eat_gains_energy_and_respawns(cfg, env, genome):
+def test_eat_gains_energy_and_defers_respawn(cfg, env, genome):
     cx, cy = cfg.world.width / 2, cfg.world.height / 2
-    env.apples[:] = [Apple(cx, cy)]
+    apple = Apple(cx, cy)
+    env.apples[:] = [apple]
     agent = make_agent(cfg, env, genome, (cx, cy))
     agent.energy = 1.0
     eaten = agent.eat()
     assert eaten == 1
     assert agent.energy == pytest.approx(1.0 + cfg.apple.energy)
-    assert (env.apples[0].x, env.apples[0].y) != (cx, cy)  # respawned elsewhere
+    # Deferred respawn: the eaten apple leaves the live list and starts its timer.
+    assert env.apples == []
+    assert apple.respawn_timer == cfg.apple.respawn_delay
 
 
 def test_eat_caps_at_max_energy(cfg, env, genome):

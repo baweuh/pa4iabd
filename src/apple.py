@@ -11,7 +11,12 @@ from dataclasses import dataclass
 
 @dataclass
 class Apple:
-    """Mutable position of one food source."""
+    """Mutable position of one food source.
+
+    ``respawn_timer`` counts down the ticks an eaten apple spends off-board
+    before it reappears (managed by Environment); 0 means the apple is live.
+    """
 
     x: float
     y: float
+    respawn_timer: int = 0

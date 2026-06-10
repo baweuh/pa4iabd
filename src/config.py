@@ -104,9 +104,10 @@ class AppleConfig:
     count: int
     radius: float
     energy: float
+    respawn_delay: int  # ticks before an eaten apple reappears (invariant n°2)
 
     def __post_init__(self) -> None:
-        _require_positive(self, "count", "radius", "energy")
+        _require_positive(self, "count", "radius", "energy", "respawn_delay")
 
 
 @dataclass(frozen=True)
