@@ -8,7 +8,7 @@ world:
 
 penalty_zone:
   width: 100           # thickness from the wall, in pixels
-  max_drain: 0.05      # energy drained per tick at the wall
+  max_drain: 0.005     # energy drained per tick at the wall
 
 agent:
   radius: 8

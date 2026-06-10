@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+build/
+*.egg-info/
 .venv/
 venv/
 claude.md

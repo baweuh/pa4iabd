@@ -21,6 +21,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 from src.config import SimConfig  # noqa: E402
 from src.main import (  # noqa: E402
+    _fit_scale,
     main,
     resolve_config,
     run_headless,
@@ -150,3 +151,25 @@ def test_seed_determinism(tmp_path):
     curves = [_population_curve(cfg, 300, 50) for _ in range(3)]
     assert curves[0] == curves[1] == curves[2]
     assert curves[0]  # non-empty sanity check
+
+
+# ------------------------------------------------------------------ #
+# Adaptive window scaling (pure helper — no display needed)
+# ------------------------------------------------------------------ #
+
+
+def test_fit_scale_no_scaling_when_window_fits():
+    assert _fit_scale(1600, 900, 1920, 1080) == 1.0
+    assert _fit_scale(1600, 900, 1600, 900) == 1.0
+
+
+def test_fit_scale_downscales_preserving_ratio():
+    # 1366x768 screen minus the 50px taskbar margin.
+    scale = _fit_scale(1600, 900, 1316, 718)
+    assert scale < 1.0
+    assert scale == pytest.approx(min(1316 / 1600, 718 / 900))
+    # Same factor on both axes => 16:9 preserved.
+    assert (1600 * scale) / (900 * scale) == pytest.approx(16 / 9)
+    # Both scaled dimensions land within the available area.
+    assert 1600 * scale <= 1316 + 1e-9
+    assert 900 * scale <= 718 + 1e-9
