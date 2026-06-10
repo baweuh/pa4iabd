@@ -1,9 +1,9 @@
 # Plan d'implémentation — ALife Neuroevolution
 
-## Phase 1 — Fondations ✅ / 🔄 / ⬜
-- [ ] config.py (SimConfig dataclass + chargement YAML)
-- [ ] config/default.yaml (tous les paramètres)
-- [ ] tests/test_config.py
+## Phase 1 — Fondations ✅
+- [x] config.py (SimConfig dataclass + chargement YAML)
+- [x] config/default.yaml (tous les paramètres)
+- [x] tests/test_config.py
 
 ## Phase 2 — Génome ✅
 - [x] NodeGene, ConnectionGene
@@ -37,19 +37,22 @@
 - [x] Sauvegarde meilleur génome
 - [x] tests/test_simulation.py (tick order, CSV produit)
 - [x] Respawn différé des pommes (patchs rétro Phase 4/5, CDC §5.2)
+- [x] CSV logger exposé en API publique (open_csv_logger / close_csv_logger) → Phase 8
 
 ## Phase 7 — Rendu ✅
 - [x] Renderer Pygame (agents, pommes, zone penalty, HUD)
 - [x] Raycasts visibles (reconstruits depuis Agent.sense(), zéro accès privé)
 - [x] Gradient couleur énergie (rouge→jaune→vert) + UI boutons vitesse
 - [x] tests/test_renderer_smoke_500_ticks_with_ui.py (5 tests, SDL dummy)
-- [ ] Mode headless (renderer.py non instancié) → Phase 8 (main.py CLI)
-- [ ] Indicateur visuel fin de vie (500 derniers ticks) → reporté
+- [x] Mode headless (renderer.py non instancié) → livré Phase 8 (main.py CLI)
+- [x] Indicateur visuel fin de vie (end_of_life_ticks derniers ticks) → livré Phase 8
 
-## Phase 8 — Intégration ⬜
-- [ ] main.py (CLI argparse)
-- [ ] Test de smoke (simulation tourne 500 ticks sans crash)
-- [ ] Calibration paramètres de base
+## Phase 8 — Intégration ✅
+- [x] main.py (CLI argparse : --mode/--seed/--ticks/--config, fallback YAML)
+- [x] Mode visual (Renderer) + mode headless (boucle + progress + CSV)
+- [x] Indicateur fin de vie (override gradient → rouge, piloté par config)
+- [x] tests/test_main_cli_modes.py (9 tests : modes, overrides, déterminisme)
+- [x] PHASE8.md (architecture + décisions)
 
 ## Phase 9 — AWS + Dashboard ⬜
 - [ ] S3 (upload ZIP + génomes)

@@ -38,6 +38,7 @@ COLOR_APPLE = (220, 40, 40)
 COLOR_ENERGY_LOW = (255, 0, 0)  # energy 0.0 -> red
 COLOR_ENERGY_MID = (255, 255, 0)  # energy 0.5 -> yellow
 COLOR_ENERGY_HIGH = (0, 255, 0)  # energy 1.0 -> green
+COLOR_END_OF_LIFE = (255, 0, 0)  # agents fade toward this over their final ticks
 
 COLOR_RAY_WALL = (0, 200, 220)  # cyan
 COLOR_RAY_APPLE = (255, 165, 0)  # orange
@@ -281,13 +282,34 @@ class Renderer:
             )
 
     def _draw_agents(self) -> None:
-        """Draw each living agent as a circle tinted by its energy level."""
+        """Draw each living agent as a circle tinted by its energy/age state."""
         radius = int(self._config.agent.radius)
         for agent in self.sim.population:
-            color = self._energy_color(agent.energy)
+            color = self._agent_color(agent)
             pygame.draw.circle(
                 self._screen, color, (int(agent.x), int(agent.y)), radius
             )
+
+    def _agent_color(self, agent) -> tuple[int, int, int]:
+        """Energy colour, blended toward red over the agent's final ticks.
+
+        For most of life the colour is the plain energy ramp. Once the agent
+        enters its last ``agent.end_of_life_ticks`` ticks (config-driven, no
+        magic numbers), the energy colour is linearly interpolated toward
+        ``COLOR_END_OF_LIFE`` as it approaches ``agent.max_age``.
+        """
+        base = self._energy_color(agent.energy)
+        max_age = self._config.agent.max_age
+        eol = self._config.agent.end_of_life_ticks
+        start = max_age - eol
+        if agent.age < start:
+            return base
+        ratio = max(0.0, min(1.0, (agent.age - start) / eol))
+        return (
+            int(_lerp(base[0], COLOR_END_OF_LIFE[0], ratio)),
+            int(_lerp(base[1], COLOR_END_OF_LIFE[1], ratio)),
+            int(_lerp(base[2], COLOR_END_OF_LIFE[2], ratio)),
+        )
 
     def _energy_color(self, energy: float) -> tuple[int, int, int]:
         """Smooth red->yellow->green ramp over normalised energy ``[0, 1]``."""

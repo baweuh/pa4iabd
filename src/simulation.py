@@ -201,6 +201,18 @@ class Simulation:
     # ------------------------------------------------------------------ #
     # CSV logging
     # ------------------------------------------------------------------ #
+    def open_csv_logger(self) -> None:
+        """Open the metrics CSV (header written). Pair with close_csv_logger().
+
+        For manual headless loops (``main.py``) that drive :meth:`tick` directly
+        and still want CSV output; :meth:`run` uses the private path internally.
+        """
+        self._open_csv()
+
+    def close_csv_logger(self) -> None:
+        """Flush and close the metrics CSV opened by :meth:`open_csv_logger`."""
+        self._close_csv()
+
     def _open_csv(self) -> None:
         path = Path(self._config.logging.csv_path)
         path.parent.mkdir(parents=True, exist_ok=True)
