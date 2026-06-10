@@ -19,10 +19,10 @@
 - [x] Normalisation output vitesse
 - [x] tests/test_network.py (forward déterministe, cycle détecté)
 
-## Phase 4 — Environnement ⬜
-- [ ] Apple (spawn zone safe, respawn aléatoire)
-- [ ] Zone pénalité gradient
-- [ ] tests/test_environment.py (pommes hors zone penalty, gradient correct)
+## Phase 4 — Environnement ✅
+- [x] Apple (spawn zone safe, respawn aléatoire)
+- [x] Zone pénalité gradient
+- [x] tests/test_environment.py (pommes hors zone penalty, gradient correct)
 
 ## Phase 5 — Agent ⬜
 - [ ] Raycasts (16 rays, first-hit, (distance, type))
