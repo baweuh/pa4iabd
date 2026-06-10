@@ -13,11 +13,11 @@
         remove_connection, mutate_weights)
 - [x] tests/test_genome.py (mutations valides, pas de cycle, IDs uniques)
 
-## Phase 3 — Réseau de neurones ⬜
-- [ ] Topological sort (cache à l'init)
-- [ ] Forward pass feedforward
-- [ ] Normalisation output vitesse
-- [ ] tests/test_network.py (forward déterministe, cycle détecté)
+## Phase 3 — Réseau de neurones ✅
+- [x] Topological sort (cache à l'init)
+- [x] Forward pass feedforward
+- [x] Normalisation output vitesse
+- [x] tests/test_network.py (forward déterministe, cycle détecté)
 
 ## Phase 4 — Environnement ⬜
 - [ ] Apple (spawn zone safe, respawn aléatoire)
