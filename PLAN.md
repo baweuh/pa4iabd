@@ -30,12 +30,13 @@
 - [x] Cycle de vie complet (naissance, reproduction, mort famine/vieillesse)
 - [x] tests/test_agent.py
 
-## Phase 6 — Simulation (boucle principale) ⬜
-- [ ] Fixed timestep loop (découplé rendu)
-- [ ] Gestion population (spawn, mort, extinction propre)
-- [ ] CSV logging continu
-- [ ] Sauvegarde meilleur génome
-- [ ] tests/test_simulation.py (tick order, CSV produit)
+## Phase 6 — Simulation (boucle principale) ✅
+- [x] Fixed timestep loop (découplé rendu)
+- [x] Gestion population (spawn, mort, extinction propre)
+- [x] CSV logging continu
+- [x] Sauvegarde meilleur génome
+- [x] tests/test_simulation.py (tick order, CSV produit)
+- [x] Respawn différé des pommes (patchs rétro Phase 4/5, CDC §5.2)
 
 ## Phase 7 — Rendu ⬜
 - [ ] Renderer Pygame (agents, pommes, zone penalty, HUD)
