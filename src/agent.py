@@ -35,6 +35,18 @@ _TYPE_APPLE = 0.5
 _TYPE_WALL = 1.0
 
 
+def ray_angles(num_rays: int, fov_degrees: float) -> list[float]:
+    """Absolute world angles (radians) of the ``num_rays`` raycasts.
+
+    The field of view is split evenly: ray ``i`` points at
+    ``i * fov / num_rays`` starting from angle 0. With ``fov == 360`` the rays
+    cover the full circle without duplicating the first direction. Shared with
+    the renderer so displayed rays always match perceived rays.
+    """
+    step = math.radians(fov_degrees) / num_rays
+    return [i * step for i in range(num_rays)]
+
+
 class Agent:
     """One creature: perception + energy metabolism + life cycle."""
 
@@ -58,6 +70,10 @@ class Agent:
         self.energy: float = config.agent.initial_energy
         self.age: int = 0
         self.alive: bool = True
+        # Senses used for the most recent decision (None before the first
+        # activate()). Read by the renderer so drawn rays are exactly the rays
+        # the agent acted on — and perception is never recomputed for display.
+        self.last_senses: list[float] | None = None
 
     # ------------------------------------------------------------------ #
     # Perception
@@ -69,13 +85,13 @@ class Agent:
         nothing within ``max_distance``), ``[16..31]`` types (0.0 rien / 0.5
         pomme / 1.0 mur), ``[32]`` normalised energy ``[0→1]``.
         """
-        num_rays = self._config.sensors.num_rays
         max_dist = self._config.sensors.max_distance
 
         distances: list[float] = []
         types: list[float] = []
-        for i in range(num_rays):
-            angle = i * (2.0 * math.pi / num_rays)
+        for angle in ray_angles(
+            self._config.sensors.num_rays, self._config.sensors.fov
+        ):
             dx = math.cos(angle)
             dy = math.sin(angle)
             hit_dist, hit_type = self._cast_ray(dx, dy, max_dist)
@@ -125,7 +141,8 @@ class Agent:
     # ------------------------------------------------------------------ #
     def activate(self) -> tuple[float, float]:
         """Run the cached network on the current senses; return clamped (vx, vy)."""
-        raw_vx, raw_vy = self.network.activate(self.sense())
+        self.last_senses = self.sense()
+        raw_vx, raw_vy = self.network.activate(self.last_senses)
         return clamp_velocity(raw_vx, raw_vy, self._config.agent.max_speed)
 
     def move(self, vx: float, vy: float) -> None:

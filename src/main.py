@@ -94,15 +94,58 @@ def _fit_scale(win_w: int, win_h: int, avail_w: int, avail_h: int) -> float:
     return min(avail_w / win_w, avail_h / win_h)
 
 
+def scale_spatial(config: SimConfig, scale: float) -> SimConfig:
+    """Return a config with EVERY spatial length multiplied by ``scale``.
+
+    Scaling all lengths by one factor (world, penalty-zone thickness, agent
+    radius and speed, sensor range, apple radius, window) yields a world that is
+    geometrically similar to the original: normalised sensor inputs, penalty
+    drain values and energy dynamics are identical to the unscaled run. Energy
+    quantities are per-tick apple-equivalents (invariant n°2), not lengths, so
+    they are left untouched. SimConfig stays frozen: sections are rebuilt with
+    ``dataclasses.replace``, which re-runs validation.
+    """
+    return dataclasses.replace(
+        config,
+        render=dataclasses.replace(
+            config.render,
+            window_width=int(config.render.window_width * scale),
+            window_height=int(config.render.window_height * scale),
+        ),
+        world=dataclasses.replace(
+            config.world,
+            width=config.world.width * scale,
+            height=config.world.height * scale,
+        ),
+        penalty_zone=dataclasses.replace(
+            config.penalty_zone,
+            width=config.penalty_zone.width * scale,
+        ),
+        agent=dataclasses.replace(
+            config.agent,
+            radius=config.agent.radius * scale,
+            max_speed=config.agent.max_speed * scale,
+        ),
+        sensors=dataclasses.replace(
+            config.sensors,
+            max_distance=config.sensors.max_distance * scale,
+        ),
+        apple=dataclasses.replace(
+            config.apple,
+            radius=config.apple.radius * scale,
+        ),
+    )
+
+
 def fit_window_to_screen(config: SimConfig) -> SimConfig:
     """Scale window AND world down to fit the current screen (visual mode only).
 
     Detects the desktop resolution via ``pygame.display.Info()`` and, if the YAML
-    window exceeds it (minus ``SCREEN_MARGIN_PX`` for the taskbar), shrinks both
-    the ``render`` and ``world`` sections by one uniform factor. SimConfig stays
-    frozen: the scaled config is produced through ``dataclasses.replace`` (the
-    same override mechanism used for ``--seed``/``--ticks``). Returns the config
-    unchanged when it already fits. Never call this headless — it touches Pygame.
+    window exceeds it (minus ``SCREEN_MARGIN_PX`` for the taskbar), shrinks the
+    whole spatial config by one uniform factor via :func:`scale_spatial`, so the
+    on-screen physics stay equivalent to the headless physics for the same YAML.
+    Returns the config unchanged when it already fits. Never call this headless —
+    it touches Pygame.
     """
     import pygame  # pylint: disable=import-outside-toplevel
 
@@ -118,18 +161,7 @@ def fit_window_to_screen(config: SimConfig) -> SimConfig:
     )
     if scale >= 1.0:
         return config
-
-    render = dataclasses.replace(
-        config.render,
-        window_width=int(config.render.window_width * scale),
-        window_height=int(config.render.window_height * scale),
-    )
-    world = dataclasses.replace(
-        config.world,
-        width=config.world.width * scale,
-        height=config.world.height * scale,
-    )
-    return dataclasses.replace(config, render=render, world=world)
+    return scale_spatial(config, scale)
 
 
 def run_visual(config: SimConfig) -> None:

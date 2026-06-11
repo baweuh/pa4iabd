@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from src.agent import _TYPE_APPLE, _TYPE_NOTHING, _TYPE_WALL, Agent
+from src.agent import _TYPE_APPLE, _TYPE_NOTHING, _TYPE_WALL, Agent, ray_angles
 from src.apple import Apple
 from src.config import SimConfig
 from src.environment import Environment
@@ -43,9 +43,32 @@ def make_agent(cfg, env, genome, position, seed=0):
 # ------------------------------------------------------------------ #
 
 
+def test_ray_angles_split_configured_fov_evenly(cfg):
+    angles = ray_angles(cfg.sensors.num_rays, cfg.sensors.fov)
+    assert len(angles) == cfg.sensors.num_rays
+    step = math.radians(cfg.sensors.fov) / cfg.sensors.num_rays
+    for i, angle in enumerate(angles):
+        assert angle == pytest.approx(i * step)
+
+
+def test_ray_angles_respect_reduced_fov():
+    assert ray_angles(4, 180.0) == pytest.approx(
+        [0.0, math.pi / 4, math.pi / 2, 3 * math.pi / 4]
+    )
+
+
 def test_sense_length(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
     assert len(agent.sense()) == cfg.network.num_inputs  # 33
+
+
+def test_last_senses_cached_on_activate(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
+    assert agent.last_senses is None  # no decision taken yet
+    agent.activate()
+    # activate() neither moves the agent nor drains energy, so a fresh sense()
+    # must reproduce exactly the cached perception the decision used.
+    assert agent.last_senses == agent.sense()
 
 
 def test_energy_input_normalised(cfg, env, genome):

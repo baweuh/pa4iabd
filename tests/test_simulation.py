@@ -129,6 +129,21 @@ def test_record_and_best_genome_saved(tmp_path):
     assert isinstance(restored, Genome)
 
 
+def test_latest_best_genome_written_at_configured_name(tmp_path):
+    cfg = build_config(tmp_path, apple={"respawn_delay": 5})
+    sim = Simulation(cfg, random.Random(5))
+    _single_agent_on_apple(sim)
+
+    sim.tick()
+    run_dir = Path(cfg.logging.csv_path).parent / sim.run_id
+    latest = run_dir / Path(cfg.logging.best_genome_path).name
+    assert latest.exists()
+    archived = sorted((run_dir / "best_agents").glob("agent_*.json"))
+    assert latest.read_text(encoding="utf-8") == archived[-1].read_text(
+        encoding="utf-8"
+    )
+
+
 # ------------------------------------------------------------------ #
 # Reproduction + population cap
 # ------------------------------------------------------------------ #

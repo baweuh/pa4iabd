@@ -25,6 +25,7 @@ from src.main import (  # noqa: E402
     main,
     resolve_config,
     run_headless,
+    scale_spatial,
 )
 from src.simulation import Simulation  # noqa: E402
 
@@ -175,3 +176,37 @@ def test_fit_scale_downscales_preserving_ratio():
     # Both scaled dimensions land within the available area.
     assert 1600 * scale <= 1316 + 1e-9
     assert 900 * scale <= 718 + 1e-9
+
+
+def test_scale_spatial_scales_every_length_uniformly(tmp_path):
+    cfg = build_config(tmp_path)
+    scale = 0.5
+    scaled = scale_spatial(cfg, scale)
+
+    assert scaled.world.width == pytest.approx(cfg.world.width * scale)
+    assert scaled.world.height == pytest.approx(cfg.world.height * scale)
+    assert scaled.render.window_width == int(cfg.render.window_width * scale)
+    assert scaled.render.window_height == int(cfg.render.window_height * scale)
+    assert scaled.penalty_zone.width == pytest.approx(cfg.penalty_zone.width * scale)
+    assert scaled.agent.radius == pytest.approx(cfg.agent.radius * scale)
+    assert scaled.agent.max_speed == pytest.approx(cfg.agent.max_speed * scale)
+    assert scaled.sensors.max_distance == pytest.approx(
+        cfg.sensors.max_distance * scale
+    )
+    assert scaled.apple.radius == pytest.approx(cfg.apple.radius * scale)
+
+
+def test_scale_spatial_leaves_energy_untouched(tmp_path):
+    cfg = build_config(tmp_path)
+    scaled = scale_spatial(cfg, 0.5)
+
+    # Energy is apple-equivalent per tick (invariant n°2), not a length.
+    assert scaled.agent.energy_drain_per_tick == cfg.agent.energy_drain_per_tick
+    assert scaled.agent.initial_energy == cfg.agent.initial_energy
+    assert scaled.agent.max_energy == cfg.agent.max_energy
+    assert scaled.penalty_zone.max_drain == cfg.penalty_zone.max_drain
+    assert scaled.apple.energy == cfg.apple.energy
+    # Non-spatial sections are untouched too.
+    assert scaled.genome == cfg.genome
+    assert scaled.population == cfg.population
+    assert scaled.simulation == cfg.simulation

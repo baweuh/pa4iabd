@@ -10,10 +10,11 @@ Design notes:
 - Window == world (overlay layout): simulation coordinates are screen coordinates,
   so no world->screen transform is needed. UI bars are painted semi-transparently
   over the world.
-- Raycasts are reconstructed from the public ``Agent.sense()`` output: ray ``i``
-  points at absolute angle ``i * 2π/num_rays`` and its endpoint is
-  ``(x + d·max_dist·cosθ, y + d·max_dist·sinθ)`` where ``d`` is the normalised
-  distance. No private agent geometry is touched.
+- Raycasts are reconstructed from the public ``Agent.last_senses`` cache (the
+  perception the agent last acted on): ray angles come from the shared
+  ``ray_angles`` helper and each endpoint is ``(x + d·max_dist·cosθ,
+  y + d·max_dist·sinθ)`` where ``d`` is the normalised distance. No private
+  agent geometry is touched and perception is never recomputed for display.
 - Invariant n°1 (no magic simulation numbers) is respected: every *physics* value
   comes from ``SimConfig``. The literals below are presentation-only and named.
 
@@ -27,6 +28,7 @@ import math
 
 import pygame
 
+from src.agent import ray_angles
 from src.config import SimConfig
 from src.simulation import Simulation
 
@@ -245,15 +247,21 @@ class Renderer:
             pygame.draw.rect(self._overlay, color, rect, width=max(1, math.ceil(step)))
 
     def _draw_raycasts(self) -> None:
-        """Draw each living agent's 16 rays from its public ``sense()`` output."""
+        """Draw each living agent's rays from its cached ``last_senses``.
+
+        ``last_senses`` is the exact perception the agent last acted on, so the
+        display matches the decision and perception is never recomputed for
+        rendering. The fallback ``sense()`` only runs for agents that have not
+        ticked yet (e.g. paused at tick 0).
+        """
         num_rays = self._config.sensors.num_rays
         max_dist = self._config.sensors.max_distance
+        angles = ray_angles(num_rays, self._config.sensors.fov)
         for agent in self.sim.population:
-            senses = agent.sense()
+            senses = agent.last_senses or agent.sense()
             distances = senses[:num_rays]
             types = senses[num_rays : 2 * num_rays]
-            for i in range(num_rays):
-                angle = i * (2.0 * math.pi / num_rays)
+            for i, angle in enumerate(angles):
                 reach = distances[i] * max_dist
                 end_x = agent.x + reach * math.cos(angle)
                 end_y = agent.y + reach * math.sin(angle)

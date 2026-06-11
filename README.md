@@ -132,10 +132,11 @@ agents, drain d'énergie, taux de mutation, etc. Édite `config/default.yaml`
 
 ### 8. Résultats
 
-Après une exécution, regarde dans `logs/` :
+Après une exécution, chaque run crée son dossier horodaté dans `logs/` :
 
-- `logs/metrics.csv` — métriques par intervalle (population, nourriture, ticks).
-- `logs/best_genome.json` — le meilleur génome rencontré, rejouable.
+- `logs/<run>/metrics.csv` — métriques par intervalle (population, nourriture, ticks).
+- `logs/<run>/best_genome.json` — le meilleur génome courant du run, rejouable.
+- `logs/<run>/best_agents/agent_NNN_record_X.json` — l'historique des records.
 
 ---
 

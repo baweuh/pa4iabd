@@ -212,11 +212,20 @@ class Simulation:
         return folder
 
     def _save_best_genome(self, genome: Genome) -> None:
+        """Dump the new record genome: one archive copy + the stable latest file.
+
+        The history lives in ``best_agents/`` (one file per record); the file
+        named by ``logging.best_genome_path`` in the run folder is overwritten
+        each time so the current best is always at a predictable path.
+        """
         self._best_agent_counter += 1
+        payload = genome.to_json()
         folder = self._run_dir() / "best_agents"
         folder.mkdir(exist_ok=True)
         name = f"agent_{self._best_agent_counter:03d}_record_{self.record_apples}.json"
-        (folder / name).write_text(genome.to_json(), encoding="utf-8")
+        (folder / name).write_text(payload, encoding="utf-8")
+        latest = self._run_dir() / Path(self._config.logging.best_genome_path).name
+        latest.write_text(payload, encoding="utf-8")
 
     # ------------------------------------------------------------------ #
     # CSV logging
