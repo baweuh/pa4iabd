@@ -142,6 +142,7 @@ class Renderer:
     # ------------------------------------------------------------------ #
     def run(self) -> None:
         """Drive the visual loop until the window is closed or ESC is pressed."""
+        self.sim.open_csv_logger()
         try:
             while self._running:
                 self._handle_events()
@@ -151,6 +152,7 @@ class Renderer:
                 self._draw()
                 self._clock.tick(self._config.render.fps)
         finally:
+            self.sim.close_csv_logger()
             pygame.quit()  # pylint: disable=no-member
 
     # ------------------------------------------------------------------ #

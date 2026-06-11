@@ -66,9 +66,10 @@ def test_determinism(cfg):
 
 def test_tick_advances_counter_and_ages(cfg):
     sim = Simulation(cfg, random.Random(2))
+    started = list(sim.population)  # newborns/floor refills (age 0) may join this tick
     sim.tick()
     assert sim.tick_count == 1
-    assert all(a.age == 1 for a in sim.population)
+    assert all(a.age == 1 for a in started)
 
 
 def test_tick_applies_metabolism(cfg):
@@ -121,9 +122,10 @@ def test_record_and_best_genome_saved(tmp_path):
 
     sim.tick()
     assert sim.record_apples >= 1
-    best_path = Path(cfg.logging.best_genome_path)
-    assert best_path.exists()
-    restored = Genome.from_json(best_path.read_text(encoding="utf-8"))
+    run_dir = Path(cfg.logging.csv_path).parent / sim.run_id
+    saved = list((run_dir / "best_agents").glob("agent_*.json"))
+    assert len(saved) >= 1
+    restored = Genome.from_json(saved[0].read_text(encoding="utf-8"))
     assert isinstance(restored, Genome)
 
 
@@ -189,7 +191,8 @@ def test_csv_header_and_rows(tmp_path):
     sim = Simulation(cfg, random.Random(9))
     sim.run()
 
-    rows = list(csv.reader(Path(cfg.logging.csv_path).open(encoding="utf-8")))
+    run_csv = Path(cfg.logging.csv_path).parent / sim.run_id / "metrics.csv"
+    rows = list(csv.reader(run_csv.open(encoding="utf-8")))
     assert tuple(rows[0]) == CSV_HEADER
     assert len(rows) == 1 + 3  # header + one row per tick (interval 1, 3 ticks)
     # Columns are parsable: tick is an int, avg_lifespan a float.
@@ -211,7 +214,8 @@ def test_csv_interval_respected(tmp_path):
     sim = Simulation(cfg, random.Random(10))
     sim.run()
 
-    rows = list(csv.reader(Path(cfg.logging.csv_path).open(encoding="utf-8")))
+    run_csv = Path(cfg.logging.csv_path).parent / sim.run_id / "metrics.csv"
+    rows = list(csv.reader(run_csv.open(encoding="utf-8")))
     # header + ticks 5 and 10 logged.
     assert len(rows) == 1 + 2
     assert int(rows[1][0]) == 5

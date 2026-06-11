@@ -42,7 +42,7 @@ def test_frozen() -> None:
 def test_from_dict(raw: dict) -> None:
     cfg = SimConfig.from_dict(raw)
     assert cfg.world.width == 1600
-    assert cfg.population.initial_size == 30
+    assert cfg.population.initial_size == 100
 
 
 def test_missing_file() -> None:

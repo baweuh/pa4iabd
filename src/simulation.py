@@ -28,6 +28,7 @@ Per-tick orchestration (staged pipeline):
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 from pathlib import Path
 from random import Random
 from typing import TextIO
@@ -64,6 +65,11 @@ class Simulation:
         self.record_apples: int = 0
         # Lifetime apples eaten, per living agent (drives record + best genome).
         self._apples_eaten: dict[Agent, int] = {}
+        # Timestamp shared by all files produced by this run (YYYY-MM-DD_HHMMSS).
+        # One folder per run under the configured log directory.
+        self._run_id: str = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        # Monotonic counter for best-agent files within this run.
+        self._best_agent_counter: int = 0
 
         self.population: list[Agent] = [
             self._spawn_agent() for _ in range(config.population.initial_size)
@@ -100,6 +106,11 @@ class Simulation:
     # ------------------------------------------------------------------ #
     # Read-only views
     # ------------------------------------------------------------------ #
+    @property
+    def run_id(self) -> str:
+        """Timestamp string that identifies this run (used to name log files)."""
+        return self._run_id
+
     @property
     def population_size(self) -> int:
         """Number of living agents."""
@@ -193,10 +204,19 @@ class Simulation:
             self.record_apples = best
             self._save_best_genome(best_agent.genome)
 
+    def _run_dir(self) -> Path:
+        """Return (and create) the per-run log folder: logs/<run_id>/."""
+        base = Path(self._config.logging.csv_path)
+        folder = base.parent / self._run_id
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
     def _save_best_genome(self, genome: Genome) -> None:
-        path = Path(self._config.logging.best_genome_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(genome.to_json(), encoding="utf-8")
+        self._best_agent_counter += 1
+        folder = self._run_dir() / "best_agents"
+        folder.mkdir(exist_ok=True)
+        name = f"agent_{self._best_agent_counter:03d}_record_{self.record_apples}.json"
+        (folder / name).write_text(genome.to_json(), encoding="utf-8")
 
     # ------------------------------------------------------------------ #
     # CSV logging
@@ -214,8 +234,8 @@ class Simulation:
         self._close_csv()
 
     def _open_csv(self) -> None:
-        path = Path(self._config.logging.csv_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        base = Path(self._config.logging.csv_path)
+        path = self._run_dir() / base.name
         # Kept open across the whole run; closed in _close_csv (run()'s finally).
         # pylint: disable=consider-using-with
         self._csv_file = path.open("w", encoding="utf-8", newline="")

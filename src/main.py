@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
+from pathlib import Path
 
 from src.config import ConfigError, SimConfig
 from src.simulation import Simulation
@@ -166,7 +167,8 @@ def run_headless(config: SimConfig) -> None:
         print("\nInterrupted.")
     finally:
         sim.close_csv_logger()
-    print(f"Simulation complete. Check {config.logging.csv_path} for CSV.")
+    run_dir = Path(config.logging.csv_path).parent / sim.run_id
+    print(f"Simulation complete. Results in {run_dir}/")
 
 
 def main(argv: list[str] | None = None) -> int:

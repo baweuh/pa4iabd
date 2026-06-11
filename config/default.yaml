@@ -8,17 +8,17 @@ world:
 
 penalty_zone:
   width: 100           # thickness from the wall, in pixels
-  max_drain: 0.005     # energy drained per tick at the wall
+  max_drain: 0.003     # energy drained per tick at the wall (softened: was 0.005)
 
 agent:
   radius: 8
   max_speed: 3.0
   initial_energy: 1.0
   max_energy: 2.0
-  energy_drain_per_tick: 0.001
+  energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
   max_age: 5000        # ticks
-  reproduction_threshold: 1.5
-  reproduction_cost: 0.75
+  reproduction_threshold: 1.3     # one apple (+0.5) from start clears it (was 1.5)
+  reproduction_cost: 0.6          # parent keeps more cushion post-birth (was 0.75)
   end_of_life_ticks: 500
 
 sensors:
@@ -32,7 +32,7 @@ network:
   activation: "tanh"
 
 apple:
-  count: 50
+  count: 80            # denser food → random walkers stumble on it sooner (was 50)
   radius: 5
   energy: 0.5
   respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
@@ -47,9 +47,9 @@ genome:
   remove_connection_rate: 0.02
 
 population:
-  initial_size: 30
-  min_size: 5
-  max_size: 100
+  initial_size: 100        # large initial pool → more random walkers find food naturally
+  min_size: 5              # not enforced; allows true extinction if population fails
+  max_size: 200            # accommodate growth from successful hunters
 
 simulation:
   ticks_per_second: 60

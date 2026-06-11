@@ -78,9 +78,11 @@ def test_visual_mode_init(tmp_path):
 def test_headless_mode_500_ticks(tmp_path):
     cfg = build_config(tmp_path, simulation={"max_ticks": 500})
     run_headless(cfg)
-    csv_path = Path(cfg.logging.csv_path)
-    assert csv_path.exists()
-    rows = csv_path.read_text(encoding="utf-8").splitlines()
+    # CSV is inside logs/<run_id>/metrics.csv — find it via glob.
+    log_dir = Path(cfg.logging.csv_path).parent
+    csvs = list(log_dir.glob("*/metrics.csv"))
+    assert len(csvs) == 1
+    rows = csvs[0].read_text(encoding="utf-8").splitlines()
     assert len(rows) > 1  # header + at least one logged row
 
 
