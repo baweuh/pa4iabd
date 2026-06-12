@@ -45,12 +45,15 @@ COLOR_END_OF_LIFE = (255, 0, 0)  # agents fade toward this over their final tick
 COLOR_RAY_WALL = (0, 200, 220)  # cyan
 COLOR_RAY_APPLE = (255, 165, 0)  # orange
 COLOR_RAY_NOTHING = (160, 160, 160)  # light grey
-RAY_ALPHA = 110
+RAY_ALPHA_HIT = 70              # non-selected agents: only rays that hit something
+RAY_ALPHA_SELECTED_HIT = 200    # selected agent: hit rays
+RAY_ALPHA_SELECTED_NOTHING = 35 # selected agent: nothing-rays (faint)
 RAY_WIDTH = 1
 
-# Ray-hit type codes, mirroring Agent's NN encoding (read-only contract).
-RAY_TYPE_APPLE = 0.5
-RAY_TYPE_WALL = 1.0
+COLOR_AGENT_SELECTED = (255, 255, 255)
+AGENT_SELECTED_RING_WIDTH = 2
+AGENT_SELECTED_EXTRA_R = 4
+
 
 COLOR_PENALTY = (180, 40, 40)  # band tint along the walls
 PENALTY_MAX_ALPHA = 90  # alpha at the wall, ramps to 0 inward
@@ -123,6 +126,7 @@ class Renderer:
         self.ticks_per_frame = SPEED_MIN
         self.paused = False
         self._running = True
+        self._selected_agent = None
 
         self._buttons: dict[str, pygame.Rect] = self._build_buttons()
 
@@ -190,7 +194,7 @@ class Renderer:
             self._speed_down()
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
-        """Dispatch a left click to whichever control button contains it."""
+        """Dispatch a left click to a control button or select/deselect an agent."""
         for name, rect in self._buttons.items():
             if rect.collidepoint(pos):
                 if name in (_BTN_FAST_DOWN, _BTN_DOWN):
@@ -200,6 +204,17 @@ class Renderer:
                 else:  # play/pause
                     self.paused = not self.paused
                 return
+        # No button hit: select the nearest agent whose circle contains the click.
+        r = self._config.agent.radius
+        px, py = pos
+        for agent in self.sim.population:
+            dx, dy = agent.x - px, agent.y - py
+            if dx * dx + dy * dy <= r * r:
+                self._selected_agent = (
+                    None if agent is self._selected_agent else agent
+                )
+                return
+        self._selected_agent = None
 
     def _speed_up(self) -> None:
         """Double the ticks-per-frame, capped at ``SPEED_MAX``."""
@@ -247,40 +262,60 @@ class Renderer:
             pygame.draw.rect(self._overlay, color, rect, width=max(1, math.ceil(step)))
 
     def _draw_raycasts(self) -> None:
-        """Draw each living agent's rays from its cached ``last_senses``.
+        """Draw rays from each agent's cached ``last_senses``.
 
-        ``last_senses`` is the exact perception the agent last acted on, so the
-        display matches the decision and perception is never recomputed for
-        rendering. The fallback ``sense()`` only runs for agents that have not
-        ticked yet (e.g. paused at tick 0).
+        Non-selected agents: only rays that hit something (apple or wall) are
+        drawn — nothing-rays are the majority and add visual noise without
+        information. The selected agent (if any) shows all 16 rays, with
+        hit-rays bright and nothing-rays faint. Selection is reset automatically
+        when the selected agent dies. Angles are computed per-agent because each
+        agent has its own heading (egocentric raycasts).
         """
+        if self._selected_agent not in self.sim.population:
+            self._selected_agent = None
+
         num_rays = self._config.sensors.num_rays
-        max_dist = self._config.sensors.max_distance
-        angles = ray_angles(num_rays, self._config.sensors.fov)
+        fov = self._config.sensors.fov
         for agent in self.sim.population:
-            senses = agent.last_senses or agent.sense()
-            distances = senses[:num_rays]
-            types = senses[num_rays : 2 * num_rays]
-            for i, angle in enumerate(angles):
-                reach = distances[i] * max_dist
-                end_x = agent.x + reach * math.cos(angle)
-                end_y = agent.y + reach * math.sin(angle)
-                color = (*self._ray_color(types[i]), RAY_ALPHA)
-                pygame.draw.line(
-                    self._overlay,
-                    color,
-                    (agent.x, agent.y),
-                    (end_x, end_y),
-                    RAY_WIDTH,
-                )
+            angles = ray_angles(num_rays, fov, agent.heading)
+            self._draw_agent_rays(agent, angles, agent is self._selected_agent)
+
+    def _draw_agent_rays(self, agent, angles: list[float], is_selected: bool) -> None:
+        """Draw one agent's rays onto the overlay (49-input encoding)."""
+        n = len(angles)
+        max_dist = self._config.sensors.max_distance
+        senses = agent.last_senses or agent.sense()
+        ax, ay = agent.x, agent.y
+        for i, angle in enumerate(angles):
+            apple_flag = senses[n + i]       # [16..31]
+            wall_flag = senses[2 * n + i]    # [32..47]
+            is_nothing = apple_flag == 0.0 and wall_flag == 0.0
+            if not is_selected and is_nothing:
+                continue
+            d = senses[i] * max_dist
+            pygame.draw.line(
+                self._overlay,
+                (*self._ray_color(apple_flag, wall_flag),
+                 self._ray_alpha(is_selected, is_nothing)),
+                (ax, ay),
+                (ax + d * math.cos(angle), ay + d * math.sin(angle)),
+                RAY_WIDTH,
+            )
 
     @staticmethod
-    def _ray_color(ray_type: float) -> tuple[int, int, int]:
-        """Map a ray-hit type code to its line colour."""
-        if ray_type == RAY_TYPE_WALL:
-            return COLOR_RAY_WALL
-        if ray_type == RAY_TYPE_APPLE:
+    def _ray_alpha(is_selected: bool, is_nothing: bool) -> int:
+        """Return the alpha for one ray line depending on selection state."""
+        if not is_selected:
+            return RAY_ALPHA_HIT
+        return RAY_ALPHA_SELECTED_NOTHING if is_nothing else RAY_ALPHA_SELECTED_HIT
+
+    @staticmethod
+    def _ray_color(apple_flag: float, wall_flag: float) -> tuple[int, int, int]:
+        """Map apple/wall presence flags to a line colour."""
+        if apple_flag == 1.0:
             return COLOR_RAY_APPLE
+        if wall_flag == 1.0:
+            return COLOR_RAY_WALL
         return COLOR_RAY_NOTHING
 
     def _draw_apples(self) -> None:
@@ -299,6 +334,14 @@ class Renderer:
             pygame.draw.circle(
                 self._screen, color, (int(agent.x), int(agent.y)), radius
             )
+            if agent is self._selected_agent:
+                pygame.draw.circle(
+                    self._screen,
+                    COLOR_AGENT_SELECTED,
+                    (int(agent.x), int(agent.y)),
+                    radius + AGENT_SELECTED_EXTRA_R,
+                    AGENT_SELECTED_RING_WIDTH,
+                )
 
     def _agent_color(self, agent) -> tuple[int, int, int]:
         """Energy colour, blended toward red over the agent's final ticks.

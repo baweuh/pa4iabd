@@ -170,11 +170,14 @@ class Simulation:
                 key=lambda a: a.energy,
                 reverse=True,
             )
-            for agent in eligible[:slots]:
-                child = agent.reproduce()
-                self._apples_eaten[child] = 0
-                children.append(child)
-                self.total_reproductions += 1
+            for agent in eligible:
+                while agent.can_reproduce() and len(children) < slots:
+                    child = agent.reproduce()
+                    self._apples_eaten[child] = 0
+                    children.append(child)
+                    self.total_reproductions += 1
+                if len(children) >= slots:
+                    break
 
         dead = [a for a in self.population if not a.alive]
         for agent in dead:
@@ -209,7 +212,7 @@ class Simulation:
     # Record / best genome
     # ------------------------------------------------------------------ #
     def _update_record(self) -> None:
-        """Dump the genome of any agent whose lifetime apples beat the record."""
+        """Dump + re-inject the genome when lifetime apples beat the record."""
         if not self._apples_eaten:
             return
         best_agent = max(self._apples_eaten, key=self._apples_eaten.__getitem__)
@@ -217,6 +220,27 @@ class Simulation:
         if best > self.record_apples:
             self.record_apples = best
             self._save_best_genome(best_agent.genome)
+            self._inject_elite(best_agent.genome)
+
+    def _inject_elite(self, genome: Genome) -> None:
+        """Spawn one unmutated clone of the record genome if a slot is available.
+
+        Elite injection keeps the best controller alive in the population when it
+        would otherwise be lost by chance (the original bearer can die of old age
+        or starvation before it reproduces). The clone starts fresh (initial
+        energy, random position, no mutation applied) so it must compete.
+        """
+        if len(self.population) >= self._config.population.max_size:
+            return
+        elite = Agent(
+            genome.clone(),
+            self._safe_spawn_position(),
+            self._config,
+            self.env,
+            self._rng,
+        )
+        self.population.append(elite)
+        self._apples_eaten[elite] = 0
 
     def _run_dir(self) -> Path:
         """Return (and create) the per-run log folder: logs/<run_id>/."""

@@ -1,22 +1,21 @@
 """Agent: a living creature that senses, decides, moves, eats, reproduces, dies.
 
 The Agent is the bridge between perception (``NeuralNetwork``) and the world
-(``Environment``). Each tick it casts 16 rays, feeds distances/types plus its
-own energy into its cached network, moves, eats nearby apples, and pays its
-metabolic cost.
+(``Environment``). Each tick it casts 16 rays, feeds distances/apple-flags/
+wall-flags plus its own energy into its cached network, updates its heading,
+moves, eats nearby apples, and pays its metabolic cost.
 
 Invariants honoured here:
 - n°1 — zero hardcoding: every number comes from ``SimConfig``.
 - n°2 — energy is apple-equivalent PER TICK (drain + wall penalty per tick).
 - n°4 — the network's topological sort is computed ONCE, at agent creation, and
   cached for the agent's whole life (``NeuralNetwork`` built in ``__init__``).
-- n°5 — output velocity is magnitude-clamped to ``max_speed`` via
-  ``clamp_velocity`` (direction preserved).
+- n°5 — egocentric outputs: output[0] × max_speed = signed forward speed;
+  output[1] × max_turn_rate = heading delta (rad/tick).
 
-Raycasts are cast in ABSOLUTE world directions (fov 360° split evenly across
-``num_rays``); the agent has no heading. The wall penalty zone is sensed only
-implicitly — the network perceives wall proximity through the raycasts, never as
-a dedicated input.
+Raycasts are cast in EGOCENTRIC directions centred on the agent's heading (ray 0
+= forward). The wall penalty zone is sensed only implicitly — the network
+perceives wall proximity through the raycasts, never as a dedicated input.
 """
 
 from __future__ import annotations
@@ -27,24 +26,24 @@ from random import Random
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import Genome
-from src.network import NeuralNetwork, clamp_velocity
+from src.network import NeuralNetwork
 
-# Ray-hit type encoding for the NN input (CLAUDE.md "Inputs NN : 33").
+# Internal hit-type tokens used by _cast_ray (not exposed as NN inputs directly).
 _TYPE_NOTHING = 0.0
 _TYPE_APPLE = 0.5
 _TYPE_WALL = 1.0
 
 
-def ray_angles(num_rays: int, fov_degrees: float) -> list[float]:
-    """Absolute world angles (radians) of the ``num_rays`` raycasts.
+def ray_angles(num_rays: int, fov_degrees: float, heading: float = 0.0) -> list[float]:
+    """Egocentric ray angles (radians) centred on ``heading``.
 
-    The field of view is split evenly: ray ``i`` points at
-    ``i * fov / num_rays`` starting from angle 0. With ``fov == 360`` the rays
-    cover the full circle without duplicating the first direction. Shared with
-    the renderer so displayed rays always match perceived rays.
+    Ray 0 is the forward direction (``heading``); subsequent rays are spaced
+    evenly across the full ``fov_degrees``. With ``fov == 360`` the rays cover
+    the full circle. Shared with the renderer so displayed rays always match
+    perceived rays.
     """
     step = math.radians(fov_degrees) / num_rays
-    return [i * step for i in range(num_rays)]
+    return [heading + i * step for i in range(num_rays)]
 
 
 class Agent:
@@ -58,6 +57,7 @@ class Agent:
         environment: Environment,
         rng: Random,
         generation: int = 0,
+        heading: float | None = None,
     ) -> None:
         self.genome = genome
         self.x, self.y = position
@@ -74,6 +74,11 @@ class Agent:
         # Generations since a founder (founder == 0). Tracks evolutionary depth so
         # adaptation across lineages is measurable; set by reproduce().
         self.generation: int = generation
+        # Facing direction in radians. None → random; passed explicitly in tests and
+        # reproduce() (child inherits parent direction).
+        self.heading: float = (
+            heading if heading is not None else rng.uniform(0.0, 2.0 * math.pi)
+        )
         # Senses used for the most recent decision (None before the first
         # activate()). Read by the renderer so drawn rays are exactly the rays
         # the agent acted on — and perception is never recomputed for display.
@@ -83,27 +88,32 @@ class Agent:
     # Perception
     # ------------------------------------------------------------------ #
     def sense(self) -> list[float]:
-        """Return the 33 NN inputs: 16 distances, 16 types, 1 energy.
+        """Return 49 NN inputs: 16 distances, 16 apple flags, 16 wall flags, 1 energy.
 
-        Layout (CLAUDE.md): ``[0..15]`` normalised distances ``[0→1]`` (1.0 when
-        nothing within ``max_distance``), ``[16..31]`` types (0.0 rien / 0.5
-        pomme / 1.0 mur), ``[32]`` normalised energy ``[0→1]``.
+        Layout (CLAUDE.md): ``[0..15]`` normalised distances ``[0→1]`` (rays
+        centred on heading), ``[16..31]`` apple-presence flags (0.0/1.0),
+        ``[32..47]`` wall-presence flags (0.0/1.0), ``[48]`` normalised energy.
+
+        Splitting apple/wall into separate binary channels lets the network learn
+        independent weights for each stimulus type, which is structurally easier
+        than the single-scalar encoding (0.0/0.5/1.0) it replaces.
         """
         max_dist = self._config.sensors.max_distance
-
         distances: list[float] = []
-        types: list[float] = []
+        apple_flags: list[float] = []
+        wall_flags: list[float] = []
         for angle in ray_angles(
-            self._config.sensors.num_rays, self._config.sensors.fov
+            self._config.sensors.num_rays, self._config.sensors.fov, self.heading
         ):
             dx = math.cos(angle)
             dy = math.sin(angle)
             hit_dist, hit_type = self._cast_ray(dx, dy, max_dist)
             distances.append(hit_dist / max_dist)
-            types.append(hit_type)
+            apple_flags.append(1.0 if hit_type == _TYPE_APPLE else 0.0)
+            wall_flags.append(1.0 if hit_type == _TYPE_WALL else 0.0)
 
         energy_norm = max(0.0, min(1.0, self.energy / self._config.agent.max_energy))
-        return distances + types + [energy_norm]
+        return distances + apple_flags + wall_flags + [energy_norm]
 
     def _cast_ray(self, dx: float, dy: float, max_dist: float) -> tuple[float, float]:
         """First-hit search along the unit ray (dx, dy) from the agent.
@@ -144,10 +154,19 @@ class Agent:
     # Decision and movement
     # ------------------------------------------------------------------ #
     def activate(self) -> tuple[float, float]:
-        """Run the cached network on the current senses; return clamped (vx, vy)."""
+        """Run the cached network; update heading and return world-frame (vx, vy).
+
+        output[0] (tanh ∈ (-1,1)) × max_speed  = signed forward/backward speed.
+        output[1] (tanh ∈ (-1,1)) × max_turn_rate = heading delta (rad/tick).
+        """
         self.last_senses = self.sense()
-        raw_vx, raw_vy = self.network.activate(self.last_senses)
-        return clamp_velocity(raw_vx, raw_vy, self._config.agent.max_speed)
+        raw = self.network.activate(self.last_senses)
+        # Output nodes are linear; apply tanh explicitly to bound speed and turn.
+        speed = math.tanh(raw[0]) * self._config.agent.max_speed
+        self.heading = (
+            self.heading + math.tanh(raw[1]) * self._config.agent.max_turn_rate
+        ) % (2.0 * math.pi)
+        return speed * math.cos(self.heading), speed * math.sin(self.heading)
 
     def move(self, vx: float, vy: float) -> None:
         """Translate by (vx, vy), staying inside the walled world (body-clamped)."""
@@ -225,6 +244,7 @@ class Agent:
             self._env,
             self._rng,
             generation=self.generation + 1,
+            heading=self.heading,
         )
 
     def update(self) -> None:

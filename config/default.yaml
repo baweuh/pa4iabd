@@ -20,6 +20,7 @@ agent:
   reproduction_threshold: 1.1     # ~1 apple from start → birth; high-r bootstrap (was 1.3)
   reproduction_cost: 0.35         # more offspring per apple keeps the pop viable (was 0.6)
   end_of_life_ticks: 500
+  max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
 
 sensors:
   num_rays: 16
@@ -27,7 +28,7 @@ sensors:
   fov: 360             # degrees
 
 network:
-  num_inputs: 33       # 2 * num_rays + 1 (distance + type per ray, + energy)
+  num_inputs: 49       # 3 * num_rays + 1 (dist + apple_flag + wall_flag per ray, + energy)
   num_outputs: 2       # vx_brut, vy_brut (normalised post-output)
   activation: "tanh"
 
@@ -45,6 +46,7 @@ genome:
   add_connection_rate: 0.05
   remove_node_rate: 0.01
   remove_connection_rate: 0.02
+  weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
 
 speciation:
   # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).

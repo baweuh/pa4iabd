@@ -30,7 +30,7 @@ def test_load_default_yaml() -> None:
 
 def test_inputs_consistency() -> None:
     cfg = SimConfig.from_yaml(DEFAULT_YAML)
-    assert cfg.network.num_inputs == 2 * cfg.sensors.num_rays + 1
+    assert cfg.network.num_inputs == 3 * cfg.sensors.num_rays + 1
 
 
 def test_frozen() -> None:

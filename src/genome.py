@@ -203,10 +203,12 @@ class Genome:
             self.remove_node(rng)
 
     def mutate_weights(self, config: GenomeConfig, rng: Random) -> None:
-        """Perturb each connection weight with probability ``weight_mutation_rate``."""
+        """Perturb each connection weight; clamp to ±weight_max (anti-saturation)."""
         for conn in self.connections:
             if rng.random() < config.weight_mutation_rate:
                 conn.weight += rng.gauss(0.0, config.weight_perturbation)
+                w = config.weight_max
+                conn.weight = max(-w, min(w, conn.weight))
 
     def add_connection(
         self,

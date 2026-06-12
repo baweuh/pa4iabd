@@ -19,7 +19,7 @@ from src.genome import (
     NodeGene,
 )
 
-NUM_INPUTS = 33
+NUM_INPUTS = 49
 NUM_OUTPUTS = 2
 
 
@@ -78,7 +78,7 @@ def test_node_ids_are_unique(config, tracker):
     ids = [n.node_id for n in g.nodes]
     assert len(ids) == len(set(ids))
     # Output ids follow input ids.
-    assert {n.node_id for n in g.nodes if n.node_type == OUTPUT} == {33, 34}
+    assert {n.node_id for n in g.nodes if n.node_type == OUTPUT} == {49, 50}
 
 
 def test_weights_within_init_range(config, tracker):
@@ -220,3 +220,15 @@ def test_mutation_is_deterministic_with_seed(config):
         return g.to_dict()
 
     assert build_and_mutate() == build_and_mutate()
+
+
+def test_weights_clamped_after_mutation(config):
+    tracker = InnovationTracker()
+    rng = Random(99)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    # Force weights far outside the clamp range then mutate.
+    for conn in g.connections:
+        conn.weight = 100.0
+    for _ in range(50):
+        g.mutate_weights(config, rng)
+    assert all(abs(c.weight) <= config.weight_max for c in g.connections)

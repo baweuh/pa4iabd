@@ -274,6 +274,35 @@ def test_reproduction_prioritises_highest_energy_at_cap(tmp_path):
     assert 4 not in generations  # low-energy parent did NOT win the slot
 
 
+def test_elite_reinjected_on_record(tmp_path):
+    cfg = build_config(tmp_path, apple={"respawn_delay": 5})
+    sim = Simulation(cfg, random.Random(5))
+    _single_agent_on_apple(sim)
+    assert len(sim.population) == 1
+
+    sim.tick()  # agent eats apple → new record → elite clone injected
+    assert sim.record_apples >= 1
+    assert len(sim.population) >= 2  # original agent + elite (+ possible child)
+
+
+def test_multi_offspring_high_energy(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+        },
+        population={"initial_size": 1, "min_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(7))
+    sim.env.apples.clear()
+    sim.population[0].energy = 2.5  # can afford ≥3 reproductions at cost 0.3
+    sim.tick()
+    assert sim.total_reproductions >= 2  # at least two children this tick
+
+
 def test_csv_interval_respected(tmp_path):
     cfg = build_config(
         tmp_path,

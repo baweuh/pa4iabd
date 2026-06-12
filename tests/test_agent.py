@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from src.agent import _TYPE_APPLE, _TYPE_NOTHING, _TYPE_WALL, Agent, ray_angles
+from src.agent import Agent, ray_angles
 from src.apple import Apple
 from src.config import SimConfig
 from src.environment import Environment
@@ -34,8 +34,8 @@ def genome_fixture(cfg):
     )
 
 
-def make_agent(cfg, env, genome, position, seed=0):
-    return Agent(genome, position, cfg, env, random.Random(seed))
+def make_agent(cfg, env, genome, position, seed=0, heading=0.0):
+    return Agent(genome, position, cfg, env, random.Random(seed), heading=heading)
 
 
 # ------------------------------------------------------------------ #
@@ -57,18 +57,27 @@ def test_ray_angles_respect_reduced_fov():
     )
 
 
+def test_ray_angles_rotate_with_heading():
+    h = math.pi / 2
+    angles = ray_angles(4, 360.0, heading=h)
+    step = math.radians(360.0) / 4
+    assert angles == pytest.approx([h + i * step for i in range(4)])
+
+
 def test_sense_length(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
-    assert len(agent.sense()) == cfg.network.num_inputs  # 33
+    assert len(agent.sense()) == cfg.network.num_inputs  # 49
 
 
 def test_last_senses_cached_on_activate(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
     assert agent.last_senses is None  # no decision taken yet
     agent.activate()
-    # activate() neither moves the agent nor drains energy, so a fresh sense()
-    # must reproduce exactly the cached perception the decision used.
-    assert agent.last_senses == agent.sense()
+    # activate() updates heading before returning, so a fresh sense() after it
+    # would use the new heading → ray order rotates → exact equality breaks.
+    # We verify that last_senses is populated and has the right length.
+    assert agent.last_senses is not None
+    assert len(agent.last_senses) == cfg.network.num_inputs
 
 
 def test_energy_input_normalised(cfg, env, genome):
@@ -78,25 +87,27 @@ def test_energy_input_normalised(cfg, env, genome):
 
 
 def test_ray_hits_wall(cfg, env, genome):
-    # Place the agent 50px from the right wall; ray 0 points +x straight at it.
+    # heading=0 → ray 0 points +x; agent 50px from right wall.
     env.apples.clear()
     agent = make_agent(cfg, env, genome, (cfg.world.width - 50.0, cfg.world.height / 2))
     inputs = agent.sense()
-    num_rays = cfg.sensors.num_rays
-    assert inputs[0] == pytest.approx(50.0 / cfg.sensors.max_distance)  # distance
-    assert inputs[num_rays + 0] == _TYPE_WALL  # type block
+    n = cfg.sensors.num_rays
+    assert inputs[0] == pytest.approx(50.0 / cfg.sensors.max_distance)
+    assert inputs[n + 0] == 0.0    # apple_flag = 0
+    assert inputs[2 * n + 0] == 1.0  # wall_flag = 1
 
 
 def test_ray_hits_apple(cfg, env, genome):
-    # Single apple 100px along +x (ray 0); near surface at 100 - apple.radius.
+    # heading=0 → ray 0 points +x; single apple 100px to the right.
     cx, cy = cfg.world.width / 2, cfg.world.height / 2
     env.apples[:] = [Apple(cx + 100.0, cy)]
     agent = make_agent(cfg, env, genome, (cx, cy))
     inputs = agent.sense()
-    num_rays = cfg.sensors.num_rays
+    n = cfg.sensors.num_rays
     expected = (100.0 - cfg.apple.radius) / cfg.sensors.max_distance
     assert inputs[0] == pytest.approx(expected)
-    assert inputs[num_rays + 0] == _TYPE_APPLE
+    assert inputs[n + 0] == 1.0    # apple_flag = 1
+    assert inputs[2 * n + 0] == 0.0  # wall_flag = 0
 
 
 def test_ray_sees_nothing(cfg, env, genome):
@@ -104,10 +115,11 @@ def test_ray_sees_nothing(cfg, env, genome):
     env.apples.clear()
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
     inputs = agent.sense()
-    num_rays = cfg.sensors.num_rays
-    for i in range(num_rays):
+    n = cfg.sensors.num_rays
+    for i in range(n):
         assert inputs[i] == pytest.approx(1.0)  # max normalised distance
-        assert inputs[num_rays + i] == _TYPE_NOTHING
+        assert inputs[n + i] == 0.0      # apple_flag = 0
+        assert inputs[2 * n + i] == 0.0  # wall_flag = 0
 
 
 def test_apple_occludes_farther_wall(cfg, env, genome):
@@ -117,7 +129,7 @@ def test_apple_occludes_farther_wall(cfg, env, genome):
     env.apples[:] = [Apple(agent_x + 50.0, cy)]  # apple 50px; wall 150px
     agent = make_agent(cfg, env, genome, (agent_x, cy))
     inputs = agent.sense()
-    assert inputs[cfg.sensors.num_rays + 0] == _TYPE_APPLE
+    assert inputs[cfg.sensors.num_rays + 0] == 1.0  # apple_flag wins
 
 
 # ------------------------------------------------------------------ #
@@ -300,3 +312,32 @@ def test_update_advances_one_tick(cfg, env, genome):
     agent.update()
     assert agent.age == 1
     assert agent.energy <= start_energy  # metabolic cost paid (no apple eaten)
+
+
+# ------------------------------------------------------------------ #
+# Egocentric model
+# ------------------------------------------------------------------ #
+
+
+def test_heading_initialised_explicitly(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2),
+                       heading=1.23)
+    assert agent.heading == pytest.approx(1.23)
+
+
+def test_heading_updates_after_activate(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
+    h0 = agent.heading
+    agent.activate()
+    # heading may or may not change depending on network output, but it must stay
+    # within [0, 2π).
+    assert 0.0 <= agent.heading < 2.0 * math.pi
+    _ = h0  # both values are valid
+
+
+def test_child_inherits_parent_heading(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2),
+                       heading=0.5)
+    agent.energy = cfg.agent.reproduction_threshold
+    child = agent.reproduce()
+    assert child.heading == pytest.approx(0.5)
