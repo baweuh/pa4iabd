@@ -37,6 +37,7 @@ from src.agent import Agent
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import TRACKER, Genome
+from src.speciation import count_species, mean_pairwise_distance
 
 CSV_HEADER = (
     "tick",
@@ -46,6 +47,13 @@ CSV_HEADER = (
     "avg_lifespan",
     "total_reproductions",
     "avg_network_size",
+    # Evolutionary observability (appended; earlier column indices are stable).
+    "max_generation",
+    "mean_generation",
+    "species_count",
+    "mean_genetic_distance",
+    "mean_forage_rate",
+    "max_forage_rate",
 )
 
 
@@ -148,15 +156,21 @@ class Simulation:
         self.env.tick_respawns(self._rng)
 
         # Stage 4 — reproduction, then recompose the population.
-        max_size = self._config.population.max_size
+        # Births are capped by free slots under ``population.max_size``. When slots
+        # are scarce (steady state at carrying capacity) the highest-energy agents
+        # reproduce first: that is the selection pressure — the fittest fill the
+        # slots, not whoever happens to sit earliest in the list. Stable sort keeps
+        # the run deterministic on energy ties.
+        survivors = [a for a in self.population if a.alive]
+        slots = self._config.population.max_size - len(survivors)
         children: list[Agent] = []
-        survivors = sum(1 for a in self.population if a.alive)
-        for agent in self.population:
-            if not agent.alive:
-                continue
-            if survivors + len(children) >= max_size:
-                break
-            if agent.can_reproduce():
+        if slots > 0:
+            eligible = sorted(
+                (a for a in survivors if a.can_reproduce()),
+                key=lambda a: a.energy,
+                reverse=True,
+            )
+            for agent in eligible[:slots]:
                 child = agent.reproduce()
                 self._apples_eaten[child] = 0
                 children.append(child)
@@ -260,6 +274,11 @@ class Simulation:
     def _log_row(self) -> None:
         if self._csv_writer is None:
             return
+        generations = [a.generation for a in self.population]
+        forage_rates = self._forage_rates()
+        genomes = [a.genome for a in self.population]
+        mean_generation = _mean(generations)
+        mean_forage = _mean(forage_rates)
         self._csv_writer.writerow(
             (
                 self.tick_count,
@@ -269,6 +288,12 @@ class Simulation:
                 f"{self._avg_lifespan():.6f}",
                 self.total_reproductions,
                 f"{self._avg_network_size():.6f}",
+                max(generations, default=0),
+                f"{mean_generation:.6f}",
+                count_species(genomes, self._config.speciation),
+                f"{mean_pairwise_distance(genomes, self._config.speciation):.6f}",
+                f"{mean_forage:.6f}",
+                f"{max(forage_rates, default=0.0):.6f}",
             )
         )
 
@@ -291,3 +316,20 @@ class Simulation:
             enabled = sum(1 for c in genome.connections if c.enabled)
             total += len(genome.nodes) + enabled
         return total / len(self.population)
+
+    def _forage_rates(self) -> list[float]:
+        """Per-living-agent apples eaten per tick of life (a current-fitness proxy).
+
+        Unlike ``record_apples`` (a lifetime high-water mark that only ratchets
+        up), foraging rate reflects the *current* population's competence and is
+        age-normalised, so a rising mean is direct evidence that selection is
+        improving the controllers.
+        """
+        return [
+            self._apples_eaten[agent] / max(agent.age, 1) for agent in self.population
+        ]
+
+
+def _mean(values: list[float]) -> float:
+    """Arithmetic mean, or 0.0 for an empty list."""
+    return sum(values) / len(values) if values else 0.0

@@ -46,6 +46,15 @@ genome:
   remove_node_rate: 0.01
   remove_connection_rate: 0.02
 
+speciation:
+  # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
+  # Observability only: used to count species + measure genetic diversity in the
+  # metrics CSV; never feed back into selection or reproduction.
+  c_excess: 1.0
+  c_disjoint: 1.0
+  c_weight: 0.4
+  compatibility_threshold: 3.0   # genomes closer than this share a species
+
 population:
   initial_size: 100        # large initial pool → more random walkers find food naturally
   min_size: 5              # not enforced; allows true extinction if population fails

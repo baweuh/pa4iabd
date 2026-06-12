@@ -276,6 +276,19 @@ def test_child_is_independent_agent(cfg, env, genome):
     assert child.age == 0
 
 
+def test_founder_generation_is_zero(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
+    assert agent.generation == 0
+
+
+def test_child_generation_increments(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
+    agent.generation = 4
+    agent.energy = cfg.agent.reproduction_threshold
+    child = agent.reproduce()
+    assert child.generation == 5
+
+
 # ------------------------------------------------------------------ #
 # update() helper
 # ------------------------------------------------------------------ #

@@ -135,6 +135,25 @@ class GenomeConfig:
 
 
 @dataclass(frozen=True)
+class SpeciationConfig:
+    """Coefficients for the NEAT compatibility-distance diversity metrics.
+
+    Used only by ``src.speciation`` to *observe* the population (species count,
+    genetic diversity); these values never influence selection or reproduction.
+    Defaults follow the canonical NEAT paper (Stanley & Miikkulainen 2002).
+    """
+
+    c_excess: float  # weight of excess genes in the distance
+    c_disjoint: float  # weight of disjoint genes in the distance
+    c_weight: float  # weight of the mean matching-weight difference
+    compatibility_threshold: float  # distance below which two genomes share a species
+
+    def __post_init__(self) -> None:
+        _require_positive(self, "compatibility_threshold")
+        _require_non_negative(self, "c_excess", "c_disjoint", "c_weight")
+
+
+@dataclass(frozen=True)
 class PopulationConfig:
     """Population bounds."""
 
@@ -198,6 +217,7 @@ class SimConfig:
     network: NetworkConfig
     apple: AppleConfig
     genome: GenomeConfig
+    speciation: SpeciationConfig
     population: PopulationConfig
     simulation: SimulationConfig
     logging: LoggingConfig
@@ -248,6 +268,7 @@ class SimConfig:
             network=_build(NetworkConfig, "network", data),
             apple=_build(AppleConfig, "apple", data),
             genome=_build(GenomeConfig, "genome", data),
+            speciation=_build(SpeciationConfig, "speciation", data),
             population=_build(PopulationConfig, "population", data),
             simulation=_build(SimulationConfig, "simulation", data),
             logging=_build(LoggingConfig, "logging", data),

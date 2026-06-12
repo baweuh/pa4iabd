@@ -216,6 +216,64 @@ def test_csv_header_and_rows(tmp_path):
     assert float(first[4]) >= 0.0
 
 
+def test_csv_has_evolutionary_columns(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        simulation={"ticks_per_second": 60, "max_ticks": 2, "seed": 42},
+        logging={
+            "csv_path": str(tmp_path / "metrics.csv"),
+            "log_interval_ticks": 1,
+            "best_genome_path": str(tmp_path / "best_genome.json"),
+        },
+    )
+    sim = Simulation(cfg, random.Random(11))
+    sim.run()
+
+    run_csv = Path(cfg.logging.csv_path).parent / sim.run_id / "metrics.csv"
+    rows = list(csv.reader(run_csv.open(encoding="utf-8")))
+    header = rows[0]
+    assert tuple(header) == CSV_HEADER
+    for col in (
+        "max_generation",
+        "mean_generation",
+        "species_count",
+        "mean_genetic_distance",
+        "mean_forage_rate",
+        "max_forage_rate",
+    ):
+        assert col in header
+    row = dict(zip(header, rows[1]))
+    assert int(row["max_generation"]) >= 0
+    assert int(row["species_count"]) >= 1  # a live population has at least one species
+    assert float(row["mean_genetic_distance"]) >= 0.0
+    assert float(row["mean_forage_rate"]) >= 0.0
+
+
+def test_reproduction_prioritises_highest_energy_at_cap(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 1.0,
+            "max_energy": 2.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+        },
+        population={"initial_size": 2, "min_size": 1, "max_size": 3},
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()  # no eating: keep the energy ordering we set
+    high, low = sim.population
+    high.energy, high.generation = cfg.agent.max_energy, 10
+    low.energy, low.generation = cfg.agent.reproduction_threshold + 0.05, 3
+
+    sim.tick()  # one free slot (3 - 2 survivors), both eligible
+
+    assert sim.total_reproductions == 1
+    generations = {a.generation for a in sim.population}
+    assert 11 in generations  # high-energy parent's child
+    assert 4 not in generations  # low-energy parent did NOT win the slot
+
+
 def test_csv_interval_respected(tmp_path):
     cfg = build_config(
         tmp_path,

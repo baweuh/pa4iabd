@@ -57,6 +57,7 @@ class Agent:
         config: SimConfig,
         environment: Environment,
         rng: Random,
+        generation: int = 0,
     ) -> None:
         self.genome = genome
         self.x, self.y = position
@@ -70,6 +71,9 @@ class Agent:
         self.energy: float = config.agent.initial_energy
         self.age: int = 0
         self.alive: bool = True
+        # Generations since a founder (founder == 0). Tracks evolutionary depth so
+        # adaptation across lineages is measurable; set by reproduce().
+        self.generation: int = generation
         # Senses used for the most recent decision (None before the first
         # activate()). Read by the renderer so drawn rays are exactly the rays
         # the agent acted on — and perception is never recomputed for display.
@@ -220,6 +224,7 @@ class Agent:
             self._config,
             self._env,
             self._rng,
+            generation=self.generation + 1,
         )
 
     def update(self) -> None:
