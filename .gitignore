@@ -8,3 +8,4 @@ venv/
 claude.md
 logs/*
 !logs/.gitkeep
+.claude
