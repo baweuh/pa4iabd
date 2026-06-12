@@ -17,8 +17,8 @@ agent:
   max_energy: 2.0
   energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
   max_age: 5000        # ticks
-  reproduction_threshold: 1.3     # one apple (+0.5) from start clears it (was 1.5)
-  reproduction_cost: 0.6          # parent keeps more cushion post-birth (was 0.75)
+  reproduction_threshold: 1.1     # ~1 apple from start → birth; high-r bootstrap (was 1.3)
+  reproduction_cost: 0.35         # more offspring per apple keeps the pop viable (was 0.6)
   end_of_life_ticks: 500
 
 sensors:
