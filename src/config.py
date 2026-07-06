@@ -56,6 +56,7 @@ class AgentConfig:
     reproduction_cost: float
     end_of_life_ticks: int
     max_turn_rate: float  # radians/tick for egocentric heading control
+    move_cost: float  # energy/tick per unit forward speed (0.0 = free movement)
 
     def __post_init__(self) -> None:
         _require_positive(
@@ -70,7 +71,7 @@ class AgentConfig:
             "end_of_life_ticks",
             "max_turn_rate",
         )
-        _require_non_negative(self, "energy_drain_per_tick")
+        _require_non_negative(self, "energy_drain_per_tick", "move_cost")
 
 
 @dataclass(frozen=True)

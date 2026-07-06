@@ -83,6 +83,9 @@ class Agent:
         # activate()). Read by the renderer so drawn rays are exactly the rays
         # the agent acted on — and perception is never recomputed for display.
         self.last_senses: list[float] | None = None
+        # Magnitude of the forward speed chosen on the last activate(); charged as
+        # activity metabolism in metabolize() (per tick — invariant n°2).
+        self._last_speed: float = 0.0
 
     # ------------------------------------------------------------------ #
     # Perception
@@ -163,6 +166,7 @@ class Agent:
         raw = self.network.activate(self.last_senses)
         # Output nodes are linear; apply tanh explicitly to bound speed and turn.
         speed = math.tanh(raw[0]) * self._config.agent.max_speed
+        self._last_speed = abs(speed)
         self.heading = (
             self.heading + math.tanh(raw[1]) * self._config.agent.max_turn_rate
         ) % (2.0 * math.pi)
@@ -178,8 +182,14 @@ class Agent:
     # Energy (per TICK — invariant n°2)
     # ------------------------------------------------------------------ #
     def metabolize(self) -> None:
-        """Pay the base drain and the gradient wall penalty for this tick."""
+        """Pay base drain, the gradient wall penalty, and activity cost this tick.
+
+        Activity cost (``move_cost × |forward speed|``) makes aimless wandering
+        expensive so directed, food-efficient foraging is selected for. With
+        ``move_cost == 0.0`` movement is free (legacy behaviour).
+        """
         self.energy -= self._config.agent.energy_drain_per_tick
+        self.energy -= self._config.agent.move_cost * self._last_speed
         self.energy -= self._env.penalty_at(self.x, self.y)
         self.energy = min(self.energy, self._config.agent.max_energy)
 
