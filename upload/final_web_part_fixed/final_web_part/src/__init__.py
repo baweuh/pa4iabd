@@ -1,0 +1,1 @@
+"""src/__init__.py — Rend le répertoire src importable comme package."""

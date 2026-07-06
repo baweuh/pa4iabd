@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Simulation ALife — Neuroévolution NEAT
+#  Tous les paramètres configurables. Zéro valeur hardcodée dans le code.
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Environnement ────────────────────────────────────────────────────
+environment:
+  env_width:              800       # Largeur environnement (pixels)
+  env_height:             800       # Hauteur environnement (pixels)
+  zone_width:             60        # Largeur zone pénalité murale (pixels)
+  zone_max_drain:         0.04      # Drain max en bord de mur (pommes-éq/tick)
+  food_count:             60        # Nombre de pommes simultanées (densité plus élevée)
+  food_respawn_delay:     40        # Ticks avant réapparition d'une pomme (plus rapide)
+  food_energy:            2.0       # Énergie gagnée par pomme mangée
+
+# ── Agents ───────────────────────────────────────────────────────────
+agents:
+  initial_population:     40        # Agents au démarrage (plus pour plus de diversité initiale)
+  max_population:         100       # Population maximale (cap)
+  max_speed:              2.5       # Vitesse max (pixels/tick) — légèrement plus rapide
+  base_drain_rate:        0.001     # Consommation passive très faible (les agents doivent MANGER pour se reproduire, pas survivre)
+  bootstrap_initial_energy: 5.0     # Énergie initiale (< seuil reproduction)
+  child_initial_energy:   3.0       # Énergie à la naissance (enfants)
+  reproduction_threshold: 6.0       # Seuil reproduction (doit manger 1 pomme: 5.0 + 2.0 = 7.0 > 6.0 ✓)
+  parent_energy_after_repro: 3.0    # Énergie parent après reproduction
+  max_lifespan:           8000      # Durée de vie maximale (ticks)
+  lifespan_warning_ticks: 500       # Ticks avant fin de vie → indicateur visuel
+  agent_radius:           8         # Rayon agent (pixels) — légèrement plus grand pour manger plus facilement
+  food_radius:            8         # Rayon pomme (pixels)
+  ray_max_range:          200       # Portée maximale des raycasts (pixels)
+  num_rays:               16        # Nombre de raycasts (espacement 22.5°)
+  spawn_radius_child:     120       # Rayon de spawn enfant autour du parent (pixels)
+  max_energy:             10.0      # Énergie maximale d'un agent (pour normalisation)
+  reproduction_cooldown:  30        # Ticks minimum entre deux reproductions d'un même agent
+  parent_selection_fraction: 0.5    # Fraction du top population éligible comme parent
+
+# ── Mutations ────────────────────────────────────────────────────────
+mutations:
+  mutate_weights_prob:    0.90      # Prob. globale de mutation de poids (très élevée pour diversité)
+  weight_perturb_prob:    0.80      # Prob. PAR POIDS d'être perturbé
+  weight_sigma:           0.5       # Magnitude bruit gaussien
+  weight_reset_prob:      0.10      # Prob. par poids d'être réinitialisé
+  add_connection_prob:    0.05      # Prob. d'ajouter une connexion
+  add_node_prob:          0.03      # Prob. d'ajouter un nœud hidden
+  remove_connection_prob: 0.01      # Prob. de retirer une connexion (bas pour garder la complexité)
+  remove_node_prob:       0.005     # Prob. de retirer un nœud hidden (bas)
+
+# ── NEAT ─────────────────────────────────────────────────────────────
+neat:
+  tournament_size:        3         # Taille du tournoi pour sélection parent
+  species_threshold:      4.0       # Seuil de distance de compatibilité (plus large = moins d'espèces)
+  compatibility_excess_coeff: 1.0   # Coefficient E dans δ
+  compatibility_disjoint_coeff: 1.0 # Coefficient D dans δ
+  compatibility_weight_coeff: 0.4   # Coefficient ΔW dans δ
+  crossover_rate:         0.75      # Probabilité de crossover (vs clone+mutate)
+  interspecies_mate_rate: 0.10      # Prob. d'accouplement interspécifique
+  elite_fraction:         0.1       # Fraction d'élites protégés par espèce
+  reproduction_interval:  5         # Ticks entre chaque cycle de reproduction (plus fréquent)
+
+# ── Simulation ───────────────────────────────────────────────────────
+simulation:
+  tick_rate:              60        # Ticks simulés par seconde (mode temps réel)
+  render_fps:             60        # FPS d'affichage cible
+  log_interval:           100       # Ticks entre chaque ligne CSV
+  seed:                   null      # null = graine aléatoire à chaque démarrage
+  headless:               false     # Désactiver le rendu (override CLI : --headless)
