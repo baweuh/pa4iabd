@@ -322,3 +322,57 @@ def test_csv_interval_respected(tmp_path):
     assert len(rows) == 1 + 2
     assert int(rows[1][0]) == 5
     assert int(rows[2][0]) == 10
+
+
+# ------------------------------------------------------------------ #
+# Structural reproduction (fecundity from cumulative foraging)
+# ------------------------------------------------------------------ #
+def test_reproduction_by_foraging_scales_with_apples(tmp_path):
+    # apples_per_offspring > 0 switches to foraging-coupled fecundity: offspring
+    # count comes from banked apple credit, not instantaneous energy.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "apples_per_offspring": 2.0,
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_cost": 0.1,
+        },
+        population={"initial_size": 2, "min_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()  # no eating this tick; we set credit by hand
+    rich, poor = sim.population
+    rich.energy = poor.energy = cfg.agent.max_energy
+    rich.generation, poor.generation = 10, 20
+    sim._repro_credit[rich] = 5.0  # 5 apples of credit → floor(5/2) = 2 children
+    sim._repro_credit[poor] = 1.0  # below one child's worth → 0 children
+
+    sim.tick()
+
+    gens = [a.generation for a in sim.population]
+    assert sim.total_reproductions == 2  # only the rich forager reproduced
+    assert gens.count(11) == 2  # both children came from the rich parent
+    assert 21 not in gens  # poor forager (credit 1 < 2) did not reproduce
+    assert sim._repro_credit[rich] == 1.0  # spent 2×2 credit, 1.0 remains
+
+
+def test_apples_per_offspring_zero_keeps_legacy_energy_path(tmp_path):
+    # Default 0.0 must preserve the energy-threshold reproduction (regression guard).
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "apples_per_offspring": 0.0,
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+        },
+        population={"initial_size": 1, "min_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(7))
+    sim.env.apples.clear()
+    sim.population[0].energy = 2.5  # high energy → energy-driven multi-offspring
+    sim._repro_credit[sim.population[0]] = 0.0  # no apple credit at all
+    sim.tick()
+    assert sim.total_reproductions >= 2  # legacy energy path still fires

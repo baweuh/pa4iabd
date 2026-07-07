@@ -503,3 +503,64 @@ fiabilité de 100 %.
 Le gain net documenté reste L1+L2 (condition nécessaire) + l'instrumentation
 (`tools/steer_probe.py`, `tools/run_and_probe.py`) + `move_cost` (impl. dans
 stash@{0}). La suite est structurelle, pas paramétrique.
+
+---
+
+## ÉTAPE 10 — Changement STRUCTUREL : reproduction ∝ pommes cumulées (2026-07-07)
+
+Après l'échec des réglages paramétriques (ÉTAPES 5-9), on implémente le vrai
+changement de mécanisme prédit par le diagnostic : **découpler la fécondité de
+l'énergie instantanée et la coupler au fourrage cumulé.**
+
+### Implémentation
+
+Param `agent.apples_per_offspring` (défaut 0.0 = legacy énergie ; >0 = structural).
+Quand >0, chaque agent banque +1 crédit de reproduction par pomme mangée et dépense
+`apples_per_offspring` crédit par enfant → **nombre de descendants ≈ pommes mangées /
+K**, linéaire en compétence, sans plafond d'énergie. Au plafond de population, les
+mieux-nourris se reproduisent d'abord (priorité par crédit). Deux stratégies dans
+`simulation.py` (`_reproduce_by_energy` legacy / `_reproduce_by_foraging`). Le parent
+paie toujours `reproduction_cost` énergie par enfant. **143 tests verts (2 nouveaux),
+black + pylint 10/10.**
+
+### Résultats (steering moyen population / % fourrageurs, 3 seeds)
+
+| Config | seed 42 | seed 7 | seed 123 | Lecture |
+|--------|---------|--------|----------|---------|
+| **apple_repro** (K=3, survie libre, 15k) | 37 % | **4 %** | 90 % | viable, sélection forte, mais seed 7 échoue |
+| **apple_repro + L2** (drain 0.0015, 15k) | 21 % | **4 %** | 61 % | le drain dur **dégrade** (comme partout) |
+| **apple_repro + bigpop** (grande pop N~2×, 15k) | 98 % | **86 %** | 43 % | **1ʳᵉ config sans échec — seed 7 SAUVÉ** |
+| **apple_repro + bigpop** (30k, stabilité) | 86 % | **84 %** | 56 % | **TIENT — pas d'érosion** |
+
+**apple_repro seul ne suffit pas** : seed 7 reste à 4 %. Avec survie libre, les
+mutants non-fourrageurs des bons parents **survivent** (longévité) et diluent la
+population, même s'ils ne se reproduisent pas (le champion seed 7 fourrage pourtant :
+record 39, max steer +0,56 — c'est la population qui est diluée).
+
+**apple_repro + bigpop = première configuration robuste ET stable.** Les 3 seeds
+fourragent durablement (30k : 86/84/56 %), tous à steering moyen positif ; **seed 7 —
+bloqué 4-14 % sous TOUS les autres régimes — atteint 84 % et tient.** Différence
+décisive avec le bigpop à repro-énergie (ÉTAPE 8, qui s'érodait 58→25 %) : la
+reproduction apple-gated **ancre** le fourrage comme **attracteur stable** (un non-
+fourrageur ne se reproduit jamais → le pool génétique reste fourrageur), au lieu d'un
+état transitoire.
+
+### Conclusion — la thèse de l'audit v3 est validée
+
+Le blocage n'était ni la représentation (repère de sortie) ni la viabilité, mais
+**(a) le couplage sélection↔compétence** trop faible et **(b) la dérive fondatrice**.
+Les deux se traitent ENSEMBLE, structurellement :
+- **apple-gated reproduction** → sélection directe (fourrager = se reproduire) ;
+- **grande population** → faible dérive.
+
+Aucun seul ne suffit (apple_repro seul : seed 7 = 4 % ; bigpop-énergie seul : érode).
+Ensemble ils produisent la **première émergence de fourrage robuste (3 seeds) et
+stable (30k)** de toute l'investigation. La variance inter-seed subsiste (56-86 %)
+mais tous fourragent fortement et durablement.
+
+### Décision défaut
+
+`apples_per_offspring` reste à 0.0 dans `config/default.yaml` (ajout neutre). La config
+gagnante `apple_repro_bigpop` (grande pop + apple-gated) est conservée comme référence
+d'expérience ; sa promotion en défaut change la taille du monde/population et est à
+décider explicitement.

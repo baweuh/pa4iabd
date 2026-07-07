@@ -22,6 +22,7 @@ agent:
   end_of_life_ticks: 500
   max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
   move_cost: 0.0003
+  apples_per_offspring: 0.0      # >0 = fecundity from cumulative apples (structural)
 
 sensors:
   num_rays: 16

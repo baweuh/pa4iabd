@@ -57,6 +57,10 @@ class AgentConfig:
     end_of_life_ticks: int
     max_turn_rate: float  # radians/tick for egocentric heading control
     move_cost: float  # energy/tick per unit forward speed (0.0 = free movement)
+    # Structural selection: apples of "reproduction credit" spent per offspring.
+    # 0.0 disables it -> legacy energy-threshold reproduction. When > 0, fecundity
+    # scales with CUMULATIVE apples eaten (competence), not instantaneous energy.
+    apples_per_offspring: float
 
     def __post_init__(self) -> None:
         _require_positive(
@@ -71,7 +75,9 @@ class AgentConfig:
             "end_of_life_ticks",
             "max_turn_rate",
         )
-        _require_non_negative(self, "energy_drain_per_tick", "move_cost")
+        _require_non_negative(
+            self, "energy_drain_per_tick", "move_cost", "apples_per_offspring"
+        )
 
 
 @dataclass(frozen=True)

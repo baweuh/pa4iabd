@@ -45,9 +45,9 @@ COLOR_END_OF_LIFE = (255, 0, 0)  # agents fade toward this over their final tick
 COLOR_RAY_WALL = (0, 200, 220)  # cyan
 COLOR_RAY_APPLE = (255, 165, 0)  # orange
 COLOR_RAY_NOTHING = (160, 160, 160)  # light grey
-RAY_ALPHA_HIT = 70              # non-selected agents: only rays that hit something
-RAY_ALPHA_SELECTED_HIT = 200    # selected agent: hit rays
-RAY_ALPHA_SELECTED_NOTHING = 35 # selected agent: nothing-rays (faint)
+RAY_ALPHA_HIT = 70  # non-selected agents: only rays that hit something
+RAY_ALPHA_SELECTED_HIT = 200  # selected agent: hit rays
+RAY_ALPHA_SELECTED_NOTHING = 35  # selected agent: nothing-rays (faint)
 RAY_WIDTH = 1
 
 COLOR_AGENT_SELECTED = (255, 255, 255)
@@ -210,9 +210,7 @@ class Renderer:
         for agent in self.sim.population:
             dx, dy = agent.x - px, agent.y - py
             if dx * dx + dy * dy <= r * r:
-                self._selected_agent = (
-                    None if agent is self._selected_agent else agent
-                )
+                self._selected_agent = None if agent is self._selected_agent else agent
                 return
         self._selected_agent = None
 
@@ -287,16 +285,18 @@ class Renderer:
         senses = agent.last_senses or agent.sense()
         ax, ay = agent.x, agent.y
         for i, angle in enumerate(angles):
-            apple_flag = senses[n + i]       # [16..31]
-            wall_flag = senses[2 * n + i]    # [32..47]
+            apple_flag = senses[n + i]  # [16..31]
+            wall_flag = senses[2 * n + i]  # [32..47]
             is_nothing = apple_flag == 0.0 and wall_flag == 0.0
             if not is_selected and is_nothing:
                 continue
             d = senses[i] * max_dist
             pygame.draw.line(
                 self._overlay,
-                (*self._ray_color(apple_flag, wall_flag),
-                 self._ray_alpha(is_selected, is_nothing)),
+                (
+                    *self._ray_color(apple_flag, wall_flag),
+                    self._ray_alpha(is_selected, is_nothing),
+                ),
                 (ax, ay),
                 (ax + d * math.cos(angle), ay + d * math.sin(angle)),
                 RAY_WIDTH,

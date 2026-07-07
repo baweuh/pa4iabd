@@ -73,6 +73,10 @@ class Simulation:
         self.record_apples: int = 0
         # Lifetime apples eaten, per living agent (drives record + best genome).
         self._apples_eaten: dict[Agent, int] = {}
+        # Unspent reproduction credit (apples eaten minus apples spent on offspring).
+        # Only used when agent.apples_per_offspring > 0 (structural foraging-coupled
+        # fecundity); mirrors the lifecycle of _apples_eaten.
+        self._repro_credit: dict[Agent, float] = {}
         # Timestamp shared by all files produced by this run (YYYY-MM-DD_HHMMSS).
         # One folder per run under the configured log directory.
         self._run_id: str = datetime.now().strftime("%Y-%m-%d_%H%M%S")
@@ -84,6 +88,7 @@ class Simulation:
         ]
         for agent in self.population:
             self._apples_eaten[agent] = 0
+            self._repro_credit[agent] = 0.0
 
         self._csv_file: TextIO | None = None
         self._csv_writer = None
@@ -144,7 +149,9 @@ class Simulation:
             agent.age += 1
             vx, vy = agent.activate()
             agent.move(vx, vy)
-            self._apples_eaten[agent] += agent.eat()
+            eaten = agent.eat()
+            self._apples_eaten[agent] += eaten
+            self._repro_credit[agent] += eaten
 
         # Stage 2 — metabolism and death marking.
         for agent in self.population:
@@ -165,23 +172,16 @@ class Simulation:
         slots = self._config.population.max_size - len(survivors)
         children: list[Agent] = []
         if slots > 0:
-            eligible = sorted(
-                (a for a in survivors if a.can_reproduce()),
-                key=lambda a: a.energy,
-                reverse=True,
-            )
-            for agent in eligible:
-                while agent.can_reproduce() and len(children) < slots:
-                    child = agent.reproduce()
-                    self._apples_eaten[child] = 0
-                    children.append(child)
-                    self.total_reproductions += 1
-                if len(children) >= slots:
-                    break
+            per_child = self._config.agent.apples_per_offspring
+            if per_child > 0.0:
+                children = self._reproduce_by_foraging(survivors, slots, per_child)
+            else:
+                children = self._reproduce_by_energy(survivors, slots)
 
         dead = [a for a in self.population if not a.alive]
         for agent in dead:
             del self._apples_eaten[agent]
+            del self._repro_credit[agent]
         self.population = [a for a in self.population if a.alive] + children
 
         # Stage 5 — record check + best-genome dump.
@@ -207,6 +207,67 @@ class Simulation:
                 self.tick()
         finally:
             self._close_csv()
+
+    # ------------------------------------------------------------------ #
+    # Reproduction strategies (selected by agent.apples_per_offspring)
+    # ------------------------------------------------------------------ #
+    def _reproduce_by_energy(self, survivors: list[Agent], slots: int) -> list[Agent]:
+        """Legacy reproduction: energy-threshold eligibility, priority by energy.
+
+        Highest-energy eligible agents fill the scarce slots first; fecundity per
+        agent is bounded by how many times its energy exceeds the threshold.
+        """
+        children: list[Agent] = []
+        eligible = sorted(
+            (a for a in survivors if a.can_reproduce()),
+            key=lambda a: a.energy,
+            reverse=True,
+        )
+        for agent in eligible:
+            while agent.can_reproduce() and len(children) < slots:
+                children.append(self._birth(agent))
+            if len(children) >= slots:
+                break
+        return children
+
+    def _reproduce_by_foraging(
+        self, survivors: list[Agent], slots: int, per_child: float
+    ) -> list[Agent]:
+        """Structural reproduction: fecundity driven by CUMULATIVE foraging.
+
+        Each agent banks +1 reproduction credit per apple eaten and spends
+        ``per_child`` credit per offspring, so lifetime offspring ≈ apples_eaten /
+        per_child — reproductive success scales linearly with foraging competence,
+        decoupled from the instantaneous-energy cap. At the cap the best-fed
+        foragers fill the slots first (priority by unspent credit). The parent still
+        pays ``reproduction_cost`` energy per child (a birth is not free) and stops
+        once out of energy, so a starving forager cannot cash in credit it can't fuel.
+        """
+        children: list[Agent] = []
+        eligible = sorted(
+            (a for a in survivors if self._repro_credit[a] >= per_child),
+            key=lambda a: self._repro_credit[a],
+            reverse=True,
+        )
+        for agent in eligible:
+            while (
+                self._repro_credit[agent] >= per_child
+                and agent.energy > 0.0
+                and len(children) < slots
+            ):
+                self._repro_credit[agent] -= per_child
+                children.append(self._birth(agent))
+            if len(children) >= slots:
+                break
+        return children
+
+    def _birth(self, parent: Agent) -> Agent:
+        """Spawn one child from ``parent``, register its bookkeeping, count it."""
+        child = parent.reproduce()
+        self._apples_eaten[child] = 0
+        self._repro_credit[child] = 0.0
+        self.total_reproductions += 1
+        return child
 
     # ------------------------------------------------------------------ #
     # Record / best genome
@@ -241,6 +302,7 @@ class Simulation:
         )
         self.population.append(elite)
         self._apples_eaten[elite] = 0
+        self._repro_credit[elite] = 0.0
 
     def _run_dir(self) -> Path:
         """Return (and create) the per-run log folder: logs/<run_id>/."""
