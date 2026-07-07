@@ -156,6 +156,7 @@ def test_reproduction_increments_and_respects_cap(tmp_path):
             "initial_energy": 1.0,
             "reproduction_threshold": 0.5,
             "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,  # energy-based reproduction
         },
         population={"initial_size": 5, "min_size": 1, "max_size": 6},
     )
@@ -257,6 +258,7 @@ def test_reproduction_prioritises_highest_energy_at_cap(tmp_path):
             "max_energy": 2.0,
             "reproduction_threshold": 0.5,
             "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,  # energy-based reproduction
         },
         population={"initial_size": 2, "min_size": 1, "max_size": 3},
     )
@@ -293,6 +295,7 @@ def test_multi_offspring_high_energy(tmp_path):
             "max_energy": 3.0,
             "reproduction_threshold": 0.5,
             "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,  # energy-based reproduction
         },
         population={"initial_size": 1, "min_size": 1, "max_size": 10},
     )

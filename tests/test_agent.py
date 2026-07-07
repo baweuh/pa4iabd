@@ -83,7 +83,8 @@ def test_last_senses_cached_on_activate(cfg, env, genome):
 def test_energy_input_normalised(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
     inputs = agent.sense()
-    assert inputs[-1] == pytest.approx(cfg.agent.initial_energy / cfg.agent.max_energy)
+    n = cfg.sensors.num_rays
+    assert inputs[4 * n] == pytest.approx(cfg.agent.initial_energy / cfg.agent.max_energy)
 
 
 def test_ray_hits_wall(cfg, env, genome):
@@ -92,9 +93,10 @@ def test_ray_hits_wall(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width - 50.0, cfg.world.height / 2))
     inputs = agent.sense()
     n = cfg.sensors.num_rays
-    assert inputs[0] == pytest.approx(50.0 / cfg.sensors.max_distance)
-    assert inputs[n + 0] == 0.0    # apple_flag = 0
-    assert inputs[2 * n + 0] == 1.0  # wall_flag = 1
+    assert inputs[0] == pytest.approx(1.0)                               # apple_dist = max (no apple)
+    assert inputs[n + 0] == pytest.approx(50.0 / cfg.sensors.max_distance)  # wall_dist
+    assert inputs[2 * n + 0] == 0.0                                      # apple_flag = 0
+    assert inputs[3 * n + 0] == 1.0                                      # wall_flag = 1
 
 
 def test_ray_hits_apple(cfg, env, genome):
@@ -105,9 +107,10 @@ def test_ray_hits_apple(cfg, env, genome):
     inputs = agent.sense()
     n = cfg.sensors.num_rays
     expected = (100.0 - cfg.apple.radius) / cfg.sensors.max_distance
-    assert inputs[0] == pytest.approx(expected)
-    assert inputs[n + 0] == 1.0    # apple_flag = 1
-    assert inputs[2 * n + 0] == 0.0  # wall_flag = 0
+    assert inputs[0] == pytest.approx(expected)   # apple_dist
+    assert inputs[n + 0] == pytest.approx(1.0)    # wall_dist = max (wall far away)
+    assert inputs[2 * n + 0] == 1.0               # apple_flag = 1
+    assert inputs[3 * n + 0] == 0.0               # wall_flag = 0
 
 
 def test_ray_sees_nothing(cfg, env, genome):
@@ -117,19 +120,25 @@ def test_ray_sees_nothing(cfg, env, genome):
     inputs = agent.sense()
     n = cfg.sensors.num_rays
     for i in range(n):
-        assert inputs[i] == pytest.approx(1.0)  # max normalised distance
-        assert inputs[n + i] == 0.0      # apple_flag = 0
-        assert inputs[2 * n + i] == 0.0  # wall_flag = 0
+        assert inputs[i] == pytest.approx(1.0)       # apple_dist = max (no apple)
+        assert inputs[n + i] == pytest.approx(1.0)   # wall_dist = max (walls all >200px)
+        assert inputs[2 * n + i] == 0.0              # apple_flag = 0
+        assert inputs[3 * n + i] == 0.0              # wall_flag = 0
 
 
 def test_apple_occludes_farther_wall(cfg, env, genome):
-    # Apple closer than the wall along +x must win the first-hit.
+    # Apple 50px ahead, wall 150px ahead: both detected on independent channels.
     agent_x = cfg.world.width - 150.0
     cy = cfg.world.height / 2
     env.apples[:] = [Apple(agent_x + 50.0, cy)]  # apple 50px; wall 150px
     agent = make_agent(cfg, env, genome, (agent_x, cy))
     inputs = agent.sense()
-    assert inputs[cfg.sensors.num_rays + 0] == 1.0  # apple_flag wins
+    n = cfg.sensors.num_rays
+    apple_d = inputs[0]           # apple_dist (normalised)
+    wall_d = inputs[n + 0]        # wall_dist (normalised)
+    assert inputs[2 * n + 0] == 1.0   # apple_flag = 1
+    assert inputs[3 * n + 0] == 1.0   # wall_flag = 1 (independently visible)
+    assert apple_d < wall_d            # apple is closer
 
 
 # ------------------------------------------------------------------ #

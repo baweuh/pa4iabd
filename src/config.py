@@ -236,11 +236,11 @@ class SimConfig:
 
     def __post_init__(self) -> None:
         # Cross-section invariants.
-        expected_inputs = 3 * self.sensors.num_rays + 1
+        expected_inputs = 4 * self.sensors.num_rays + 3
         if self.network.num_inputs != expected_inputs:
             raise ConfigError(
                 f"network.num_inputs ({self.network.num_inputs}) must equal "
-                f"3 * sensors.num_rays + 1 ({expected_inputs})"
+                f"4 * sensors.num_rays + 3 ({expected_inputs})"
             )
         if self.network.num_outputs != 2:
             raise ConfigError(

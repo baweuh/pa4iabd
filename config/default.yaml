@@ -3,8 +3,8 @@
 # Energy is expressed in apple-equivalent units (invariant n°2).
 
 world:
-  width: 1600          # pixels
-  height: 900          # pixels
+  width: 2000          # pixels
+  height: 1125         # pixels
 
 penalty_zone:
   width: 100           # thickness from the wall, in pixels
@@ -22,7 +22,7 @@ agent:
   end_of_life_ticks: 500
   max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
   move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
-  apples_per_offspring: 0.0      # >0 = fecundity from cumulative apples (structural)
+  apples_per_offspring: 5.0      # >0 = fecundity from cumulative apples (structural)
 
 sensors:
   num_rays: 16
@@ -30,12 +30,12 @@ sensors:
   fov: 360             # degrees
 
 network:
-  num_inputs: 49       # 3 * num_rays + 1 (dist + apple_flag + wall_flag per ray, + energy)
+  num_inputs: 67       # 4*num_rays + 3 : apple_dist, wall_dist, apple_flag, wall_flag (×16) + energy + actual_speed + apples_in_view
   num_outputs: 2       # vx_brut, vy_brut (normalised post-output)
   activation: "tanh"
 
 apple:
-  count: 80            # denser food → random walkers stumble on it sooner (was 50)
+  count: 125           # scaled with map area 1600×900→2000×1125 (+56% surface)
   radius: 5
   energy: 0.5
   respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
@@ -76,5 +76,5 @@ logging:
 
 render:
   fps: 60
-  window_width: 1600
-  window_height: 900
+  window_width: 2000
+  window_height: 1125

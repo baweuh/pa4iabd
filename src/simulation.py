@@ -151,6 +151,7 @@ class Simulation:
             agent.move(vx, vy)
             eaten = agent.eat()
             self._apples_eaten[agent] += eaten
+            agent.apples_eaten += eaten
             self._repro_credit[agent] += eaten
 
         # Stage 2 — metabolism and death marking.

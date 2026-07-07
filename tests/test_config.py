@@ -30,7 +30,7 @@ def test_load_default_yaml() -> None:
 
 def test_inputs_consistency() -> None:
     cfg = SimConfig.from_yaml(DEFAULT_YAML)
-    assert cfg.network.num_inputs == 3 * cfg.sensors.num_rays + 1
+    assert cfg.network.num_inputs == 4 * cfg.sensors.num_rays + 3
 
 
 def test_frozen() -> None:
@@ -41,7 +41,7 @@ def test_frozen() -> None:
 
 def test_from_dict(raw: dict) -> None:
     cfg = SimConfig.from_dict(raw)
-    assert cfg.world.width == 1600
+    assert cfg.world.width == 2000
     assert cfg.population.initial_size == 100
 
 

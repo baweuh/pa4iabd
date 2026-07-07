@@ -80,6 +80,31 @@ FONT_PX = 20
 SPEED_MIN = 1
 SPEED_MAX = 32
 
+# Neural-network visualisation panel (toggled with N key).
+NET_PANEL_W = 320
+NET_PANEL_H = 260
+NET_PANEL_MARGIN = 12
+NET_VIZ_PAD = 14
+NET_INPUT_R = 2
+NET_HIDDEN_R = 5
+NET_OUTPUT_R = 7
+COLOR_NET_BG = (12, 12, 20, 210)
+COLOR_NET_HIDDEN = (200, 200, 90)
+COLOR_NET_OUTPUT = (90, 220, 90)
+COLOR_NET_POS = (80, 200, 80)
+COLOR_NET_NEG = (200, 80, 80)
+# Input node colours by sensor group (matches 67-input layout).
+_NET_INPUT_GROUPS = [
+    (255, 150,  50),   # [0..n-1]     apple_dist
+    ( 50, 200, 230),   # [n..2n-1]    wall_dist
+    (255, 210, 120),   # [2n..3n-1]   apple_flag
+    (120, 230, 250),   # [3n..4n-1]   wall_flag
+    (100, 230, 100),   # [4n]         energy
+    (230, 230,  80),   # [4n+1]       actual_speed
+    (230, 230, 230),   # [4n+2]       apples_in_view
+]
+_NET_OUTPUT_LABELS = ["spd", "trn"]
+
 # Button identifiers, left to right.
 _BTN_FAST_DOWN = "<<"
 _BTN_DOWN = "<"
@@ -116,6 +141,7 @@ class Renderer:
         pygame.display.set_caption("ALife Neuroevolution")
         self._clock = pygame.time.Clock()
         self._font = pygame.font.SysFont("monospace", FONT_PX)
+        self._small_font = pygame.font.SysFont("monospace", 13)
 
         # Reusable per-frame translucent layer for rays, penalty band and bars.
         self._overlay = pygame.Surface(
@@ -127,6 +153,7 @@ class Renderer:
         self.paused = False
         self._running = True
         self._selected_agent = None
+        self._show_network = False
 
         self._buttons: dict[str, pygame.Rect] = self._build_buttons()
 
@@ -192,6 +219,10 @@ class Renderer:
             pygame.K_KP_MINUS,  # pylint: disable=no-member
         ):
             self._speed_down()
+        elif key in (pygame.K_LEFT, pygame.K_RIGHT):  # pylint: disable=no-member
+            self._select_adjacent(-1 if key == pygame.K_LEFT else +1)  # pylint: disable=no-member
+        elif key == pygame.K_n:  # pylint: disable=no-member
+            self._show_network = not self._show_network
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
         """Dispatch a left click to a control button or select/deselect an agent."""
@@ -214,6 +245,17 @@ class Renderer:
                 return
         self._selected_agent = None
 
+    def _select_adjacent(self, delta: int) -> None:
+        """Select the next (+1) or previous (-1) agent in the population."""
+        pop = self.sim.population
+        if not pop:
+            return
+        if self._selected_agent not in pop:
+            self._selected_agent = pop[0] if delta > 0 else pop[-1]
+            return
+        idx = pop.index(self._selected_agent)
+        self._selected_agent = pop[(idx + delta) % len(pop)]
+
     def _speed_up(self) -> None:
         """Double the ticks-per-frame, capped at ``SPEED_MAX``."""
         self.ticks_per_frame = min(SPEED_MAX, self.ticks_per_frame * 2)
@@ -225,6 +267,103 @@ class Renderer:
     # ------------------------------------------------------------------ #
     # Drawing
     # ------------------------------------------------------------------ #
+    def _draw_network_panel(self) -> None:
+        """Draw a network diagram for the selected agent (toggle: N key).
+
+        Input nodes are colour-coded by sensor group; hidden nodes are gold;
+        output nodes are green.  Connection colour encodes weight sign
+        (green=positive, red=negative); alpha encodes magnitude.
+        """
+        agent = self._selected_agent
+        if agent is None:
+            return
+        genome = agent.genome
+        win_w = self._config.render.window_width
+        win_h = self._config.render.window_height
+        px = win_w - NET_PANEL_W - NET_PANEL_MARGIN
+        py = win_h - NET_PANEL_H - NET_PANEL_MARGIN
+
+        panel = pygame.Surface(
+            (NET_PANEL_W, NET_PANEL_H), pygame.SRCALPHA  # pylint: disable=no-member
+        )
+        panel.fill(COLOR_NET_BG)
+
+        title = self._small_font.render(
+            f"Network  [N]  nodes:{len(genome.nodes)}  "
+            f"conn:{sum(1 for c in genome.connections if c.enabled)}",
+            True, (200, 200, 200),
+        )
+        panel.blit(title, (NET_VIZ_PAD, 4))
+
+        inner_y0 = NET_VIZ_PAD + 18
+        inner_h  = NET_PANEL_H - inner_y0 - NET_VIZ_PAD
+        col_in   = NET_VIZ_PAD + NET_INPUT_R + 1
+        col_out  = NET_PANEL_W - NET_VIZ_PAD - NET_OUTPUT_R - 1
+        col_hid  = (col_in + col_out) // 2
+
+        input_nodes  = sorted([n for n in genome.nodes if n.node_type == "input"],
+                               key=lambda n: n.node_id)
+        hidden_nodes = sorted([n for n in genome.nodes if n.node_type == "hidden"],
+                               key=lambda n: n.node_id)
+        output_nodes = sorted([n for n in genome.nodes if n.node_type == "output"],
+                               key=lambda n: n.node_id)
+
+        n_rays = self._config.sensors.num_rays
+
+        def _input_color(node_id: int) -> tuple[int, int, int]:
+            groups = [n_rays, n_rays, n_rays, n_rays, 1, 1, 1]
+            boundary = 0
+            for idx, size in enumerate(groups):
+                if node_id < boundary + size:
+                    return _NET_INPUT_GROUPS[idx]
+                boundary += size
+            return (150, 150, 200)
+
+        def _node_pos(node) -> tuple[int, int]:
+            if node.node_type == "input":
+                k = input_nodes.index(node)
+                total = max(len(input_nodes) - 1, 1)
+                return col_in, inner_y0 + int(k / total * inner_h)
+            if node.node_type == "output":
+                k = output_nodes.index(node)
+                step = inner_h // (len(output_nodes) + 1)
+                return col_out, inner_y0 + step * (k + 1)
+            k = hidden_nodes.index(node)
+            step = inner_h // (len(hidden_nodes) + 1)
+            return col_hid, inner_y0 + step * (k + 1)
+
+        node_map = {n.node_id: n for n in genome.nodes}
+        wmax = max(self._config.genome.weight_max, 1e-9)
+
+        for conn in genome.connections:
+            if not conn.enabled:
+                continue
+            if conn.in_node not in node_map or conn.out_node not in node_map:
+                continue
+            alpha = int(min(abs(conn.weight) / wmax, 1.0) * 160) + 30
+            col = (*COLOR_NET_POS, alpha) if conn.weight >= 0 else (*COLOR_NET_NEG, alpha)
+            pygame.draw.line(panel, col, _node_pos(node_map[conn.in_node]),
+                             _node_pos(node_map[conn.out_node]), 1)
+
+        for node in input_nodes:
+            pygame.draw.circle(panel, _input_color(node.node_id), _node_pos(node), NET_INPUT_R)
+
+        for node in hidden_nodes:
+            pos = _node_pos(node)
+            pygame.draw.circle(panel, COLOR_NET_HIDDEN, pos, NET_HIDDEN_R)
+            pygame.draw.circle(panel, (255, 255, 255, 80), pos, NET_HIDDEN_R, 1)
+
+        for i, node in enumerate(output_nodes):
+            pos = _node_pos(node)
+            pygame.draw.circle(panel, COLOR_NET_OUTPUT, pos, NET_OUTPUT_R)
+            lbl = self._small_font.render(
+                _NET_OUTPUT_LABELS[i] if i < len(_NET_OUTPUT_LABELS) else str(i),
+                True, (0, 0, 0),
+            )
+            panel.blit(lbl, (pos[0] - lbl.get_width() // 2, pos[1] - lbl.get_height() // 2))
+
+        self._screen.blit(panel, (px, py))
+
     def _draw(self) -> None:
         """Render one full frame: world, agents, UI, then present it."""
         self._screen.fill(COLOR_BACKGROUND)
@@ -236,6 +375,8 @@ class Renderer:
         self._draw_agents()
         self._draw_ui()
         self._draw_hud()
+        if self._show_network:
+            self._draw_network_panel()
 
         self._screen.blit(self._overlay, (0, 0))
         pygame.display.flip()
@@ -271,26 +412,41 @@ class Renderer:
         """
         if self._selected_agent not in self.sim.population:
             self._selected_agent = None
-
+        if self._selected_agent is None:
+            pop = self.sim.population
+            if not pop:
+                return
+            self._selected_agent = max(
+                pop, key=lambda a: a.apples_eaten / max(a.age, 1)
+            )
         num_rays = self._config.sensors.num_rays
         fov = self._config.sensors.fov
-        for agent in self.sim.population:
-            angles = ray_angles(num_rays, fov, agent.heading)
-            self._draw_agent_rays(agent, angles, agent is self._selected_agent)
+        angles = ray_angles(num_rays, fov, self._selected_agent.heading)
+        self._draw_agent_rays(self._selected_agent, angles, True)
 
     def _draw_agent_rays(self, agent, angles: list[float], is_selected: bool) -> None:
-        """Draw one agent's rays onto the overlay (49-input encoding)."""
+        """Draw one agent's rays onto the overlay (67-input encoding).
+
+        New layout: apple_dist [0..n-1], wall_dist [n..2n-1],
+        apple_flag [2n..3n-1], wall_flag [3n..4n-1].
+        When both apple and wall are on the same ray, draws to the nearest hit.
+        """
         n = len(angles)
         max_dist = self._config.sensors.max_distance
         senses = agent.last_senses or agent.sense()
         ax, ay = agent.x, agent.y
         for i, angle in enumerate(angles):
-            apple_flag = senses[n + i]  # [16..31]
-            wall_flag = senses[2 * n + i]  # [32..47]
+            apple_flag = senses[2 * n + i]   # [32..47]
+            wall_flag  = senses[3 * n + i]   # [48..63]
             is_nothing = apple_flag == 0.0 and wall_flag == 0.0
             if not is_selected and is_nothing:
                 continue
-            d = senses[i] * max_dist
+            if apple_flag:
+                d = senses[i] * max_dist           # apple_dist
+            elif wall_flag:
+                d = senses[n + i] * max_dist       # wall_dist
+            else:
+                d = max_dist
             pygame.draw.line(
                 self._overlay,
                 (
@@ -412,21 +568,46 @@ class Renderer:
         label = self._font.render(text, True, COLOR_TEXT)
         self._screen.blit(label, label.get_rect(center=rect.center))
 
+    def _convergence_coeff(self) -> float | None:
+        """cos(angle between selected agent heading and nearest apple). ±1."""
+        agent = self._selected_agent
+        if agent is None or not self.sim.env.apples:
+            return None
+        nearest = min(
+            self.sim.env.apples,
+            key=lambda a: math.hypot(a.x - agent.x, a.y - agent.y),
+        )
+        angle_to = math.atan2(nearest.y - agent.y, nearest.x - agent.x)
+        return math.cos(angle_to - agent.heading)
+
     def _draw_hud(self) -> None:
-        """Draw the two bottom-left status lines."""
+        """Draw three bottom-left status lines."""
         line1 = (
-            f"Population: {self.sim.population_size}/"
-            f"{self._config.population.initial_size} | "
-            f"Food: {self.sim.food_available}/{self._config.apple.count} active"
+            f"Pop: {self.sim.population_size}/{self._config.population.max_size} | "
+            f"Food: {self.sim.food_available}/{self._config.apple.count}"
         )
         line2 = (
-            f"Best fitness: {self.sim.record_apples} | "
-            f"Tick: {self.sim.tick_count} | Speed: {self.ticks_per_frame}x"
+            f"Record: {self.sim.record_apples} apples | "
+            f"Tick: {self.sim.tick_count} | {self.ticks_per_frame}x"
         )
-        surf1 = self._font.render(line1, True, COLOR_TEXT)
-        surf2 = self._font.render(line2, True, COLOR_TEXT)
+        surfs = [
+            self._font.render(line1, True, COLOR_TEXT),
+            self._font.render(line2, True, COLOR_TEXT),
+        ]
+        agent = self._selected_agent
+        if agent is not None:
+            conv = self._convergence_coeff()
+            conv_str = f"{conv:+.2f}" if conv is not None else " n/a"
+            line3 = (
+                f"Sel | eaten:{agent.apples_eaten} "
+                f"age:{agent.age} "
+                f"conv:{conv_str} "
+                f"spd:{agent._last_actual_speed:.2f}"  # pylint: disable=protected-access
+            )
+            surfs.append(self._font.render(line3, True, (180, 220, 255)))
+
         height = self._config.render.window_height
-        y2 = height - HUD_MARGIN - surf2.get_height()
-        y1 = y2 - HUD_LINE_GAP - surf1.get_height()
-        self._screen.blit(surf1, (HUD_MARGIN, y1))
-        self._screen.blit(surf2, (HUD_MARGIN, y2))
+        y = height - HUD_MARGIN - surfs[-1].get_height()
+        for surf in reversed(surfs):
+            self._screen.blit(surf, (HUD_MARGIN, y))
+            y -= HUD_LINE_GAP + surf.get_height()

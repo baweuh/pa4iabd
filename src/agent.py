@@ -28,11 +28,6 @@ from src.environment import Environment
 from src.genome import Genome
 from src.network import NeuralNetwork
 
-# Internal hit-type tokens used by _cast_ray (not exposed as NN inputs directly).
-_TYPE_NOTHING = 0.0
-_TYPE_APPLE = 0.5
-_TYPE_WALL = 1.0
-
 
 def ray_angles(num_rays: int, fov_degrees: float, heading: float = 0.0) -> list[float]:
     """Egocentric ray angles (radians) centred on ``heading``.
@@ -86,72 +81,71 @@ class Agent:
         # Magnitude of the forward speed chosen on the last activate(); charged as
         # activity metabolism in metabolize() (per tick — invariant n°2).
         self._last_speed: float = 0.0
+        # Proprioception: actual normalised displacement from the previous tick.
+        # 0.0 = fully blocked by a wall; 1.0 = moved at full max_speed.
+        self._last_actual_speed: float = 0.0
+        # Lifetime apples eaten — updated by Simulation each tick, read by the renderer
+        # to identify the best forager (forage_rate = apples_eaten / max(age, 1)).
+        self.apples_eaten: int = 0
 
     # ------------------------------------------------------------------ #
     # Perception
     # ------------------------------------------------------------------ #
     def sense(self) -> list[float]:
-        """Return 49 NN inputs: 16 distances, 16 apple flags, 16 wall flags, 1 energy.
+        """Return 67 NN inputs.
 
-        Layout (CLAUDE.md): ``[0..15]`` normalised distances ``[0→1]`` (rays
-        centred on heading), ``[16..31]`` apple-presence flags (0.0/1.0),
-        ``[32..47]`` wall-presence flags (0.0/1.0), ``[48]`` normalised energy.
-
-        Splitting apple/wall into separate binary channels lets the network learn
-        independent weights for each stimulus type, which is structurally easier
-        than the single-scalar encoding (0.0/0.5/1.0) it replaces.
+        Layout:
+        ``[0..15]``   apple_dist  normalised per ray (1.0 = none in range)
+        ``[16..31]``  wall_dist   normalised per ray
+        ``[32..47]``  apple_flag  binary 0/1 per ray
+        ``[48..63]``  wall_flag   binary 0/1 per ray
+        ``[64]``      energy      normalised [0→1]
+        ``[65]``      actual_speed proprioception from previous tick [0→1]
+        ``[66]``      apples_in_view fraction of rays that see an apple [0→1]
         """
         max_dist = self._config.sensors.max_distance
-        distances: list[float] = []
+        apple_dists: list[float] = []
+        wall_dists: list[float] = []
         apple_flags: list[float] = []
         wall_flags: list[float] = []
         for angle in ray_angles(
             self._config.sensors.num_rays, self._config.sensors.fov, self.heading
         ):
-            dx = math.cos(angle)
-            dy = math.sin(angle)
-            hit_dist, hit_type = self._cast_ray(dx, dy, max_dist)
-            distances.append(hit_dist / max_dist)
-            apple_flags.append(1.0 if hit_type == _TYPE_APPLE else 0.0)
-            wall_flags.append(1.0 if hit_type == _TYPE_WALL else 0.0)
+            apple_d, wall_d = self._cast_ray(math.cos(angle), math.sin(angle), max_dist)
+            apple_dists.append(apple_d / max_dist)
+            wall_dists.append(wall_d / max_dist)
+            apple_flags.append(1.0 if apple_d < max_dist else 0.0)
+            wall_flags.append(1.0 if wall_d < max_dist else 0.0)
 
         energy_norm = max(0.0, min(1.0, self.energy / self._config.agent.max_energy))
-        return distances + apple_flags + wall_flags + [energy_norm]
+        apples_in_view = sum(apple_flags) / len(apple_flags)
+        return (
+            apple_dists + wall_dists + apple_flags + wall_flags
+            + [energy_norm, self._last_actual_speed, apples_in_view]
+        )
 
     def _cast_ray(self, dx: float, dy: float, max_dist: float) -> tuple[float, float]:
-        """First-hit search along the unit ray (dx, dy) from the agent.
+        """Independent nearest-apple and nearest-wall distances along unit ray (dx, dy).
 
-        Returns ``(distance, type)``. ``distance`` is clamped to ``max_dist`` and
-        ``type`` is ``_TYPE_NOTHING`` when neither apple nor wall lies within
-        range.
+        Returns ``(apple_dist, wall_dist)``, each clamped to ``max_dist`` when no
+        hit of that type lies within range.  Both channels are always populated so
+        the network has independent weights for food vs obstacle proximity — a ray
+        that hits an apple in front of a wall now encodes both distances.
         """
-        hit_dist = math.inf
-        hit_type = _TYPE_NOTHING
-
-        # Apples: nearest positive ray-circle intersection.
+        apple_dist = max_dist
         apple_radius = self._config.apple.radius
         for apple in self._env.apples:
             t = _ray_circle(self.x, self.y, dx, dy, apple.x, apple.y, apple_radius)
-            if t is not None and t < hit_dist:
-                hit_dist = t
-                hit_type = _TYPE_APPLE
+            if t is not None and t < apple_dist:
+                apple_dist = t
 
-        # Walls: nearest positive ray-box intersection (always finite indoors).
         wall_t = _ray_walls(
-            self.x,
-            self.y,
-            dx,
-            dy,
-            self._config.world.width,
-            self._config.world.height,
+            self.x, self.y, dx, dy,
+            self._config.world.width, self._config.world.height,
         )
-        if wall_t is not None and wall_t < hit_dist:
-            hit_dist = wall_t
-            hit_type = _TYPE_WALL
+        wall_dist = wall_t if (wall_t is not None and wall_t < max_dist) else max_dist
 
-        if hit_dist >= max_dist:
-            return max_dist, _TYPE_NOTHING
-        return hit_dist, hit_type
+        return apple_dist, wall_dist
 
     # ------------------------------------------------------------------ #
     # Decision and movement
@@ -173,10 +167,19 @@ class Agent:
         return speed * math.cos(self.heading), speed * math.sin(self.heading)
 
     def move(self, vx: float, vy: float) -> None:
-        """Translate by (vx, vy), staying inside the walled world (body-clamped)."""
+        """Translate by (vx, vy), clamped inside the walled world.
+
+        Stores the normalised actual displacement for proprioceptive sensing
+        (input [65]): 0.0 = fully blocked by a wall; 1.0 = moved at max_speed.
+        """
         radius = self._config.agent.radius
-        self.x = _clamp(self.x + vx, radius, self._config.world.width - radius)
-        self.y = _clamp(self.y + vy, radius, self._config.world.height - radius)
+        new_x = _clamp(self.x + vx, radius, self._config.world.width - radius)
+        new_y = _clamp(self.y + vy, radius, self._config.world.height - radius)
+        self._last_actual_speed = (
+            math.hypot(new_x - self.x, new_y - self.y) / self._config.agent.max_speed
+        )
+        self.x = new_x
+        self.y = new_y
 
     # ------------------------------------------------------------------ #
     # Energy (per TICK — invariant n°2)
