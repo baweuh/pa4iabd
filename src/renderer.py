@@ -669,8 +669,11 @@ class Renderer:
             f"Pop: {self.sim.population_size}/{self._config.population.max_size} | "
             f"Food: {self.sim.food_available}/{self._config.apple.count}"
         )
+        max_gen = max((a.generation for a in self.sim.population), default=0)
         line2 = (
             f"Record: {self.sim.record_apples} apples | "
+            f"Repro: {self.sim.total_reproductions} | "
+            f"Gen: {max_gen} | "
             f"Tick: {self.sim.tick_count} | {self.ticks_per_frame}x"
         )
         surfs = [
