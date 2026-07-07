@@ -105,6 +105,17 @@ _NET_INPUT_GROUPS = [
 ]
 _NET_OUTPUT_LABELS = ["spd", "trn"]
 
+# Fitness sparkline chart.
+CHART_W = 360
+CHART_H = 90
+CHART_MARGIN = 12
+CHART_PAD = 8
+CHART_SAMPLE_INTERVAL = 50   # ticks between samples
+CHART_HISTORY_LEN = 300      # samples kept  (300 × 50 = 15 000 ticks window)
+COLOR_CHART_BG = (12, 12, 20, 200)
+COLOR_CHART_LINE = (80, 220, 180)
+COLOR_CHART_PEAK = (255, 220, 60)
+
 # Button identifiers, left to right.
 _BTN_FAST_DOWN = "<<"
 _BTN_DOWN = "<"
@@ -154,6 +165,10 @@ class Renderer:
         self._running = True
         self._selected_agent = None
         self._show_network = False
+        # Fitness history: list of (tick, max_forage_rate) samples.
+        self._fitness_history: list[tuple[int, float]] = []
+        self._fitness_peak: float = 0.0
+        self._last_sampled_tick: int = -1
 
         self._buttons: dict[str, pygame.Rect] = self._build_buttons()
 
@@ -267,6 +282,72 @@ class Renderer:
     # ------------------------------------------------------------------ #
     # Drawing
     # ------------------------------------------------------------------ #
+    def _sample_fitness(self) -> None:
+        """Record max forage rate every CHART_SAMPLE_INTERVAL ticks."""
+        t = self.sim.tick_count
+        if t == self._last_sampled_tick or t % CHART_SAMPLE_INTERVAL != 0:
+            return
+        self._last_sampled_tick = t
+        pop = self.sim.population
+        if not pop:
+            return
+        rate = max(a.apples_eaten / max(a.age, 1) for a in pop)
+        self._fitness_history.append((t, rate))
+        if len(self._fitness_history) > CHART_HISTORY_LEN:
+            self._fitness_history.pop(0)
+        if rate > self._fitness_peak:
+            self._fitness_peak = rate
+
+    def _draw_fitness_chart(self) -> None:
+        """Sparkline of max forage rate (apples/tick) in the top-right corner."""
+        if len(self._fitness_history) < 2:
+            return
+
+        win_w = self._config.render.window_width
+        px = win_w - CHART_W - CHART_MARGIN
+        py = BAR_HEIGHT + CHART_MARGIN
+
+        chart = pygame.Surface(
+            (CHART_W, CHART_H), pygame.SRCALPHA  # pylint: disable=no-member
+        )
+        chart.fill(COLOR_CHART_BG)
+
+        inner_x = CHART_PAD
+        inner_y = CHART_PAD + 14    # reserve top row for title
+        inner_w = CHART_W - 2 * CHART_PAD
+        inner_h = CHART_H - inner_y - CHART_PAD
+
+        values = [v for _, v in self._fitness_history]
+        y_max = max(self._fitness_peak, 1e-9)
+        current = values[-1]
+
+        def _to_px(v: float, idx: int) -> tuple[int, int]:
+            x = inner_x + int(idx / max(len(values) - 1, 1) * inner_w)
+            y = inner_y + inner_h - int(v / y_max * inner_h)
+            return x, y
+
+        # Peak reference line (dotted — every 4 px)
+        peak_y = inner_y + inner_h - int(self._fitness_peak / y_max * inner_h)
+        for dot_x in range(inner_x, inner_x + inner_w, 4):
+            pygame.draw.line(chart, (*COLOR_CHART_PEAK, 100), (dot_x, peak_y), (dot_x + 2, peak_y), 1)
+
+        # Sparkline
+        pts = [_to_px(v, i) for i, v in enumerate(values)]
+        if len(pts) >= 2:
+            pygame.draw.lines(chart, COLOR_CHART_LINE, False, pts, 2)
+
+        # Current value dot
+        pygame.draw.circle(chart, COLOR_CHART_LINE, pts[-1], 3)
+
+        # Title + values
+        title = self._small_font.render(
+            f"Forage rate  now:{current:.4f}  peak:{self._fitness_peak:.4f}",
+            True, (200, 200, 200),
+        )
+        chart.blit(title, (CHART_PAD, 3))
+
+        self._screen.blit(chart, (px, py))
+
     def _draw_network_panel(self) -> None:
         """Draw a network diagram for the selected agent (toggle: N key).
 
@@ -369,12 +450,14 @@ class Renderer:
         self._screen.fill(COLOR_BACKGROUND)
         self._overlay.fill((0, 0, 0, 0))
 
+        self._sample_fitness()
         self._draw_penalty_zone()
         self._draw_raycasts()
         self._draw_apples()
         self._draw_agents()
         self._draw_ui()
         self._draw_hud()
+        self._draw_fitness_chart()
         if self._show_network:
             self._draw_network_panel()
 
@@ -599,7 +682,7 @@ class Renderer:
             conv = self._convergence_coeff()
             conv_str = f"{conv:+.2f}" if conv is not None else " n/a"
             line3 = (
-                f"Sel | eaten:{agent.apples_eaten} "
+                f"► eaten:{agent.apples_eaten} "
                 f"age:{agent.age} "
                 f"conv:{conv_str} "
                 f"spd:{agent._last_actual_speed:.2f}"  # pylint: disable=protected-access
