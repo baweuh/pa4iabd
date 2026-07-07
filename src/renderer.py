@@ -148,8 +148,10 @@ class Renderer:
 
         width = config.render.window_width
         height = config.render.window_height
+        self._logical_size = (width, height)
+        self._fullscreen = False
         self._screen = pygame.display.set_mode((width, height))
-        pygame.display.set_caption("ALife Neuroevolution")
+        pygame.display.set_caption("ALife Neuroevolution  [F11 fullscreen]")
         self._clock = pygame.time.Clock()
         self._font = pygame.font.SysFont("monospace", FONT_PX)
         self._small_font = pygame.font.SysFont("monospace", 13)
@@ -238,6 +240,8 @@ class Renderer:
             self._select_adjacent(-1 if key == pygame.K_LEFT else +1)  # pylint: disable=no-member
         elif key == pygame.K_n:  # pylint: disable=no-member
             self._show_network = not self._show_network
+        elif key == pygame.K_F11:  # pylint: disable=no-member
+            self._toggle_fullscreen()
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
         """Dispatch a left click to a control button or select/deselect an agent."""
@@ -259,6 +263,18 @@ class Renderer:
                 self._selected_agent = None if agent is self._selected_agent else agent
                 return
         self._selected_agent = None
+
+    def _toggle_fullscreen(self) -> None:
+        """Switch between windowed and fullscreen. pygame.SCALED handles the upscale."""
+        self._fullscreen = not self._fullscreen
+        w, h = self._logical_size
+        if self._fullscreen:
+            self._screen = pygame.display.set_mode(
+                (w, h),
+                pygame.FULLSCREEN | pygame.SCALED,  # pylint: disable=no-member
+            )
+        else:
+            self._screen = pygame.display.set_mode((w, h))
 
     def _select_adjacent(self, delta: int) -> None:
         """Select the next (+1) or previous (-1) agent in the population."""
