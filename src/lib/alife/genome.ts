@@ -402,13 +402,15 @@ export class Genome {
     for (const conn of this.connections) {
       if (rng.next() < cfg.connection_toggle_rate) {
         if (conn.enabled) {
+          // Disabling: output protection
           const cnt = enabledCount.get(conn.out_node);
-          if (cnt !== undefined && cnt <= 1) continue; // output protection
-        }
-        conn.enabled = !conn.enabled;
-        const cnt = enabledCount.get(conn.out_node);
-        if (cnt !== undefined) {
-          enabledCount.set(conn.out_node, conn.enabled ? cnt + 1 : cnt - 1);
+          if (cnt !== undefined && cnt <= 1) continue;
+          conn.enabled = false;
+          enabledCount.set(conn.out_node, (cnt || 1) - 1);
+        } else {
+          // Re-enabling: must check for cycles AND output protection is not needed
+          if (this._createsCycle(conn.in_node, conn.out_node)) continue;
+          conn.enabled = true;
         }
       }
     }
