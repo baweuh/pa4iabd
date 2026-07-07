@@ -76,3 +76,18 @@
         **robuste (3 seeds) ET stable (30k)** : 86/84/56 % fourrageurs
 - [ ] ⬜ Décision : promouvoir `apple_repro_bigpop` en défaut ? (change monde/pop)
 - [ ] ⬜ Validation élargie (N seeds) + réglage de K pour remonter seed 123
+
+## Branche poc2.3 — Capteurs 67 + visualisation + relance structurelle ✅
+> POC hors numérotation. Journal complet dans `docs/Audits/AUDIT-poc2.3.md`.
+- [x] Capteurs 67 inputs : apple_dist/wall_dist séparés (4 canaux/rayon),
+        proprioception (actual_speed), apples_in_view (fa2656e)
+- [x] Panneau réseau (touche N) : nœuds par groupe sensoriel, connexions par
+        signe de poids, titre `hidden:N` — évolution structurelle observable
+- [x] Sparkline forage rate, HUD 3 lignes (Repro/Gen), fullscreen F11
+- [x] Expérience relance structurelle (add_node_rate 0,25 / apples_per_offspring
+        3,0, pop défaut) : **falsifiée**. Run `logs/2026-07-07_142103` 30k →
+        0 neurone caché, record_apples fige à 53, dérive neutre (gen_dist ×34,
+        51 espèces). Le levier poc2.2 était la **population** (bigpop 200→400),
+        pas le taux de mutation. `config/default.yaml` remis à l'état canonique.
+- [ ] ⬜ Prochaine piste = mécanisme, pas paramètre : grande population OU tâche
+        exigeant de la non-linéarité OU crossover/pression de spéciation
