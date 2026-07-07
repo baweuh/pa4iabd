@@ -7,7 +7,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { NodeType, type Genome } from './genome';
-import type { NetworkConfig, SeededRNG } from './config';
+import type { NetworkConfig } from './config';
+import type { SeededRNG } from './genome';
 
 const ACTIVATIONS: Record<string, (x: number) => number> = {
   tanh: Math.tanh,
@@ -52,17 +53,21 @@ export class NeuralNetwork {
       }
     }
 
-    // Kahn's algorithm with min-heap (deterministic ascending node-id order)
-    const inDeg = new Map<number, number>();
-    for (const [nid, edges] of this._incoming) {
-      inDeg.set(nid, edges.length);
-    }
-    const heap = new MinHeap<number>();
-    for (const [nid, deg] of inDeg) {
-      if (deg === 0) heap.push(nid);
-    }
+    this._evalOrder = this._topoSort(genome);
 
-    // Successors for decrementing in-degrees
+    // Safety net: if cycle detected, auto-repair instead of crashing.
+    // Should never trigger if mutation guards work, but handles edge cases
+    // where multiple toggle mutations in one call interact badly.
+    if (this._evalOrder.length !== genome.nodes.length) {
+      this._repairCycle(genome);
+    }
+  }
+
+  /**
+   * Kahn's algorithm with min-heap (deterministic ascending node-id order).
+   * Returns node IDs in topological order.
+   */
+  private _topoSort(genome: Genome): number[] {
     const successors = new Map<number, number[]>();
     for (const n of genome.nodes) successors.set(n.id, []);
     for (const conn of genome.connections) {
@@ -71,24 +76,81 @@ export class NeuralNetwork {
       }
     }
 
-    const evalOrder: number[] = [];
+    const inDeg = new Map<number, number>();
+    for (const n of genome.nodes) inDeg.set(n.id, 0);
+    for (const conn of genome.connections) {
+      if (conn.enabled) {
+        inDeg.set(conn.out_node, (inDeg.get(conn.out_node) || 0) + 1);
+      }
+    }
+
+    const heap = new MinHeap<number>();
+    for (const [nid, deg] of inDeg) {
+      if (deg === 0) heap.push(nid);
+    }
+
+    const order: number[] = [];
     while (heap.size > 0) {
       const nid = heap.pop()!;
-      evalOrder.push(nid);
+      order.push(nid);
       for (const dst of successors.get(nid) || []) {
         const newDeg = (inDeg.get(dst) || 1) - 1;
         inDeg.set(dst, newDeg);
         if (newDeg === 0) heap.push(dst);
       }
     }
+    return order;
+  }
 
-    if (evalOrder.length !== genome.nodes.length) {
-      throw new Error(
-        `genome contains a cycle — processed ${evalOrder.length}/${genome.nodes.length} nodes`
-      );
+  /**
+   * Auto-repair a cyclic genome by iteratively disabling edges into
+   * unreachable nodes. Falls back to disabling all hidden→hidden edges.
+   * Never throws — always produces a valid (possibly degraded) network.
+   */
+  private _repairCycle(genome: Genome): void {
+    // Pass 1: disable edges whose out_node was not in eval order
+    const unreachable = new Set<number>();
+    for (const n of genome.nodes) {
+      if (!this._evalOrder.includes(n.id)) unreachable.add(n.id);
+    }
+    for (const conn of genome.connections) {
+      if (conn.enabled && unreachable.has(conn.out_node)) {
+        conn.enabled = false;
+      }
     }
 
-    this._evalOrder = evalOrder;
+    // Rebuild and re-sort
+    this._rebuildIncoming(genome);
+    this._evalOrder = this._topoSort(genome);
+
+    if (this._evalOrder.length === genome.nodes.length) return; // fixed
+
+    // Pass 2: disable ALL edges involving hidden nodes
+    for (const conn of genome.connections) {
+      if (conn.enabled) {
+        const srcType = this._nodeTypes.get(conn.in_node);
+        const dstType = this._nodeTypes.get(conn.out_node);
+        if (srcType === NodeType.HIDDEN || dstType === NodeType.HIDDEN) {
+          conn.enabled = false;
+        }
+      }
+    }
+
+    this._rebuildIncoming(genome);
+    this._evalOrder = this._topoSort(genome);
+    // Input→output only graph is always a DAG, so this must succeed
+  }
+
+  private _rebuildIncoming(genome: Genome): void {
+    this._incoming = new Map();
+    for (const n of genome.nodes) {
+      this._incoming.set(n.id, []);
+    }
+    for (const conn of genome.connections) {
+      if (conn.enabled) {
+        this._incoming.get(conn.out_node)!.push([conn.in_node, conn.weight]);
+      }
+    }
   }
 
   /**

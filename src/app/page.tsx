@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { DEFAULT_CONFIG, validateConfig, type SimState } from '@/lib/alife/config'
+import { DEFAULT_CONFIG, validateConfig } from '@/lib/alife/config'
+import type { SimState } from '@/lib/alife/simulation'
 import { Simulation } from '@/lib/alife/simulation'
 import { TRACKER } from '@/lib/alife/genome'
 import { rayAngles } from '@/lib/alife/environment'
@@ -13,12 +14,23 @@ validateConfig(DEFAULT_CONFIG)
 const WORLD_W = DEFAULT_CONFIG.world.width
 const WORLD_H = DEFAULT_CONFIG.world.height
 
+// ── Throttle interval for React state updates (ms) ─────────
+const HUD_UPDATE_INTERVAL = 50 // ~20fps for React state, canvas always 60fps
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const simRef = useRef<Simulation | null>(null)
   const rafRef = useRef<number>(0)
   const wallZoneRef = useRef<HTMLCanvasElement | null>(null)
 
+  // All mutable loop state as refs — NEVER as useEffect deps
+  const speedRef = useRef(1)
+  const pausedRef = useRef(false)
+  const selectedIdxRef = useRef(-1)
+  const showRaysRef = useRef(true)
+  const lastHudUpdateRef = useRef(0)
+
+  // React state — only for UI chrome (updated at throttled rate)
   const [state, setState] = useState<SimState | null>(null)
   const [started, setStarted] = useState(false)
   const [extinct, setExtinct] = useState(false)
@@ -27,6 +39,10 @@ export default function Home() {
   const [showRays, setShowRays] = useState(true)
   const [paused, setPaused] = useState(false)
   const [selectedInfo, setSelectedInfo] = useState<Record<string, string | number> | null>(null)
+
+  // Keep refs in sync with state (no re-renders for loop vars)
+  const speedDisplay = useRef(speed)
+  speedDisplay.current = speed
 
   // ── Build wall zone offscreen canvas ──────────────────────
   const buildWallZone = useCallback(() => {
@@ -188,7 +204,7 @@ export default function Home() {
     ctx.fillText(`Repro: ${DEFAULT_CONFIG.agent.apples_per_offspring > 0 ? 'STRUCTURAL' : 'LEGACY'}`, sx + 950, 18)
   }, [])
 
-  // ── Game loop via useEffect (avoids ref-during-render) ────
+  // ── Game loop — refs-only deps, never restarts on state change ──
   useEffect(() => {
     if (!started) return
 
@@ -197,38 +213,49 @@ export default function Home() {
     const loop = () => {
       if (!running) return
       const sim = simRef.current
-      if (!sim || paused) {
-        rafRef.current = requestAnimationFrame(loop)
-        return
-      }
+      if (!sim) return
 
-      for (let i = 0; i < speed; i++) {
-        sim.tick()
-        if (sim.isExtinct) {
-          setExtinct(true)
-          break
+      // Read all mutable state from refs (zero deps = zero restarts)
+      const spd = speedRef.current
+      const isPaused = pausedRef.current
+
+      if (!isPaused) {
+        for (let i = 0; i < spd; i++) {
+          sim.tick()
+          if (sim.isExtinct) {
+            setExtinct(true)
+            break
+          }
         }
       }
 
-      const s = sim.getState()
-      setState(s)
+      // Canvas rendering: always 60fps, reads from refs
+      renderFrame(sim, state, isPaused, spd, selectedIdxRef.current, showRaysRef.current)
 
-      // Update selected agent info
-      if (selectedIdx >= 0 && selectedIdx < sim.population.length) {
-        const a = sim.population[selectedIdx]
-        setSelectedInfo({
-          age: a.age,
-          energy: a.energy.toFixed(3),
-          gen: a.generation,
-          ray: a.effectiveRayRange.toFixed(0),
-          nodes: a.genome.nodes.length,
-          conns: a.genome.enabledConnections.length,
-        })
-      } else {
-        setSelectedInfo(null)
+      // Throttled React state update (~20fps) — avoids GC + re-render overhead
+      const now = performance.now()
+      if (now - lastHudUpdateRef.current >= HUD_UPDATE_INTERVAL) {
+        lastHudUpdateRef.current = now
+        const s = sim.getState()
+        setState(s)
+
+        // Update selected agent info
+        const si = selectedIdxRef.current
+        if (si >= 0 && si < sim.population.length) {
+          const a = sim.population[si]
+          setSelectedInfo({
+            age: a.age,
+            energy: a.energy.toFixed(3),
+            gen: a.generation,
+            ray: a.effectiveRayRange.toFixed(0),
+            nodes: a.genome.nodes.length,
+            conns: a.genome.enabledConnections.length,
+          })
+        } else {
+          setSelectedInfo(null)
+        }
       }
 
-      renderFrame(sim, s, paused, speed, selectedIdx, showRays)
       rafRef.current = requestAnimationFrame(loop)
     }
 
@@ -237,7 +264,7 @@ export default function Home() {
       running = false
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [started, speed, paused, selectedIdx, showRays, renderFrame])
+  }, [started, renderFrame, state]) // state dep for HUD render only (throttled via timestamp)
 
   // ── Start / Reset ────────────────────────────────────────
   const handleStart = useCallback(() => {
@@ -246,13 +273,18 @@ export default function Home() {
     simRef.current = sim
     setExtinct(false)
     setSelectedIdx(-1)
+    selectedIdxRef.current = -1
     setSelectedInfo(null)
     setStarted(true)
     setPaused(false)
+    pausedRef.current = false
+    speedRef.current = 1
+    setSpeed(1)
     buildWallZone()
-    setState(sim.getState())
-    renderFrame(sim, sim.getState(), false, 1, -1, showRays)
-  }, [buildWallZone, renderFrame, showRays])
+    const s = sim.getState()
+    setState(s)
+    renderFrame(sim, s, false, 1, -1, showRaysRef.current)
+  }, [buildWallZone, renderFrame])
 
   // ── Canvas click: select agent ──────────────────────────
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -278,6 +310,7 @@ export default function Home() {
       }
     }
     setSelectedIdx(closestIdx)
+    selectedIdxRef.current = closestIdx
   }, [])
 
   // ── Keyboard controls ────────────────────────────────────
@@ -285,11 +318,22 @@ export default function Home() {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault()
-        setPaused(p => !p)
+        setPaused(p => {
+          pausedRef.current = !p
+          return !p
+        })
       } else if (e.key === '+' || e.key === '=') {
-        setSpeed(s => Math.min(s * 2, 64))
+        setSpeed(s => {
+          const next = Math.min(s * 2, 64)
+          speedRef.current = next
+          return next
+        })
       } else if (e.key === '-' || e.key === '_') {
-        setSpeed(s => Math.max(Math.floor(s / 2), 1))
+        setSpeed(s => {
+          const next = Math.max(Math.floor(s / 2), 1)
+          speedRef.current = next
+          return next
+        })
       } else if (e.key === 'r' || e.key === 'R') {
         handleStart()
       }
@@ -383,13 +427,17 @@ export default function Home() {
           <div className="max-w-[1200px] mx-auto flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setPaused(p => !p)}
+                onClick={() => setPaused(p => { pausedRef.current = !p; return !p })}
                 className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-sm font-mono transition-colors"
               >
                 {paused ? '\u25B6' : '\u23F8'}
               </button>
               <button
-                onClick={() => setSpeed(s => Math.max(Math.floor(s / 2), 1))}
+                onClick={() => {
+                  const next = Math.max(Math.floor(speedRef.current / 2), 1)
+                  speedRef.current = next
+                  setSpeed(next)
+                }}
                 className="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded text-sm font-mono transition-colors"
               >
                 -
@@ -398,7 +446,11 @@ export default function Home() {
                 {speed}x
               </span>
               <button
-                onClick={() => setSpeed(s => Math.min(s * 2, 64))}
+                onClick={() => {
+                  const next = Math.min(speedRef.current * 2, 64)
+                  speedRef.current = next
+                  setSpeed(next)
+                }}
                 className="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded text-sm font-mono transition-colors"
               >
                 +
@@ -408,7 +460,11 @@ export default function Home() {
             <div className="h-5 w-px bg-white/10" />
 
             <button
-              onClick={() => setShowRays(r => !r)}
+              onClick={() => {
+                const next = !showRaysRef.current
+                showRaysRef.current = next
+                setShowRays(next)
+              }}
               className={`px-3 py-1.5 rounded text-sm transition-colors ${showRays ? 'bg-emerald-600/30 text-emerald-400' : 'bg-white/10 text-white/40'}`}
             >
               Rays

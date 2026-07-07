@@ -160,8 +160,9 @@ export class Simulation {
     // Stage 5 — record check + elite injection
     this._updateRecord();
 
-    // Stage 6 — tick counter + periodic CSV
+    // Stage 6 — tick counter + periodic CSV + incremental metrics
     this.tickCount++;
+    this._updateMetrics();
     if (this.tickCount % this.config.simulation.log_interval_ticks === 0) {
       this._logRow();
     }
@@ -261,63 +262,47 @@ export class Simulation {
     return this.env.apples.length;
   }
 
-  private _avgLifespan(): number {
-    if (this.population.length === 0) return 0;
-    return this.population.reduce((s, a) => s + a.age, 0) / this.population.length;
-  }
-
-  private _avgNetworkSize(): number {
-    if (this.population.length === 0) return 0;
-    let total = 0;
-    for (const agent of this.population) {
-      const enabled = agent.genome.connections.filter(c => c.enabled).length;
-      total += agent.genome.nodes.length + enabled;
-    }
-    return total / this.population.length;
-  }
-
-  private _forageRates(): number[] {
-    return this.population.map(a => {
-      const eaten = this._applesEaten.get(a) || 0;
-      return eaten / Math.max(a.age, 1);
-    });
-  }
+  // Cached forage rates (computed during _logRow only)
+  private _meanForageRate = 0;
+  private _maxForageRate = 0;
 
   // ── CSV ───────────────────────────────────────────────────
 
   private _logRow(): void {
-    const forageRates = this._forageRates();
-    const generations = this.population.map(a => a.generation);
-    const genomes = this.population.map(a => a.genome);
+    const pop = this.population;
+    const n = pop.length;
 
-    // Cache speciation (O(n²) — expensive, so only compute here)
+    // Forage rates (only here, not every getState)
+    let sumForage = 0;
+    let maxForage = 0;
+    for (let i = 0; i < n; i++) {
+      const eaten = this._applesEaten.get(pop[i]) || 0;
+      const rate = eaten / Math.max(pop[i].age, 1);
+      sumForage += rate;
+      if (rate > maxForage) maxForage = rate;
+    }
+    this._meanForageRate = n > 0 ? sumForage / n : 0;
+    this._maxForageRate = maxForage;
+
+    // Cache speciation (O(n²) — only every log_interval_ticks)
+    const genomes = pop.map(a => a.genome);
     this._lastSpeciesCount = countSpecies(genomes, this.config.speciation);
     this._lastMeanDistance = meanPairwiseDistance(genomes, this.config.speciation);
 
-    const meanGen = generations.length > 0
-      ? generations.reduce((a, b) => a + b, 0) / generations.length
-      : 0;
-    const meanForage = forageRates.length > 0
-      ? forageRates.reduce((a, b) => a + b, 0) / forageRates.length
-      : 0;
-    const maxForage = forageRates.length > 0
-      ? Math.max(...forageRates)
-      : 0;
-
     const row = [
       this.tickCount,
-      this.population.length,
+      n,
       this.env.apples.length,
       this.recordApples,
-      this._avgLifespan().toFixed(6),
+      (n > 0 ? this._sumAge / n : 0).toFixed(6),
       this.totalReproductions,
-      this._avgNetworkSize().toFixed(6),
-      generations.length > 0 ? Math.max(...generations) : 0,
-      meanGen.toFixed(6),
+      (n > 0 ? this._sumNetSize / n : 0).toFixed(6),
+      this._maxGen,
+      (n > 0 ? this._sumGen / n : 0).toFixed(6),
       this._lastSpeciesCount,
       this._lastMeanDistance.toFixed(6),
-      meanForage.toFixed(6),
-      maxForage.toFixed(6),
+      this._meanForageRate.toFixed(6),
+      this._maxForageRate.toFixed(6),
     ];
 
     this._csvLines.push(row.join(','));
@@ -331,30 +316,51 @@ export class Simulation {
     return this._bestGenomeSnapshots;
   }
 
-  // ── Public snapshot for renderer ──────────────────────────
+  // ── Incremental metrics (updated in tick() hot path) ───
+  private _maxGen = 0;
+  private _sumGen = 0;
+  private _sumAge = 0;
+  private _sumNetSize = 0;
+
+  /** Call once per tick after population is recomposed. O(n) incremental. */
+  private _updateMetrics(): void {
+    const pop = this.population;
+    const n = pop.length;
+    let maxGen = 0;
+    let sumGen = 0;
+    let sumAge = 0;
+    let sumNetSize = 0;
+    for (let i = 0; i < n; i++) {
+      const a = pop[i];
+      if (a.generation > maxGen) maxGen = a.generation;
+      sumGen += a.generation;
+      sumAge += a.age;
+      sumNetSize += a.genome.nodes.length + a.genome.connections.filter(c => c.enabled).length;
+    }
+    this._maxGen = maxGen;
+    this._sumGen = sumGen;
+    this._sumAge = sumAge;
+    this._sumNetSize = sumNetSize;
+  }
+
+  // ── Public snapshot for renderer (O(1) — no iteration) ───
 
   getState(): SimState {
-    const forageRates = this._forageRates();
-    const generations = this.population.map(a => a.generation);
-
+    const n = this.population.length;
     return {
       tick: this.tickCount,
-      population: this.population.length,
+      population: n,
       foodAvailable: this.env.apples.length,
       recordApples: this.recordApples,
-      avgLifespan: this._avgLifespan(),
+      avgLifespan: n > 0 ? this._sumAge / n : 0,
       totalReproductions: this.totalReproductions,
-      avgNetworkSize: this._avgNetworkSize(),
-      maxGeneration: generations.length > 0 ? Math.max(...generations) : 0,
-      meanGeneration: generations.length > 0
-        ? generations.reduce((a, b) => a + b, 0) / generations.length
-        : 0,
+      avgNetworkSize: n > 0 ? this._sumNetSize / n : 0,
+      maxGeneration: this._maxGen,
+      meanGeneration: n > 0 ? this._sumGen / n : 0,
       speciesCount: this._lastSpeciesCount,
       meanGeneticDistance: this._lastMeanDistance,
-      meanForageRate: forageRates.length > 0
-        ? forageRates.reduce((a, b) => a + b, 0) / forageRates.length
-        : 0,
-      maxForageRate: forageRates.length > 0 ? Math.max(...forageRates) : 0,
+      meanForageRate: n > 0 ? this._meanForageRate : 0,
+      maxForageRate: this._maxForageRate,
       isExtinct: this.isExtinct,
     };
   }
