@@ -36,18 +36,23 @@ def main(argv: list[str]) -> int:
         return 0
 
     pop = sim.population
-    scores = [steer_score(a.network, nr) for a in pop]
+    scores = [steer_score(a.network, nr, cfg.network.num_inputs) for a in pop]
     hiddens = [sum(1 for n in a.genome.nodes if n.node_type == "hidden") for a in pop]
     positive = sum(1 for s in scores if s > 0.1)
 
-    print(f"[{label}] tick {sim.tick_count}  pop {len(pop)}  "
-          f"record {sim.record_apples}  repro {sim.total_reproductions}")
-    print(f"  POPULATION steer score : mean {st.mean(scores):+.3f}  "
-          f"median {st.median(scores):+.3f}  max {max(scores):+.3f}")
-    print(f"  agents steering toward apples (r>0.1) : {positive}/{len(pop)} "
-          f"({100 * positive / len(pop):.0f}%)")
-    print(f"  mean hidden nodes : {st.mean(hiddens):.2f}  "
-          f"(max {max(hiddens)})")
+    print(
+        f"[{label}] tick {sim.tick_count}  pop {len(pop)}  "
+        f"record {sim.record_apples}  repro {sim.total_reproductions}"
+    )
+    print(
+        f"  POPULATION steer score : mean {st.mean(scores):+.3f}  "
+        f"median {st.median(scores):+.3f}  max {max(scores):+.3f}"
+    )
+    print(
+        f"  agents steering toward apples (r>0.1) : {positive}/{len(pop)} "
+        f"({100 * positive / len(pop):.0f}%)"
+    )
+    print(f"  mean hidden nodes : {st.mean(hiddens):.2f}  " f"(max {max(hiddens)})")
     return 0
 
 
