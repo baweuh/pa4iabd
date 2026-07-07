@@ -24,6 +24,24 @@ transmet.
 
 ---
 
+## Table des matières
+
+Ce document est un **journal d'investigation** tenu sur plusieurs sessions ; les
+étapes sont dans l'ordre chronologique où elles ont été menées.
+
+- **ÉTAPES 0–3** — Diagnostic (2026-07-06) : preuve empirique, sonde du champion,
+  audit paramètres/architecture, leviers proposés.
+- **ÉTAPES 5–9** — Campagne expérimentale (2026-07-06) : test des leviers, coût de
+  déplacement, grande population, confirmation 30k, combinaison rare+grande pop.
+- **ÉTAPE 10** — Résolution structurelle (2026-07-07) : reproduction ∝ pommes
+  cumulées → première émergence de fourrage robuste ET stable.
+- **Annexe + Méthode** (fin de document) — chiffres clés vérifiés et protocole.
+
+> Numérotation : pas d'« ÉTAPE 4 ». La série 5–10 prolonge la numérotation des
+> leviers du tableau de l'ÉTAPE 3 ; le trou est historique, pas une section perdue.
+
+---
+
 ## ÉTAPE 0 — La preuve empirique (run `logs/2026-06-12_140936`, seed 42, 24 000 ticks)
 
 C'est le run le plus long et le plus récent, produit avec la config actuelle
@@ -229,32 +247,6 @@ structure ajoutée dérive comme le reste.
 `reproduction_cost` (déjà exploré E0/E1/E2 en v2) — ça déplace la démographie, pas
 l'adaptation. Le problème n'est pas *combien* d'agents vivent, c'est que la
 sélection est trop faible et la mutation trop forte pour que la compétence monte.
-
----
-
-## Annexe — Chiffres clés (tous vérifiés sur le run 24 k et le code)
-
-```
-Charge de mutation      : ~78/98 poids perturbés par naissance ; RMS 1,77/génération
-Plafond offre-nourriture: 80/150 = 0,533 pomme/tick ÷ 200 = 0,00267/agent/tick
-Survie « gratuite »     : lifespan sans manger = 2 500 ticks (50 % de max_age)
-                          vieillesse atteinte en mangeant 2 pommes / vie
-Champion (record 27)    : 49→2, 0 caché, 98 conn, poids σ=0,70 (≈ init)
-Score orientation-pomme : champion r=−0,173 ; 28ᵉ percentile ; 143/200 aléatoires meilleurs
-record_apples           : 2→27 au tick 5 100, gelé 18 800 ticks
-avg_network_size        : 149,03→149,53 (complexification négligeable)
-mean_genetic_distance   : 0,39→2,66 (dérive monotone)
-```
-
-## Méthode
-
-- Données : `logs/2026-06-12_140936/metrics.csv` (24 000 ticks, seed 42, config
-  actuelle) + `best_genome.json` du même run.
-- Sonde comportementale : reconstruction du réseau du champion via `NeuralNetwork`,
-  stimulus contrôlé (pomme unique par rayon), comparée à 200 génomes fondateurs
-  aléatoires. Déterministe (seed fixe).
-- Code lu : `agent.py`, `simulation.py`, `genome.py`, `network.py`, `config.py`,
-  `config/default.yaml`.
 
 ---
 
@@ -564,3 +556,35 @@ mais tous fourragent fortement et durablement.
 gagnante `apple_repro_bigpop` (grande pop + apple-gated) est conservée comme référence
 d'expérience ; sa promotion en défaut change la taille du monde/population et est à
 décider explicitement.
+
+---
+
+## Annexe — Chiffres clés (tous vérifiés sur le run 24 k et le code)
+
+Chiffres du diagnostic initial (ÉTAPES 0–3, run `logs/2026-06-12_140936`).
+
+```
+Charge de mutation      : ~78/98 poids perturbés par naissance ; RMS 1,77/génération
+Plafond offre-nourriture: 80/150 = 0,533 pomme/tick ÷ 200 = 0,00267/agent/tick
+Survie « gratuite »     : lifespan sans manger = 2 500 ticks (50 % de max_age)
+                          vieillesse atteinte en mangeant 2 pommes / vie
+Champion (record 27)    : 49→2, 0 caché, 98 conn, poids σ=0,70 (≈ init)
+Score orientation-pomme : champion r=−0,173 ; 28ᵉ percentile ; 143/200 aléatoires meilleurs
+record_apples           : 2→27 au tick 5 100, gelé 18 800 ticks
+avg_network_size        : 149,03→149,53 (complexification négligeable)
+mean_genetic_distance   : 0,39→2,66 (dérive monotone)
+```
+
+## Méthode
+
+- Données : `logs/2026-06-12_140936/metrics.csv` (24 000 ticks, seed 42, config
+  actuelle) + `best_genome.json` du même run.
+- Sonde comportementale : reconstruction du réseau du champion via `NeuralNetwork`,
+  stimulus contrôlé (pomme unique par rayon), comparée à 200 génomes fondateurs
+  aléatoires. Déterministe (seed fixe).
+- Campagne expérimentale (ÉTAPES 5–10) : mesure au niveau population via
+  `tools/run_and_probe.py` (steering moyen des agents vivants + % à r > 0,1),
+  seeds 42/7/123, runs 15 k et 30 k. Configs d'expérience conservées sous `config/`
+  (`lever*.yaml`, `mc_*.yaml`, `bigpop*.yaml`, `apple_repro*.yaml`).
+- Code lu : `agent.py`, `simulation.py`, `genome.py`, `network.py`, `config.py`,
+  `config/default.yaml`.

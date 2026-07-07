@@ -58,3 +58,21 @@
 - [ ] S3 (upload ZIP + génomes)
 - [ ] DynamoDB (métriques)
 - [ ] Amplify (dashboard)
+
+## Branche poc2.2 — Dynamique évolutive (investigation) ✅
+> POC hors numérotation des phases : rendre l'évolution *adaptative*, pas seulement
+> viable. Journal complet dans `docs/Audits/AUDIT-poc2.2-v3.md` (ÉTAPES 0–10).
+- [x] Instrumentation évolutive (spéciation, 6 colonnes CSV, sondes
+        `tools/steer_probe.py` + `tools/run_and_probe.py`)
+- [x] 5 correctifs architecturaux dc20330 (égocentrisme B3a, input 2D 49, fécondité
+        ∝ énergie B3b, élitisme, clamp poids I2) → règlent la **viabilité**
+- [x] Diagnostic (audit v3) : blocage = sélection ≪ mutation + dérive, PAS le repère
+        de sortie. Preuve = sonde comportementale (champion anti-fourrageur r=−0,17)
+- [x] Campagne leviers (mutation / drain / max_energy / food / move_cost) : aucun
+        réglage paramétrique ne robustifie — chaque régime rebrasse quel seed gagne
+- [x] Changement **structurel** `agent.apples_per_offspring` (défaut 0.0 = legacy ;
+        >0 = fécondité ∝ pommes cumulées) + `agent.move_cost`
+- [x] Résultat : `config/apple_repro_bigpop.yaml` = 1ʳᵉ émergence de fourrage
+        **robuste (3 seeds) ET stable (30k)** : 86/84/56 % fourrageurs
+- [ ] ⬜ Décision : promouvoir `apple_repro_bigpop` en défaut ? (change monde/pop)
+- [ ] ⬜ Validation élargie (N seeds) + réglage de K pour remonter seed 123
