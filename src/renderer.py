@@ -385,8 +385,9 @@ class Renderer:
         )
         panel.fill(COLOR_NET_BG)
 
+        hidden_count = sum(1 for n in genome.nodes if n.node_type == "hidden")
         title = self._small_font.render(
-            f"Network  [N]  nodes:{len(genome.nodes)}  "
+            f"Network  [N]  nodes:{len(genome.nodes)}  hidden:{hidden_count}  "
             f"conn:{sum(1 for c in genome.connections if c.enabled)}",
             True, (200, 200, 200),
         )
