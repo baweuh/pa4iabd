@@ -81,8 +81,6 @@ SPEED_MIN = 1
 SPEED_MAX = 32
 
 # Neural-network visualisation panel (toggled with N key).
-NET_PANEL_W = 320
-NET_PANEL_H = 260
 NET_PANEL_MARGIN = 12
 NET_VIZ_PAD = 14
 NET_INPUT_R = 2
@@ -115,6 +113,10 @@ CHART_HISTORY_LEN = 300      # samples kept  (300 × 50 = 15 000 ticks window)
 COLOR_CHART_BG = (12, 12, 20, 200)
 COLOR_CHART_LINE = (80, 220, 180)
 COLOR_CHART_PEAK = (255, 220, 60)
+
+# Neural-network visualisation panel — augmenté pour hidden layer count au titre.
+NET_PANEL_W = 400
+NET_PANEL_H = 280
 
 # Button identifiers, left to right.
 _BTN_FAST_DOWN = "<<"
