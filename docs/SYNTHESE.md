@@ -3,7 +3,8 @@
 > Vue d'ensemble transverse : de la fondation technique (Phases 1-8) à la branche
 > `poc2.3`. Pour le détail, voir `docs/Phase/*` (implémentation) et
 > `docs/Audits/AUDIT-poc2.2-v3.md` + `AUDIT-poc2.3.md` (investigations).
-> Rédigé le 2026-07-08.
+> Rédigé le 2026-07-08, mis à jour le 2026-07-08 (volets 4-5 : crossover+bigpop
+> falsifié, capteur 49 promu en défaut).
 
 ---
 
@@ -16,8 +17,10 @@ Juin 10-12   Phases 1-8      Le simulateur (génome NEAT, réseau, agent, sim, r
 Juil 6-7     poc2.2          INVESTIGATION : « pourquoi ça n'évolue pas ? » (ÉTAPES 0-10)
    ↓                         → Diagnostic + 1ère émergence robuste (apple_repro + bigpop)
    ↓
-Juil 7-8     poc2.3          Capteurs 67 + viz réseau, puis 3 relances structurelles :
-                             volet 1 (perception) ✅ · volet 2 (mutation) ❌ · volet 3 (crossover) 🟢
+Juil 7-8     poc2.3          Capteurs 67 + viz réseau, puis 4 relances/audits :
+                             volet 1 (perception) 🟡 · volet 2 (mutation) ❌ ·
+                             volet 3 (crossover) 🟡 · volet 4 (crossover+bigpop) ❌ ·
+                             volet 5 (ablation capteur → 49 promu défaut) ✅
 ```
 
 Fil rouge unique de tout le projet **évolutif** : *le fourrage dirigé est trop
@@ -86,7 +89,7 @@ fondatrice**, à traiter *ensemble*, *structurellement*.
 
 ---
 
-## 4. poc2.3 — capteurs, visualisation, trois relances
+## 4. poc2.3 — capteurs, visualisation, cinq volets
 
 ### Volet 1 — Perception & instrumentation (livré ✅)
 - **67 inputs** (au lieu de 49) : `apple_dist`/`wall_dist` séparés (4 canaux/rayon),
@@ -100,6 +103,10 @@ fondatrice**, à traiter *ensemble*, *structurellement*.
 > petite population** » — la moitié seulement de la recette gagnante de poc2.2 (qui
 > exigeait apple_repro **+ bigpop**). Documenté comme « état canonique » dans
 > l'audit poc2.3 ; c'est la raison pour laquelle le contrôle fourrage mal.
+>
+> 🔴 **Réévalué au volet 5** : le capteur 67 lui-même s'avère **casser la
+> robustesse** du package gagnant de poc2.2 (seed 123 : 43 %→1 %). Priorité
+> performance oblige, il n'est plus le défaut — voir §4 volet 5.
 
 ### Volet 2 — Relance par **paramètre** (falsifiée ❌)
 Hypothèse : `add_node_rate` 0,10→0,25 fera émerger des neurones cachés. Résultat à
@@ -142,29 +149,97 @@ steering moyen population) :**
 
 Sorties brutes : `logs/2026-07-08_crossover/` (6 runs, 3 seeds).
 
+### Volet 4 — Crossover + bigpop, la piste (a) (falsifiée ❌)
+
+Hypothèse : combiner recombinaison (volet 3) et anti-dérive par la population
+(poc2.2) referait le 3/3 robuste. Config `lever_crossover_bigpop.yaml` (isolation
+1 variable vs `lever_bigpop67`), 3 seeds / 30k :
+
+| Seed | Crossover seul | Bigpop seul | **Crossover + bigpop** |
+|------|:---:|:---:|:---:|
+| 42   | 88 % | 76 % | **51 %** |
+| 7    | 96 % | —    | **69 %** |
+| 123  | 10 % | —    | **26 %** (steering encore négatif) |
+
+**La combinaison sous-performe CHAQUE levier pris seul** (seed 42 : 76 %→51 %).
+Le crossover **rapproche tous les seeds de ~50 %** — c'est un opérateur
+**moyennant** (réduit la variance inter-seeds via mélange vers le comportement
+moyen de la population), pas amplifiant. Explique d'un coup le sauvetage partiel
+de 123 (volet 3) ET l'écrasement des gagnants. Conclusion : seule la **taille de
+population** lève tous les seeds ensemble ; le crossover régularise, il n'élève pas.
+
+### Volet 5 — Le capteur 67 casse la robustesse : retour au 49 (décisif ✅)
+
+Priorité déclarée : **performance des agents**, quitte à revenir sur
+l'enrichissement perceptif du volet 1. Le package physique robuste de poc2.2
+(`apple_repro_bigpop`, 86/84/56 %) survit-il au capteur 67 ?
+
+**Test décisif** : même package physique exact, seul `num_inputs` porté 49→67 →
+seed 123 s'effondre **43 %→1 %** (steering −0,237). **Ablation** des 3 canaux
+ajoutés (séparation apple/wall dist +16, proprioception +1, apples_in_view +1),
+un par un, même package :
+
+| Config | inputs | seed 42 | seed 123 |
+|---|:---:|:---:|:---:|
+| **49 (contrôle)** | 49 | **86 %** | **42 %** |
+| split seul | 65 | 5 % | 89 % |
+| proprio seul | 50 | 5 % | 39 % |
+| apples_in_view seul | 50 | 32 % | 32 % |
+| les 3 (67) | 67 | 59 % | **1 %** |
+
+**Aucun canal isolé n'est coupable** — chacun dégrade déjà seed 42 tout seul ; ce
+n'est pas *un* canal, c'est la **dimensionnalité d'entrée** (le génome part
+toujours fully-connected, donc plus d'inputs = plus de connexions initiales à
+régler = plus de surface de mutation = plus d'instabilité, peu importe le canal).
+
+**Refonte technique** : le capteur devient **configurable**
+(`sensors.split_distance/proprioception/apples_in_view`, tous `True` par défaut =
+comportement 67 inchangé si omis) au lieu de câblé en dur — `SensorConfig.num_inputs`
+dérive le compte (zéro nombre magique). `agent.sense()`, `tools/steer_probe.py`
+(corrige un bug d'ambiguïté de layout : 50 inputs = proprio-seul OU aiv-seul) et
+`src/renderer.py` généralisés en conséquence.
+
+**Décision : `config/default.yaml` promu** au package `apple_repro_bigpop` complet
+(monde ×√2, agents/pommes plus gros, mutation 0,15, `apples_per_offspring 3.0`,
+pop 200/400) avec le **capteur 49**. 3/3 seeds confirmés à 15k (86/77/42 %,
+cohérent avec l'étalon historique 98/86/43→86/84/56 à 30k, physiquement identique
+— aucun nouveau run 30k nécessaire).
+
+Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
+`logs/2026-07-08_ablation/`.
+
 ---
 
 ## 5. Où on en est / décisions ouvertes
 
-- 🟡 **Crossover : gain réel en moyenne (30 %→65 %), non robuste au sens strict.**
-  Campagne 3 seeds livrée : améliore fortement 42 & 7, régresse sur 123. Comme les
-  leviers paramétriques de poc2.2, il rebrasse partiellement les seeds. Reste sous
-  le 3/3 positifs de `apple_repro_bigpop`.
-- ⬜ **Pistes suite** : (a) crossover **+ bigpop** (recombinaison + anti-dérive) ;
-  (b) `crossover_rate` plus bas (limiter la convergence prématurée) ; (c) accepter
-  l'émergence contingente et rapporter un taux de succès sur N seeds.
-- ⬜ **Promotion défaut** : `default.yaml` reste `crossover_rate 0.0`. Non promu
-  (non robuste).
+- ✅ **`config/default.yaml` = package robuste 49-inputs, promu (volet 5).** Clôture
+  la décision poc2.2 restée en suspens : monde ×√2, agents/pommes plus gros,
+  mutation 0,15, `apples_per_offspring 3.0`, pop 200/400, capteur 49 legacy. 3/3
+  seeds robustes (86/77/42 % à 15k).
+- ❌ **Crossover (seul ou + bigpop) : non robuste, non promu.** `crossover_rate`
+  reste à `0.0` dans le défaut — gain réel en moyenne côté crossover seul (30 %→65 %)
+  mais rebrasse les seeds ; combiné à bigpop, sous-performe chaque levier seul (c'est
+  un régularisateur de variance, pas un amplificateur).
+- ❌ **Capteur 67 : non robuste, non promu par défaut.** Reste disponible via les
+  toggles `sensors.*` (config, pas code) pour la viz/observabilité si besoin, mais
+  casse le fourrage sur seed 123 — ne pas re-promouvoir sans nouvelle preuve.
+- ⬜ **Piste ouverte** : seed 123 reste le maillon faible du trio (42-56 % selon le
+  run, contre 77-98 % pour 42 et 7) — validation élargie (N seeds) + réglage de K
+  pourrait le remonter, si plus de perf est recherchée.
 
 ---
 
 ## 6. État du code & qualité
 
-- **148 tests verts**, `pylint 10/10`, `black` clean.
-- Invariants respectés : 67 inputs (code = CLAUDE.md), feedforward garanti dans
-  crossover, spéciation câblée dans le choix du partenaire.
-- Isolation expérimentale **rigoureuse** : chaque levier = une seule variable
-  modifiée depuis le contrôle.
+- **152 tests verts**, `pylint` stable (9.93/10 — deux avertissements
+  `too-many-locals`/`too-many-statements` pré-existants dans `renderer.py`, non
+  liés aux volets 4-5), `black` clean.
+- Invariants respectés : capteur piloté par config (zéro nombre magique, invariant
+  n°1), feedforward garanti dans crossover, spéciation câblée dans le choix du
+  partenaire.
+- Isolation expérimentale **rigoureuse** sur tout le projet : chaque levier = une
+  seule variable modifiée depuis le contrôle (y compris l'ablation capteur du
+  volet 5, canal par canal).
 
 ## 7. Historique des commits clés
 
@@ -175,3 +250,5 @@ Sorties brutes : `logs/2026-07-08_crossover/` (6 runs, 3 seeds).
 | `804d3c5` | poc2.3 : audit clôture — relance par mutation falsifiée |
 | `68305c2` | poc2.3 : crossover NEAT intra-espèce (Lever C) |
 | `0b12070` | poc2.3 : audit volet 3 — le crossover débloque le fourrage (seed 42) |
+| `4fb0892` | poc2.3 : volet 4 — crossover+bigpop (piste a) falsifiée |
+| `7851137` | poc2.3 : volet 5 — capteur configurable, package 49-inputs promu en défaut |
