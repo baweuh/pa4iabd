@@ -1,12 +1,13 @@
-# Audit poc2.3 — capteurs 67, visualisation réseau, et la relance ratée de l'évolution structurelle
+# Audit poc2.3 — capteurs 67, visualisation réseau, et la relance de l'évolution structurelle
 
-> Branche `poc2.3`. Deux volets : (1) un enrichissement **perceptif et
+> Branche `poc2.3`. Trois volets : (1) un enrichissement **perceptif et
 > instrumental** (67 inputs, proprioception, panneau réseau, sparkline forage,
-> fullscreen) — livré et fonctionnel ; (2) une tentative de **débloquer
-> l'évolution structurelle** (apparition/persistance de neurones cachés) par
-> réglage de paramètres — **échouée**, et cet échec confirme une fois de plus le
-> verdict de l'audit poc2.2 v3 : *sur cette petite population, le système dérive,
-> il ne s'adapte pas.*
+> fullscreen) — livré et fonctionnel ; (2) une tentative de débloquer l'évolution
+> structurelle par **réglage de paramètres** (`add_node_rate`) — **échouée**,
+> confirmant le verdict poc2.2 v3 : *sur cette petite population, le système
+> dérive, il ne s'adapte pas* ; (3) une relance par **mécanisme** (crossover NEAT
+> intra-espèce) qui, à population identique, fait passer le fourrage de 4 % à 88 %
+> (seed 42) — **prometteur, robustesse 3 seeds à confirmer**.
 
 ---
 
@@ -127,3 +128,73 @@ avec les valeurs ci-dessus, population 100→200.
 - best_agents : 53 génomes, cachés = `{0: 53}`.
 - `record_apples` : 53 (plateau depuis tick 10 000).
 - `mean_genetic_distance` : 0,27 → 9,19. `species_count` : 1 → 51.
+
+---
+
+## Volet 3 — Le crossover débloque le fourrage (suite, seed 42) 🟢
+
+Le volet 2 se terminait sur trois pistes « mécanisme, pas paramètre » : (a) grande
+population, (b) tâche exigeant de la non-linéarité, (c) **crossover / pression de
+spéciation**. Ce volet teste (c) — et (a) comme comparatif — contre un **contrôle
+canonique** manquant jusqu'ici.
+
+### Le mécanisme
+
+Reproduction sexuée NEAT intra-espèce (commit `68305c2`). `Genome.crossover`
+aligne les gènes par innovation : gènes *matching* tirés au hasard d'un parent,
+*disjoint/excess* hérités du parent le plus apte (canonique). Enfant strictement
+feedforward garanti (invariant n°3 : arête créant un cycle → skip). En simulation,
+`Simulation._pick_mate` tire un partenaire et l'accepte s'il est sous le
+`compatibility_threshold` de spéciation, avec probabilité `genome.crossover_rate`.
+Nouvelle clé `genome.crossover_rate` (défaut `0.0` = clonage asexué legacy).
+
+### Le protocole (3 runs, seed 42, 30 000 ticks)
+
+Tous partent de la config **canonique** (`add_node_rate 0,10`,
+`apples_per_offspring 5,0`) — contrairement au volet 2 à mutation poussée. Signal
+mesuré : score de steering **au niveau population** (`tools.run_and_probe`), pas le
+champion isolé (bruité sous turnover rapide).
+
+| Run | Config | Pop | `crossover_rate` | Fourrageurs r>0.1 | Steer moyen | Cachés (moy / max) |
+|-----|--------|-----|-----------------|-------------------|-------------|--------------------|
+| **Contrôle** | `default.yaml` | 100→200 | 0.0 | **9/200 (4 %)** | **−0,284** | 0,83 / 3 |
+| **Lever C** | `lever_crossover.yaml` | 100→200 | 0.6 | **177/200 (88 %)** | **+0,366** | 0,76 / 4 |
+| **Lever B** | `lever_bigpop67.yaml` | 200→400 | 0.0 | 302/400 (76 %) | +0,232 | 0,52 / 4 |
+
+### Deux enseignements
+
+1. **Les neurones cachés ne sont PAS le discriminant.** Le contrôle en porte
+   autant que les leviers (0,83 en moyenne) tout en étant **anti-fourrageur**
+   (4 %, steer −0,284). La structure émerge partout à 30 000 ticks avec
+   `add_node_rate 0,10` canonique — le « 0 caché » du volet 2 était un artefact du
+   régime à mutation poussée, pas une propriété générale. **Le signal qui compte
+   est le comportement (steering), pas le compte de neurones.** Ceci corrige le
+   cadrage implicite du volet 2.
+
+2. **Le crossover est un levier d'adaptation propre, isolé de la population.** À
+   population *identique* (100→200), activer le crossover fait passer le fourrage
+   de 4 % à 88 % — un facteur **22×**. La recombinaison intra-espèce permet aux
+   innovations utiles de se propager au lieu de dériver isolément (le mode
+   d'échec diagnostiqué en poc2.2 v3). Lever B (population, 76 %) reconfirme
+   séparément le levier de poc2.2.
+
+### Statut : prometteur, robustesse à confirmer ⚠️
+
+**Résultat single-seed (42).** La leçon centrale de poc2.2 est que les régimes
+paramétriques rebrassent souvent *quel seed gagne* ; un écart de 22× est peu
+susceptible d'être de la chance de seed, mais la barre méthodo du projet est
+**3 seeds**. Avant de promouvoir le crossover en conclusion ferme (ou en défaut),
+relancer `{lever_crossover, default}` sur ≥2 seeds de plus (p. ex. 123, 7) et
+vérifier que l'écart contrôle→Lever C tient. `default.yaml` reste inchangé
+fonctionnellement (`crossover_rate 0.0`) : l'expérience n'est pas figée en défaut.
+
+### Chiffres clés (vérifiés)
+
+- 3 runs seed 42, 30 000 ticks. Sorties brutes dans
+  `logs/2026-07-08_crossover/{control_default,leverC_crossover,leverB_bigpop67}_s42.txt`.
+- Contrôle : pop 200, repro 1360, record 49, steer moyen −0,284, 4 % fourrageurs.
+- Lever C : pop 200, repro 1394, record 53, steer moyen +0,366, 88 % fourrageurs.
+- Lever B : pop 400, repro 2601, record 35, steer moyen +0,232, 76 % fourrageurs.
+- `record_apples` (49/53/35) reste borné par la longévité du champion
+  (`max_age 5000`, respawn 150) — non discriminant ; le steering l'est.
+- Qualité : 5 tests crossover, 148 tests verts, pylint 10/10, black clean.

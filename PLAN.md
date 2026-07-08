@@ -89,5 +89,15 @@
         0 neurone caché, record_apples fige à 53, dérive neutre (gen_dist ×34,
         51 espèces). Le levier poc2.2 était la **population** (bigpop 200→400),
         pas le taux de mutation. `config/default.yaml` remis à l'état canonique.
-- [ ] ⬜ Prochaine piste = mécanisme, pas paramètre : grande population OU tâche
-        exigeant de la non-linéarité OU crossover/pression de spéciation
+- [x] Relance par **mécanisme** = crossover NEAT intra-espèce (`68305c2`) :
+        `Genome.crossover` (aligné par innovation, enfant feedforward garanti),
+        `genome.crossover_rate` (défaut 0.0), `_pick_mate` intra-espèce. 5 tests,
+        148 verts, pylint 10/10.
+- [x] Expérience 3 runs seed 42 / 30k (audit poc2.3 volet 3) : à **pop identique**
+        (100→200), crossover fait passer le fourrage de **4 % → 88 %** (facteur 22×)
+        vs contrôle canonique. Lever B (bigpop) reconfirme le levier population
+        (76 %). Enseignement : les neurones cachés ne discriminent PAS (le contrôle
+        en a 0,83) — le signal est le **comportement**, pas la structure.
+- [ ] ⬜ **Robustesse à confirmer** : relancer `{lever_crossover, default}` sur
+        ≥2 seeds de plus (123, 7). Si l'écart tient → promouvoir le crossover
+        (défaut ? campagne 3 seeds complète avec Lever B). `default.yaml` inchangé.
