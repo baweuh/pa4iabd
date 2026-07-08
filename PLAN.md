@@ -93,11 +93,12 @@
         `Genome.crossover` (aligné par innovation, enfant feedforward garanti),
         `genome.crossover_rate` (défaut 0.0), `_pick_mate` intra-espèce. 5 tests,
         148 verts, pylint 10/10.
-- [x] Expérience 3 runs seed 42 / 30k (audit poc2.3 volet 3) : à **pop identique**
-        (100→200), crossover fait passer le fourrage de **4 % → 88 %** (facteur 22×)
-        vs contrôle canonique. Lever B (bigpop) reconfirme le levier population
-        (76 %). Enseignement : les neurones cachés ne discriminent PAS (le contrôle
-        en a 0,83) — le signal est le **comportement**, pas la structure.
-- [ ] ⬜ **Robustesse à confirmer** : relancer `{lever_crossover, default}` sur
-        ≥2 seeds de plus (123, 7). Si l'écart tient → promouvoir le crossover
-        (défaut ? campagne 3 seeds complète avec Lever B). `default.yaml` inchangé.
+- [x] Campagne crossover 3 seeds / 30k (audit poc2.3 volet 3) : à **pop identique**,
+        le crossover améliore fortement 2/3 seeds (42 : 4→88 % ; 7 : 58→96 %) et
+        fait passer la moyenne population de −0,08 à +0,19 — **mais régresse sur
+        seed 123** (28→10 %). **Non robuste au sens strict** (pas de 3/3 positifs
+        comme apple_repro_bigpop) : rebrasse partiellement les seeds. Enseignement :
+        les neurones cachés ne discriminent PAS (présents partout, 0,5–1,3).
+- [ ] ⬜ **Pistes suite** : (a) crossover + bigpop ; (b) crossover_rate plus bas
+        (limiter convergence prématurée sur seed 123) ; (c) taux de succès sur N
+        seeds. `default.yaml` reste `crossover_rate 0.0` (non promu, non robuste).

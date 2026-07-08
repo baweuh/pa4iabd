@@ -116,35 +116,45 @@ Crossover NEAT intra-espèce (piste (c) recommandée par le volet 2) :
 - `Simulation._pick_mate` : partenaire intra-espèce via `compatibility_distance` →
   **la spéciation devient une pression réelle** (elle n'était qu'observationnelle).
 
-**Expérience — 3 runs, seed 42, 30k, isolation à une variable :**
+**Expérience — isolation à une variable, 30k. Campagne 3 seeds (% fourrageurs /
+steering moyen population) :**
 
-| | Contrôle | **Lever C (crossover)** | Lever B (bigpop) |
-|---|---|---|---|
-| Diffère du contrôle par | — | `crossover_rate` seul | population seule |
-| Fourrageurs (r>0.1) | **9/200 (4 %)** | **177/200 (88 %)** | 302/400 (76 %) |
-| Steer moyen | −0,284 | +0,366 | +0,232 |
-| Cachés (moy. **population**) | 0,83 | 0,76 | 0,52 |
+| Seed | Contrôle (xover OFF) | **Lever C (xover ON)** | Δ |
+|------|----------------------|------------------------|---|
+| 42   | 4 % / −0,284         | 88 % / +0,366          | +84 pts ✅ |
+| 7    | 58 % / +0,123        | 96 % / +0,372          | +38 pts ✅ |
+| 123  | 28 % / −0,086        | **10 % / −0,157**      | −18 pts ❌ |
+| **moyenne** | 30 % / −0,082 | **65 % / +0,194**      | |
 
-**Deux résultats :**
-1. **À population identique, le crossover fait 4 % → 88 % (22×)** — effet propre,
-   isolé du levier population.
-2. **Les neurones cachés ne discriminent PAS** : le contrôle en porte autant tout
-   en étant anti-fourrageur. La population *porte* des cachés qui ne deviennent
-   jamais champions (Cause 3 de poc2.2) → aucun avantage de fitness. **Le signal
-   est le comportement, pas la structure.**
+(Lever B / bigpop, seed 42 : 76 % / +0,232 — reconfirme le levier population.)
 
-Sorties brutes : `logs/2026-07-08_crossover/` (seed 42).
+**Trois résultats :**
+1. **Gros effet mais seed-dépendant.** À population identique, le crossover améliore
+   fortement 2/3 seeds et fait passer la moyenne de anti-fourrage (−0,08) à fourrage
+   (+0,19) — **mais régresse sur seed 123**. Il **n'atteint pas** le 3/3 positifs de
+   `apple_repro_bigpop`. Le 22× de seed 42 était en partie de la chance de seed.
+   **Non robuste au sens strict**, mais moyenne nettement meilleure.
+2. **Les neurones cachés ne discriminent PAS** : présents (0,5–1,3 moy.) dans toutes
+   les conditions, fourrageuses ou non. **Le signal est le comportement, pas la
+   structure.**
+3. **Convergence prématurée suspectée** sur seed 123 : le crossover verrouille
+   peut-être plus vite le bassin fondateur (hypothèse non testée).
+
+Sorties brutes : `logs/2026-07-08_crossover/` (6 runs, 3 seeds).
 
 ---
 
 ## 5. Où on en est / décisions ouvertes
 
-- 🟢 **Crossover = résultat le plus fort du projet** pour débloquer le fourrage à
-  petite population — mais **single-seed (42)**. La leçon de poc2.2 étant que les
-  régimes rebrassent les seeds, **la robustesse 3 seeds reste à confirmer**.
-- ⬜ **Robustesse** : relancer `{lever_crossover, default}` sur seeds 123 et 7.
-- ⬜ **Promotion défaut** : `default.yaml` reste `crossover_rate 0.0`. Décision
-  ouverte (crossover en défaut ? campagne 3 seeds complète avec Lever B ?).
+- 🟡 **Crossover : gain réel en moyenne (30 %→65 %), non robuste au sens strict.**
+  Campagne 3 seeds livrée : améliore fortement 42 & 7, régresse sur 123. Comme les
+  leviers paramétriques de poc2.2, il rebrasse partiellement les seeds. Reste sous
+  le 3/3 positifs de `apple_repro_bigpop`.
+- ⬜ **Pistes suite** : (a) crossover **+ bigpop** (recombinaison + anti-dérive) ;
+  (b) `crossover_rate` plus bas (limiter la convergence prématurée) ; (c) accepter
+  l'émergence contingente et rapporter un taux de succès sur N seeds.
+- ⬜ **Promotion défaut** : `default.yaml` reste `crossover_rate 0.0`. Non promu
+  (non robuste).
 
 ---
 

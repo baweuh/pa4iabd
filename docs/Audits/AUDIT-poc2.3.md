@@ -6,8 +6,9 @@
 > structurelle par **réglage de paramètres** (`add_node_rate`) — **échouée**,
 > confirmant le verdict poc2.2 v3 : *sur cette petite population, le système
 > dérive, il ne s'adapte pas* ; (3) une relance par **mécanisme** (crossover NEAT
-> intra-espèce) qui, à population identique, fait passer le fourrage de 4 % à 88 %
-> (seed 42) — **prometteur, robustesse 3 seeds à confirmer**.
+> intra-espèce) qui améliore fortement le fourrage sur 2/3 seeds (moyenne 30 %→65 %,
+> steering −0,08→+0,19) mais **régresse sur seed 123** — **gain réel en moyenne,
+> non robuste au sens strict** (pas de 3/3 positifs).
 
 ---
 
@@ -175,30 +176,56 @@ champion isolé (bruité sous turnover rapide).
    aucun avantage de fitness détectable, exactement la Cause 3 de poc2.2 v3. **Le
    signal qui compte est le comportement (steering), pas le compte de neurones.**
 
-2. **Le crossover est un levier d'adaptation propre, isolé de la population.** À
-   population *identique* (100→200), activer le crossover fait passer le fourrage
-   de 4 % à 88 % — un facteur **22×**. La recombinaison intra-espèce permet aux
-   innovations utiles de se propager au lieu de dériver isolément (le mode
-   d'échec diagnostiqué en poc2.2 v3). Lever B (population, 76 %) reconfirme
-   séparément le levier de poc2.2.
+2. **Le crossover a un gros effet à population constante — mais seed-dépendant.**
+   À population *identique* (100→200), sur seed 42 activer le crossover fait passer
+   le fourrage de 4 % à 88 % (facteur 22×) ; la recombinaison intra-espèce propage
+   les innovations utiles au lieu de les laisser dériver isolément (mode d'échec
+   diagnostiqué en poc2.2 v3). **Mais ce gain n'est pas uniforme sur les 3 seeds**
+   (voir Statut) : le facteur 22× de seed 42 était en partie de la chance de seed.
+   Lever B (population, 76 %) reconfirme séparément le levier de poc2.2.
 
-### Statut : prometteur, robustesse à confirmer ⚠️
+### Statut : robustesse PARTIELLE — pas robuste au sens strict ⚠️
 
-**Résultat single-seed (42).** La leçon centrale de poc2.2 est que les régimes
-paramétriques rebrassent souvent *quel seed gagne* ; un écart de 22× est peu
-susceptible d'être de la chance de seed, mais la barre méthodo du projet est
-**3 seeds**. Avant de promouvoir le crossover en conclusion ferme (ou en défaut),
-relancer `{lever_crossover, default}` sur ≥2 seeds de plus (p. ex. 123, 7) et
-vérifier que l'écart contrôle→Lever C tient. `default.yaml` reste inchangé
-fonctionnellement (`crossover_rate 0.0`) : l'expérience n'est pas figée en défaut.
+**Campagne 3 seeds livrée** (seeds 42, 7, 123 ; `{lever_crossover, default}` ;
+30 000 ticks ; sorties dans `logs/2026-07-08_crossover/`). % fourrageurs (r>0.1) et
+steering moyen population :
+
+| Seed | Contrôle (xover OFF) | Lever C (xover ON) | Δ |
+|------|----------------------|--------------------|---|
+| 42   | 4 % / −0,284         | 88 % / +0,366      | **+84 pts** ✅ |
+| 7    | 58 % / +0,123        | 96 % / +0,372      | **+38 pts** ✅ |
+| 123  | 28 % / −0,086        | **10 % / −0,157**  | **−18 pts** ❌ |
+| **moyenne** | 30 % / −0,082 | **65 % / +0,194**  | |
+
+**Verdict.** Le crossover **améliore fortement 2/3 seeds** (42, 7) et fait passer la
+moyenne population de anti-fourrage (−0,08) à fourrage (+0,19) — mais il **régresse
+sur seed 123** (28 %→10 %). Il **n'atteint donc pas** le critère « 3/3 seeds
+positifs » que `apple_repro_bigpop` avait réalisé en poc2.2 (86/84/56 %). Comme les
+leviers paramétriques, le crossover **rebrasse partiellement quel seed gagne** — sa
+moyenne est nettement meilleure, mais l'issue reste seed-dépendante.
+
+**Hypothèse sur la régression seed 123** (non testée) : la recombinaison à mutation
+haute accélère la convergence vers le bassin fondateur ; si les fondateurs de
+seed 123 dérivent tôt vers l'anti-fourrage, le crossover *verrouille* ce bassin plus
+vite (convergence prématurée — même risque que « mutation basse préserve la malchance
+fondatrice », poc2.2 v3 ÉTAPE 5). À départager d'une éventuelle campagne élargie.
+
+**Décision défaut :** `default.yaml` reste `crossover_rate 0.0`. Le crossover n'est
+**pas** promu en défaut — gain réel en moyenne mais non robuste. Pistes suite :
+(a) crossover **+ bigpop** (combiner recombinaison et anti-dérive, comme
+apple_repro+bigpop l'a fait pour la sélection) ; (b) `crossover_rate` plus bas pour
+limiter la convergence prématurée ; (c) accepter l'émergence contingente et rapporter
+un taux de succès sur N seeds.
 
 ### Chiffres clés (vérifiés)
 
-- 3 runs seed 42, 30 000 ticks. Sorties brutes dans
-  `logs/2026-07-08_crossover/{control_default,leverC_crossover,leverB_bigpop67}_s42.txt`.
-- Contrôle : pop 200, repro 1360, record 49, steer moyen −0,284, 4 % fourrageurs.
-- Lever C : pop 200, repro 1394, record 53, steer moyen +0,366, 88 % fourrageurs.
-- Lever B : pop 400, repro 2601, record 35, steer moyen +0,232, 76 % fourrageurs.
-- `record_apples` (49/53/35) reste borné par la longévité du champion
+- 6 runs (2 configs × 3 seeds) + 1 run Lever B, 30 000 ticks. Sorties brutes dans
+  `logs/2026-07-08_crossover/`.
+- seed 42 — contrôle : 4 % / −0,284 ; Lever C : 88 % / +0,366 ; Lever B : 76 % / +0,232.
+- seed 7 — contrôle : 58 % / +0,123 ; Lever C : 96 % / +0,372.
+- seed 123 — contrôle : 28 % / −0,086 ; Lever C : 10 % / −0,157.
+- Cachés (moyenne population) : 0,5–1,3 dans **toutes** les conditions, fourrageuses
+  ou non → non discriminant (cf. enseignement 1).
+- `record_apples` (45–60) reste borné par la longévité du champion
   (`max_age 5000`, respawn 150) — non discriminant ; le steering l'est.
 - Qualité : 5 tests crossover, 148 tests verts, pylint 10/10, black clean.
