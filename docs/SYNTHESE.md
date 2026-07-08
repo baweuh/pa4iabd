@@ -243,7 +243,7 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 
 ## 6. État du code & qualité
 
-- **155 tests verts**, `pylint` stable (9.94/10 — deux avertissements
+- **148 tests verts**, `pylint` stable (9.93/10 — deux avertissements
   `too-many-locals`/`too-many-statements` pré-existants dans `renderer.py`, non
   liés aux volets 4-6), `black` clean.
 - Invariants respectés : capteur piloté par config (zéro nombre magique, invariant
@@ -253,6 +253,25 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 - Isolation expérimentale **rigoureuse** sur tout le projet : chaque levier = une
   seule variable modifiée depuis le contrôle (y compris l'ablation capteur du
   volet 5 canal par canal, et le dosage de connectivité du volet 6).
+
+### Audit + nettoyage (2026-07-08)
+
+Relecture code complète + recherche littérature (NEAT/novelty/HyperNEAT). Trois
+nettoyages livrés :
+- **Code mort supprimé** : `clamp_velocity` (la vitesse est bornée par
+  `tanh×max_speed`, le clamp ne servait plus), `Agent.update()` (jamais appelé —
+  `simulation.tick()` ré-inline le pipeline), `Environment.respawn()` (redondant
+  avec `tick_respawns`). 7 tests morts retirés (155→148).
+- **`population.min_size` retiré** : jamais branché sur la logique runtime (un
+  plancher contredirait l'intent ALife : l'extinction est légitime). Enlevé des
+  23 configs + validation.
+- **`CLAUDE.md` corrigé** (spec ↔ code : « Inputs NN : 67 » → capteur configurable
+  défaut 49 ; commande `--mode headless`). *Non versionné (gitignoré).*
+
+**Prochain chantier identifié** : brancher le **fitness sharing NEAT** — la seule
+vraie tuyauterie calculée (`speciation.py`) mais jamais reliée à la sélection.
+Pattern des échecs volets 4/5/6 : les leviers *réducteurs* (crossover, +inputs,
+sparse) cassent ; seuls les *additifs* (population, sélection directe) marchent.
 
 ## 7. Historique des commits clés
 
@@ -266,4 +285,6 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 | `4fb0892` | poc2.3 : volet 4 — crossover+bigpop (piste a) falsifiée |
 | `7851137` | poc2.3 : volet 5 — capteur configurable, package 49-inputs promu en défaut |
 | `807906d` | docs : synthèse à jour — volets 4-5 |
-| *(à venir)* | poc2.3 : volet 6 — génome fondateur sparse, falsifié |
+| `442256f` | poc2.3 : volet 6 — génome fondateur sparse, falsifié |
+| `928ccb7` | audit : suppression code mort (clamp_velocity, Agent.update, Environment.respawn) |
+| `9c56db2` | audit : retrait `population.min_size` (vestigial) |
