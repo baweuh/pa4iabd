@@ -196,14 +196,18 @@ class SpeciationConfig:
 
 @dataclass(frozen=True)
 class PopulationConfig:
-    """Population bounds."""
+    """Population bounds.
+
+    There is no runtime population floor: extinction is a legitimate ALife
+    outcome (the population dies out if it fails to forage). ``initial_size`` is
+    the founder pool; ``max_size`` the carrying capacity.
+    """
 
     initial_size: int
-    min_size: int
     max_size: int
 
     def __post_init__(self) -> None:
-        _require_positive(self, "initial_size", "min_size", "max_size")
+        _require_positive(self, "initial_size", "max_size")
 
 
 @dataclass(frozen=True)
@@ -287,14 +291,8 @@ class SimConfig:
             )
         if self.agent.max_energy < self.agent.initial_energy:
             raise ConfigError("agent.max_energy must be >= agent.initial_energy")
-        if not (
-            self.population.min_size
-            <= self.population.initial_size
-            <= self.population.max_size
-        ):
-            raise ConfigError(
-                "population sizes must satisfy min_size <= initial_size <= max_size"
-            )
+        if self.population.initial_size > self.population.max_size:
+            raise ConfigError("population.initial_size must be <= population.max_size")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SimConfig":

@@ -111,7 +111,9 @@ def test_cross_validation_reproduction(raw: dict) -> None:
 
 def test_cross_validation_population(raw: dict) -> None:
     raw["population"]["initial_size"] = raw["population"]["max_size"] + 1
-    with pytest.raises(ConfigError, match="population sizes"):
+    with pytest.raises(
+        ConfigError, match="initial_size must be <= population.max_size"
+    ):
         SimConfig.from_dict(raw)
 
 

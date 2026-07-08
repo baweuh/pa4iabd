@@ -158,7 +158,7 @@ def test_reproduction_increments_and_respects_cap(tmp_path):
             "reproduction_cost": 0.3,
             "apples_per_offspring": 0.0,  # energy-based reproduction
         },
-        population={"initial_size": 5, "min_size": 1, "max_size": 6},
+        population={"initial_size": 5, "max_size": 6},
     )
     sim = Simulation(cfg, random.Random(6))
     sim.tick()
@@ -260,7 +260,7 @@ def test_reproduction_prioritises_highest_energy_at_cap(tmp_path):
             "reproduction_cost": 0.3,
             "apples_per_offspring": 0.0,  # energy-based reproduction
         },
-        population={"initial_size": 2, "min_size": 1, "max_size": 3},
+        population={"initial_size": 2, "max_size": 3},
     )
     sim = Simulation(cfg, random.Random(6))
     sim.env.apples.clear()  # no eating: keep the energy ordering we set
@@ -297,7 +297,7 @@ def test_multi_offspring_high_energy(tmp_path):
             "reproduction_cost": 0.3,
             "apples_per_offspring": 0.0,  # energy-based reproduction
         },
-        population={"initial_size": 1, "min_size": 1, "max_size": 10},
+        population={"initial_size": 1, "max_size": 10},
     )
     sim = Simulation(cfg, random.Random(7))
     sim.env.apples.clear()
@@ -341,7 +341,7 @@ def test_reproduction_by_foraging_scales_with_apples(tmp_path):
             "max_energy": 3.0,
             "reproduction_cost": 0.1,
         },
-        population={"initial_size": 2, "min_size": 1, "max_size": 10},
+        population={"initial_size": 2, "max_size": 10},
     )
     sim = Simulation(cfg, random.Random(6))
     sim.env.apples.clear()  # no eating this tick; we set credit by hand
@@ -371,7 +371,7 @@ def test_apples_per_offspring_zero_keeps_legacy_energy_path(tmp_path):
             "reproduction_threshold": 0.5,
             "reproduction_cost": 0.3,
         },
-        population={"initial_size": 1, "min_size": 1, "max_size": 10},
+        population={"initial_size": 1, "max_size": 10},
     )
     sim = Simulation(cfg, random.Random(7))
     sim.env.apples.clear()

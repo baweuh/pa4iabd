@@ -66,7 +66,6 @@ speciation:
 
 population:
   initial_size: 200        # large initial pool → more random walkers find food naturally
-  min_size: 5              # not enforced; allows true extinction if population fails
   max_size: 400            # accommodate growth from successful hunters
 
 simulation:
