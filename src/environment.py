@@ -69,15 +69,6 @@ class Environment:
         """True when (x, y) is outside the penalty zone (agent-facing helper)."""
         return self.dist_to_wall(x, y) >= self._pz.width
 
-    def respawn(self, apple: Apple, rng: Random) -> None:
-        """Relocate *apple* to a fresh safe position distinct from its current one."""
-        old_x, old_y = apple.x, apple.y
-        new_x, new_y = self._random_safe_position(rng)
-        while new_x == old_x and new_y == old_y:
-            new_x, new_y = self._random_safe_position(rng)
-        apple.x = new_x
-        apple.y = new_y
-
     def mark_eaten(self, apple: Apple) -> None:
         """Remove a just-eaten apple from play; it will respawn after the delay.
 

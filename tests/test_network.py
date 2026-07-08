@@ -1,4 +1,4 @@
-"""Tests for NeuralNetwork and clamp_velocity."""
+"""Tests for NeuralNetwork."""
 
 # pylint: disable=missing-function-docstring,protected-access
 
@@ -19,7 +19,7 @@ from src.genome import (
     HIDDEN,
     OUTPUT,
 )
-from src.network import NeuralNetwork, clamp_velocity
+from src.network import NeuralNetwork
 
 
 @pytest.fixture(name="cfg")
@@ -184,38 +184,6 @@ def test_eval_order_cached(cfg):
     order_before = nn._eval_order
     nn.activate([1.0, 0.5])
     assert nn._eval_order is order_before  # same object, never replaced
-
-
-# --------------------------------------------------------------------------- #
-# clamp_velocity
-# --------------------------------------------------------------------------- #
-def test_clamp_velocity_no_clamp():
-    vx, vy = clamp_velocity(1.0, 1.0, 3.0)
-    assert vx == pytest.approx(1.0)
-    assert vy == pytest.approx(1.0)
-
-
-def test_clamp_velocity_clamps_magnitude():
-    vx, vy = clamp_velocity(4.0, 0.0, 3.0)
-    assert math.hypot(vx, vy) == pytest.approx(3.0)
-    # direction preserved
-    assert vx > 0
-    assert vy == pytest.approx(0.0)
-
-
-def test_clamp_velocity_diagonal():
-    vx0, vy0 = 3.0, 4.0  # mag = 5.0
-    max_speed = 2.0
-    vx, vy = clamp_velocity(vx0, vy0, max_speed)
-    assert math.hypot(vx, vy) == pytest.approx(max_speed)
-    # direction preserved: vx/vy == vx0/vy0
-    assert vx / vy == pytest.approx(vx0 / vy0)
-
-
-def test_clamp_velocity_zero():
-    vx, vy = clamp_velocity(0.0, 0.0, 3.0)
-    assert vx == 0.0
-    assert vy == 0.0
 
 
 # --------------------------------------------------------------------------- #

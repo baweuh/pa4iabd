@@ -280,21 +280,6 @@ class Agent:
             heading=self.heading,
         )
 
-    def update(self) -> None:
-        """Advance one tick: age, decide, move, eat, metabolize, check death.
-
-        Convenience helper for callers that want default step ordering;
-        reproduction is left to the orchestrator (Phase 6) since it yields a new
-        agent that the population must collect.
-        """
-        self.age += 1
-        vx, vy = self.activate()
-        self.move(vx, vy)
-        self.eat()
-        self.metabolize()
-        if self.is_dead():
-            self.alive = False
-
 
 # ---------------------------------------------------------------------- #
 # Geometry helpers (pure functions)

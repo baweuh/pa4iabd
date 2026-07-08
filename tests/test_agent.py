@@ -385,19 +385,6 @@ def test_child_generation_increments(cfg, env, genome):
 
 
 # ------------------------------------------------------------------ #
-# update() helper
-# ------------------------------------------------------------------ #
-
-
-def test_update_advances_one_tick(cfg, env, genome):
-    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
-    start_energy = agent.energy
-    agent.update()
-    assert agent.age == 1
-    assert agent.energy <= start_energy  # metabolic cost paid (no apple eaten)
-
-
-# ------------------------------------------------------------------ #
 # Egocentric model
 # ------------------------------------------------------------------ #
 

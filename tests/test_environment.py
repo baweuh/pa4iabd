@@ -54,21 +54,6 @@ def test_determinism(cfg):
 # ------------------------------------------------------------------ #
 
 
-def test_respawn_changes_position(cfg, env):
-    apple = env.apples[0]
-    old_pos = (apple.x, apple.y)
-    env.respawn(apple, random.Random(99))
-    assert (apple.x, apple.y) != old_pos
-
-
-def test_respawn_stays_in_safe_zone(cfg, env):
-    zw = cfg.penalty_zone.width
-    r = cfg.apple.radius
-    apple = env.apples[0]
-    env.respawn(apple, random.Random(7))
-    assert env.dist_to_wall(apple.x, apple.y) >= zw + r
-
-
 # ------------------------------------------------------------------ #
 # Deferred respawn (mark_eaten + tick_respawns)
 # ------------------------------------------------------------------ #

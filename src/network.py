@@ -5,8 +5,6 @@ Invariants honoured here:
 - Hidden nodes use the configured activation (tanh); output nodes are linear.
 - Disabled connections are ignored everywhere (genome.py may leave them in place
   after add_node splits an edge).
-- Velocity clamping is a free function (separation of concerns: the network
-  knows nothing about AgentConfig).
 """
 
 from __future__ import annotations
@@ -108,12 +106,3 @@ class NeuralNetwork:
                 values[nid] = self._activation(total)
 
         return (values[self.output_ids[0]], values[self.output_ids[1]])
-
-
-def clamp_velocity(vx: float, vy: float, max_speed: float) -> tuple[float, float]:
-    """Cap velocity magnitude to max_speed, preserving direction (invariant n°5)."""
-    mag = math.hypot(vx, vy)
-    if mag > max_speed:
-        scale = max_speed / mag
-        return (vx * scale, vy * scale)
-    return (vx, vy)
