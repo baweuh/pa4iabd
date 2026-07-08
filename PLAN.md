@@ -99,6 +99,12 @@
         seed 123** (28→10 %). **Non robuste au sens strict** (pas de 3/3 positifs
         comme apple_repro_bigpop) : rebrasse partiellement les seeds. Enseignement :
         les neurones cachés ne discriminent PAS (présents partout, 0,5–1,3).
-- [ ] ⬜ **Pistes suite** : (a) crossover + bigpop ; (b) crossover_rate plus bas
-        (limiter convergence prématurée sur seed 123) ; (c) taux de succès sur N
-        seeds. `default.yaml` reste `crossover_rate 0.0` (non promu, non robuste).
+- [x] Piste (a) **crossover + bigpop** (audit poc2.3 volet 4, `lever_crossover_bigpop.yaml`,
+        3 seeds / 30k, `logs/2026-07-08_crossover_bigpop/`) : **FALSIFIÉE**. 51/69/26 %,
+        seed 123 encore négatif. La combinaison **sous-performe chaque levier seul**
+        (seed 42 : bigpop 76 % vs combiné 51 %). Enseignement : le crossover est un
+        opérateur **moyennant** (rapproche tous les seeds de ~50 %, réduit la variance
+        inter-seeds), pas amplifiant → seule la **taille de pop** lève tous les seeds.
+- [ ] ⬜ Pistes restantes (b) crossover_rate plus bas / (c) N seeds : même régime
+        d'homogénéisation, ne franchiront pas l'étalon `apple_repro_bigpop` (86/84/56,
+        déjà notre meilleur résultat robuste). `default.yaml` reste `crossover_rate 0.0`.

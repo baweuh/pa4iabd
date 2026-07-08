@@ -1,0 +1,84 @@
+# Lever C + bigpop : crossover NEAT intra-espèce + grande population.
+# Piste (a) de la suite poc2.3 : combiner recombinaison (propage les innovations)
+# ET anti-dérive par la taille de pop (levier robuste de poc2.2/apple_repro_bigpop).
+# Isolation : identique à lever_bigpop67.yaml, seul crossover_rate passe 0.0→0.6.
+# Energy is expressed in apple-equivalent units (invariant n°2).
+
+world:
+  width: 2000          # pixels
+  height: 1125         # pixels
+
+penalty_zone:
+  width: 100           # thickness from the wall, in pixels
+  max_drain: 0.003     # energy drained per tick at the wall (softened: was 0.005)
+
+agent:
+  radius: 8
+  max_speed: 3.0
+  initial_energy: 1.0
+  max_energy: 2.0
+  energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
+  max_age: 5000        # ticks
+  reproduction_threshold: 1.1     # ~1 apple from start → birth; high-r bootstrap (was 1.3)
+  reproduction_cost: 0.35         # more offspring per apple keeps the pop viable (was 0.6)
+  end_of_life_ticks: 500
+  max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
+  move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
+  apples_per_offspring: 5.0      # >0 = fecundity from cumulative apples (structural)
+
+sensors:
+  num_rays: 16
+  max_distance: 200    # pixels
+  fov: 360             # degrees
+
+network:
+  num_inputs: 67       # 4*num_rays + 3 : apple_dist, wall_dist, apple_flag, wall_flag (×16) + energy + actual_speed + apples_in_view
+  num_outputs: 2       # vx_brut, vy_brut (normalised post-output)
+  activation: "tanh"
+
+apple:
+  count: 125           # scaled with map area 1600×900→2000×1125 (+56% surface)
+  radius: 5
+  energy: 0.5
+  respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
+
+genome:
+  weight_init_range: 1.0
+  weight_mutation_rate: 0.8
+  weight_perturbation: 0.2
+  add_node_rate: 0.10
+  add_connection_rate: 0.08
+  remove_node_rate: 0.00
+  remove_connection_rate: 0.02
+  weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
+  crossover_rate: 0.6          # Lever C: sexual repro, intra-species
+
+speciation:
+  # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
+  # Diversity metrics (species count, mean distance) in the CSV. Also gates
+  # intra-species mate choice when genome.crossover_rate > 0 (Lever C); here
+  # crossover_rate = 0.6 so speciation feeds mate selection.
+  c_excess: 1.0
+  c_disjoint: 1.0
+  c_weight: 0.4
+  compatibility_threshold: 3.0   # genomes closer than this share a species
+
+population:
+  initial_size: 200        # large initial pool → more random walkers find food naturally
+  min_size: 5              # not enforced; allows true extinction if population fails
+  max_size: 400            # accommodate growth from successful hunters
+
+simulation:
+  ticks_per_second: 60
+  max_ticks: 0         # 0 = run forever
+  seed: 42
+
+logging:
+  csv_path: "logs/metrics.csv"
+  log_interval_ticks: 100
+  best_genome_path: "logs/best_genome.json"
+
+render:
+  fps: 60
+  window_width: 2000
+  window_height: 1125

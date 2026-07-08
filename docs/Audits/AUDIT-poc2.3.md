@@ -1,6 +1,6 @@
 # Audit poc2.3 — capteurs 67, visualisation réseau, et la relance de l'évolution structurelle
 
-> Branche `poc2.3`. Trois volets : (1) un enrichissement **perceptif et
+> Branche `poc2.3`. Quatre volets : (1) un enrichissement **perceptif et
 > instrumental** (67 inputs, proprioception, panneau réseau, sparkline forage,
 > fullscreen) — livré et fonctionnel ; (2) une tentative de débloquer l'évolution
 > structurelle par **réglage de paramètres** (`add_node_rate`) — **échouée**,
@@ -8,7 +8,11 @@
 > dérive, il ne s'adapte pas* ; (3) une relance par **mécanisme** (crossover NEAT
 > intra-espèce) qui améliore fortement le fourrage sur 2/3 seeds (moyenne 30 %→65 %,
 > steering −0,08→+0,19) mais **régresse sur seed 123** — **gain réel en moyenne,
-> non robuste au sens strict** (pas de 3/3 positifs).
+> non robuste au sens strict** (pas de 3/3 positifs) ; (4) la piste (a) **crossover
+> + bigpop** — **falsifiée** : la combinaison sous-performe *chaque levier pris
+> seul* et rapproche tous les seeds de ~50 %. Le crossover est un opérateur
+> **moyennant** (réduit la variance inter-seeds), pas amplifiant ; le seul levier
+> qui *lève* tous les seeds ensemble reste la **taille de population**.
 
 ---
 
@@ -229,3 +233,66 @@ un taux de succès sur N seeds.
 - `record_apples` (45–60) reste borné par la longévité du champion
   (`max_age 5000`, respawn 150) — non discriminant ; le steering l'est.
 - Qualité : 5 tests crossover, 148 tests verts, pylint 10/10, black clean.
+
+## Volet 4 — Crossover + bigpop : la piste (a) falsifiée ❌
+
+Le volet 3 laissait trois pistes. La plus prometteuse était (a) : combiner le
+crossover (propage les innovations) **et** la grande population (anti-dérive, le
+seul levier robuste de poc2.2). Hypothèse : comme `apple_repro + bigpop` avait
+robustifié la *sélection*, `crossover + bigpop` robustifierait l'*adaptation*
+jusqu'au 3/3.
+
+### Le protocole
+
+Config `config/lever_crossover_bigpop.yaml` = **isolation à une variable** vs
+`lever_bigpop67.yaml` (pop 200/400) : seul `crossover_rate` passe 0.0→0.6. Trois
+seeds (42, 7, 123), 30 000 ticks. Sorties dans `logs/2026-07-08_crossover_bigpop/`.
+
+### Résultats
+
+| Seed | Contrôle default | Crossover seul | Bigpop seul | **Crossover + bigpop** |
+|------|:---:|:---:|:---:|:---:|
+| 42   | 4 % / −0,284  | 88 % / +0,366 | 76 % / +0,232 | **51 % / +0,036** |
+| 7    | 58 % / +0,123 | 96 % / +0,372 | —             | **69 % / +0,200** |
+| 123  | 28 % / −0,086 | 10 % / −0,157 | —             | **26 % / −0,033** |
+
+### Verdict : hypothèse (a) FALSIFIÉE
+
+Ce n'est **pas** le 3/3 robuste espéré, et pire, la combinaison **sous-performe
+chaque levier pris seul** :
+
+- **Seed 42** : bigpop seul = 76 %, crossover seul = 88 % → **combinés = 51 %**.
+  Ajouter le crossover au bigpop *dégrade* le meilleur seed.
+- **Seed 7** : crossover seul 96 % → combiné **69 %**.
+- **Seed 123** : crossover seul 10 % → combiné 26 %, mais steering encore
+  **négatif** (−0,033, sous le hasard).
+
+Aucun seed ne fourrage franchement ; un seed reste sous le random. Face à l'étalon
+de robustesse (`apple_repro_bigpop` = 86/84/56, tous nettement positifs), échec net.
+
+### L'enseignement : le crossover moyenne, il n'amplifie pas
+
+Le fait décisif : le crossover **rapproche tous les seeds de ~50 %**. Il tire
+seed 42 vers le bas (88→51), seed 7 vers le bas (96→69) et seed 123 vers le
+haut (10→26). C'est le comportement d'un **opérateur moyennant** : la
+recombinaison intra-espèce mélange les génomes vers le comportement *moyen* de la
+population au lieu d'amplifier la meilleure lignée. Cela explique d'un seul
+mécanisme **les deux effets** observés au volet 3 — le sauvetage de seed 123 ET
+l'écrasement des gagnants. Le crossover **réduit la variance inter-seeds** : utile
+contre une régression, néfaste pour capitaliser un succès.
+
+Conclusion transverse (confirme poc2.2 et volet 3) : **seule la taille de
+population lève tous les seeds ensemble.** Le crossover régularise, il n'élève pas.
+Les pistes (b) `crossover_rate` plus bas et (c) taux de succès sur N seeds
+resteraient dans le même régime « le crossover homogénéise » — elles ne
+franchiront pas l'étalon `apple_repro_bigpop`, déjà notre meilleur résultat robuste.
+
+### Chiffres clés (vérifiés)
+
+- 3 runs (`lever_crossover_bigpop.yaml`, seeds 42/7/123, 30 000 ticks). Sorties
+  brutes dans `logs/2026-07-08_crossover_bigpop/`.
+- % fourrageurs (r>0.1) / steering moyen : 42 = 51 % / +0,036 ; 7 = 69 % / +0,200 ;
+  123 = 26 % / −0,033. Pop pleine à 400 dans les 3 cas.
+- Comparatif clé : sur seed 42, bigpop seul (76 %) > crossover+bigpop (51 %) →
+  le crossover **soustrait** de la performance au bigpop.
+- Cachés (moyenne pop) : 1,24–1,63 — toujours présents, toujours non discriminants.
