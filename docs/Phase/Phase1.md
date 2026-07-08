@@ -1,5 +1,10 @@
 # Phase 1 — Fondations : config.py + default.yaml + tests
 
+> ⚠️ **Archive** : ce document décrit l'implémentation *d'origine* (33 inputs,
+> monde 1600×900, `population.min_size`...). Ces valeurs ont depuis changé
+> plusieurs fois (poc2.2/poc2.3). Pour l'état ACTUEL du projet, voir
+> `docs/SYNTHESE.md` et `config/default.yaml`.
+
 ## Contexte
 
 Le dépôt est vierge (seuls `CLAUDE.md` et `PLAN.md` existent). La Phase 1

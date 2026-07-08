@@ -1,5 +1,10 @@
 # Phase 5 — Agent (raycasts + énergie + cycle de vie) ✅
 
+> ⚠️ **Archive** : décrit l'implémentation d'origine (33 inputs, sortie
+> `clamp_velocity`). Depuis poc2.2, la sortie est **égocentrique** (invariant
+> n°5) et `clamp_velocity` est **supprimé** (audit 2026-07-08). Pour l'état
+> ACTUEL, voir `docs/SYNTHESE.md` et `src/agent.py`.
+
 ## Contexte
 
 Phases 1–4 en place (`SimConfig`, `Genome`, `NeuralNetwork`, `Environment`).

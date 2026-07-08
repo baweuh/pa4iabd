@@ -1,5 +1,11 @@
 # Phase 3 — Réseau de neurones : network.py + tests
 
+> ⚠️ **Archive** : décrit l'implémentation d'origine (33 inputs, vitesse
+> `(vx,vy)` bornée par `clamp_velocity`). Le modèle de sortie est devenu
+> **égocentrique** (`heading`/`speed` via `tanh`, invariant n°5) dès poc2.2 —
+> `clamp_velocity` est **supprimé** (code mort, audit 2026-07-08). Pour l'état
+> ACTUEL, voir `docs/SYNTHESE.md` et `src/network.py`.
+
 ## Contexte
 
 Phases 1-2 en place (SimConfig + Genome). Phase 3 **compile** un Genome en

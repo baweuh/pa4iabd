@@ -55,12 +55,17 @@ normalisées, mêmes drains, même dynamique).
 - Suite complète verte, pylint 10.00/10, black propre.
 
 ## Points notés, non corrigés (volontairement)
-- `Agent.update()` duplique l'ordre des étapes de `Simulation.tick` (API de
-  confort testée ; risque de dérive si l'ordre change un jour).
+- ✅ **Résolu 2026-07-08** (audit poc2.3, commit `928ccb7`) : `Agent.update()`
+  duplique l'ordre des étapes de `Simulation.tick` (API de confort testée ;
+  risque de dérive si l'ordre change un jour). *Le risque s'est confirmé —
+  `update()` n'était plus appelé nulle part et divergeait déjà de `tick()`
+  (ne comptait pas les pommes). Supprimé.*
 - `TRACKER` global réinitialisé par `Simulation.__init__` : deux simulations
   simultanées dans le même process partageraient l'historique d'innovations.
 - Un génome rechargé depuis JSON puis muté pourrait allouer des ids de nœuds
   en collision (le tracker ne connaît pas les ids chargés) — hors du flux
   actuel (les dumps servent à l'analyse, pas à la reprise).
-- `population.min_size` n'est pas appliqué — documenté comme choix (extinction
-  réelle possible) dans `default.yaml`.
+- ✅ **Résolu 2026-07-08** (audit poc2.3, commit `9c56db2`) : `population.min_size`
+  n'était pas appliqué — documenté comme choix (extinction réelle possible)
+  dans `default.yaml`. *Confirmé vestigial (jamais lu par la logique) ; retiré
+  du config et de la validation plutôt que branché.*
