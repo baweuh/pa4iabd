@@ -49,7 +49,7 @@ genome:
   remove_node_rate: 0.00
   remove_connection_rate: 0.02
   weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
-  crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
+  crossover_rate: 0.6          # Lever C: sexual repro, intra-species
 
 speciation:
   # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).

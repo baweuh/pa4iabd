@@ -37,7 +37,11 @@ from src.agent import Agent
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import TRACKER, Genome
-from src.speciation import count_species, mean_pairwise_distance
+from src.speciation import (
+    compatibility_distance,
+    count_species,
+    mean_pairwise_distance,
+)
 
 CSV_HEADER = (
     "tick",
@@ -226,7 +230,7 @@ class Simulation:
         )
         for agent in eligible:
             while agent.can_reproduce() and len(children) < slots:
-                children.append(self._birth(agent))
+                children.append(self._birth(agent, survivors))
             if len(children) >= slots:
                 break
         return children
@@ -257,18 +261,44 @@ class Simulation:
                 and len(children) < slots
             ):
                 self._repro_credit[agent] -= per_child
-                children.append(self._birth(agent))
+                children.append(self._birth(agent, survivors))
             if len(children) >= slots:
                 break
         return children
 
-    def _birth(self, parent: Agent) -> Agent:
-        """Spawn one child from ``parent``, register its bookkeeping, count it."""
-        child = parent.reproduce()
+    def _birth(self, parent: Agent, pool: list[Agent]) -> Agent:
+        """Spawn one child from ``parent``, register its bookkeeping, count it.
+
+        When crossover is enabled (``genome.crossover_rate > 0``) the birth is
+        sexual with probability ``crossover_rate``, mating ``parent`` with a
+        compatible partner drawn from ``pool`` (see :meth:`_pick_mate`).
+        """
+        child = parent.reproduce(self._pick_mate(parent, pool))
         self._apples_eaten[child] = 0
         self._repro_credit[child] = 0.0
         self.total_reproductions += 1
         return child
+
+    def _pick_mate(self, parent: Agent, pool: list[Agent]) -> Agent | None:
+        """Return an intra-species mate for ``parent``, or ``None`` for asexual.
+
+        With probability ``genome.crossover_rate`` we draw one random other agent
+        and accept it only if it is within the speciation ``compatibility_threshold``
+        of ``parent`` (mating stays within a species); otherwise the birth falls
+        back to asexual cloning. A single draw keeps this O(genome) per birth.
+        """
+        rate = self._config.genome.crossover_rate
+        if rate <= 0.0 or len(pool) < 2 or self._rng.random() >= rate:
+            return None
+        mate = self._rng.choice(pool)
+        if mate is parent:
+            return None
+        distance = compatibility_distance(
+            parent.genome, mate.genome, self._config.speciation
+        )
+        if distance < self._config.speciation.compatibility_threshold:
+            return mate
+        return None
 
     # ------------------------------------------------------------------ #
     # Record / best genome

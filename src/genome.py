@@ -132,6 +132,90 @@ class Genome:
                 )
         return cls(nodes, connections)
 
+    @staticmethod
+    def crossover(fitter: "Genome", other: "Genome", rng: Random) -> "Genome":
+        """Produce a feedforward child genome by NEAT-style crossover.
+
+        Connection genes are aligned by innovation number. Matching genes (present
+        in both parents) are inherited from a random parent; disjoint/excess genes
+        are inherited from the ``fitter`` parent only (canonical NEAT). Node genes
+        follow the connections they support, plus every input/output node.
+
+        The child is guaranteed strictly feedforward (invariant n°3): inherited
+        edges are added in innovation order and any edge that would close a cycle
+        against the edges already accepted is skipped.
+        """
+        picks = Genome._align_genes(fitter, other, rng)
+
+        # Node lookup: fitter's node types win on overlap (its structure is kept).
+        node_by_id: dict[int, str] = {}
+        for parent in (other, fitter):
+            for node in parent.nodes:
+                node_by_id[node.node_id] = node.node_type
+
+        child = Genome(nodes=[], connections=[])
+        # Same-class construction helper; pylint over-flags the static→instance hop.
+        child._inherit(picks, node_by_id)  # pylint: disable=protected-access
+        return child
+
+    @staticmethod
+    def _align_genes(
+        fitter: "Genome", other: "Genome", rng: Random
+    ) -> list[ConnectionGene]:
+        """Align connection genes by innovation for :meth:`crossover`.
+
+        Matching genes are drawn from a random parent; disjoint/excess genes are
+        kept from ``fitter`` only and dropped from ``other`` (canonical NEAT).
+        """
+        by_innov_f = {c.innovation: c for c in fitter.connections}
+        by_innov_o = {c.innovation: c for c in other.connections}
+        picks: list[ConnectionGene] = []
+        for innov in sorted(set(by_innov_f) | set(by_innov_o)):
+            if innov in by_innov_f and innov in by_innov_o:
+                picks.append(
+                    by_innov_f[innov] if rng.random() < 0.5 else by_innov_o[innov]
+                )
+            elif innov in by_innov_f:
+                picks.append(by_innov_f[innov])  # disjoint/excess from fitter
+        return picks
+
+    def _inherit(self, picks: list[ConnectionGene], node_by_id: dict[int, str]) -> None:
+        """Populate this empty genome with inherited I/O nodes and edges.
+
+        Every input/output node is always present — the network needs the full
+        I/O vector even if a node ends up unconnected. Edges are added in
+        innovation order; any edge closing a cycle is skipped (invariant n°3).
+        """
+        for nid, ntype in node_by_id.items():
+            if ntype != HIDDEN:
+                self.nodes.append(NodeGene(nid, ntype))
+        present_ids = {n.node_id for n in self.nodes}
+
+        def _ensure_node(nid: int) -> bool:
+            if nid in present_ids:
+                return True
+            ntype = node_by_id.get(nid)
+            if ntype is None:
+                return False
+            self.nodes.append(NodeGene(nid, ntype))
+            present_ids.add(nid)
+            return True
+
+        for gene in picks:
+            if not (_ensure_node(gene.in_node) and _ensure_node(gene.out_node)):
+                continue
+            if gene.enabled and self._creates_cycle(gene.in_node, gene.out_node):
+                continue
+            self.connections.append(
+                ConnectionGene(
+                    gene.in_node,
+                    gene.out_node,
+                    gene.weight,
+                    gene.enabled,
+                    gene.innovation,
+                )
+            )
+
     def clone(self) -> "Genome":
         """Return a deep, independent copy of this genome."""
         return Genome(

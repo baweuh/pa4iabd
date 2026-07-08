@@ -120,7 +120,10 @@ class Agent:
         energy_norm = max(0.0, min(1.0, self.energy / self._config.agent.max_energy))
         apples_in_view = sum(apple_flags) / len(apple_flags)
         return (
-            apple_dists + wall_dists + apple_flags + wall_flags
+            apple_dists
+            + wall_dists
+            + apple_flags
+            + wall_flags
             + [energy_norm, self._last_actual_speed, apples_in_view]
         )
 
@@ -140,8 +143,12 @@ class Agent:
                 apple_dist = t
 
         wall_t = _ray_walls(
-            self.x, self.y, dx, dy,
-            self._config.world.width, self._config.world.height,
+            self.x,
+            self.y,
+            dx,
+            dy,
+            self._config.world.width,
+            self._config.world.height,
         )
         wall_dist = wall_t if (wall_t is not None and wall_t < max_dist) else max_dist
 
@@ -227,16 +234,22 @@ class Agent:
         """True once energy reaches the reproduction threshold."""
         return self.energy >= self._config.agent.reproduction_threshold
 
-    def reproduce(self) -> "Agent":
+    def reproduce(self, mate: "Agent | None" = None) -> "Agent":
         """Spawn a mutated child near the parent; the parent pays the cost.
 
-        The child genome is a mutated clone; the child is a fresh ``Agent`` (so it
+        With ``mate`` the child genome comes from NEAT crossover (``self`` treated
+        as the fitter parent, since it is the one filling the reproduction slot);
+        without a mate it is a clone of ``self`` (legacy asexual path). Either way
+        the child genome is then mutated. The child is a fresh ``Agent`` (so it
         builds its own cached network) starting with ``initial_energy`` and placed
         within ``±radius`` of the parent, clamped inside the world.
         """
         self.energy -= self._config.agent.reproduction_cost
 
-        child_genome = self.genome.clone()
+        if mate is None:
+            child_genome = self.genome.clone()
+        else:
+            child_genome = Genome.crossover(self.genome, mate.genome, self._rng)
         child_genome.mutate(self._config.genome, self._rng)
 
         radius = self._config.agent.radius

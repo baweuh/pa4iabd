@@ -8,7 +8,7 @@ is split into one frozen dataclass per domain, mapped 1:1 onto the sections of
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -131,6 +131,7 @@ class GenomeConfig:
     remove_node_rate: float
     remove_connection_rate: float
     weight_max: float  # hard clamp applied after every weight perturbation
+    crossover_rate: float = 0.0  # P(birth is sexual); 0.0 = legacy asexual cloning
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_init_range", "weight_perturbation")
@@ -142,6 +143,7 @@ class GenomeConfig:
             "add_connection_rate",
             "remove_node_rate",
             "remove_connection_rate",
+            "crossover_rate",
         )
 
 
@@ -313,7 +315,14 @@ def _build(cls: type, section: str, data: dict[str, Any]) -> Any:
     unknown = set(payload) - allowed
     if unknown:
         raise ConfigError(f"unknown key(s) {sorted(unknown)} in section '{section}'")
-    missing = allowed - set(payload)
+    # Fields carrying a default may be omitted (backward-compatible additions);
+    # only fields without any default are mandatory.
+    required = {
+        f.name
+        for f in fields(cls)
+        if f.default is MISSING and f.default_factory is MISSING
+    }
+    missing = required - set(payload)
     if missing:
         raise ConfigError(f"missing key(s) {sorted(missing)} in section '{section}'")
     try:

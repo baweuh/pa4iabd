@@ -232,3 +232,86 @@ def test_weights_clamped_after_mutation(config):
     for _ in range(50):
         g.mutate_weights(config, rng)
     assert all(abs(c.weight) <= config.weight_max for c in g.connections)
+
+
+# --------------------------------------------------------------------------- #
+# Crossover (Lever C)
+# --------------------------------------------------------------------------- #
+def _diverged_pair(config):
+    """Two genomes sharing an ancestor but grown apart via independent mutation."""
+    tracker = InnovationTracker()
+    rng = Random(7)
+    base = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    a, b = base.clone(), base.clone()
+    for _ in range(40):
+        a.mutate(config, rng, tracker)
+        b.mutate(config, rng, tracker)
+    return a, b
+
+
+def test_crossover_child_is_feedforward(config):
+    a, b = _diverged_pair(config)
+    rng = Random(0)
+    for _ in range(30):
+        child = Genome.crossover(a, b, rng)
+        assert not _has_cycle(
+            child
+        ), "crossover must preserve the feedforward invariant"
+
+
+def test_crossover_keeps_all_io_nodes(config):
+    a, b = _diverged_pair(config)
+    child = Genome.crossover(a, b, Random(1))
+    inputs = [n for n in child.nodes if n.node_type == INPUT]
+    outputs = [n for n in child.nodes if n.node_type == OUTPUT]
+    assert len(inputs) == NUM_INPUTS
+    assert len(outputs) == NUM_OUTPUTS
+
+
+def test_crossover_inherits_only_parent_genes(config):
+    a, b = _diverged_pair(config)
+    parent_innovations = {c.innovation for c in a.connections} | {
+        c.innovation for c in b.connections
+    }
+    child = Genome.crossover(a, b, Random(2))
+    child_innovations = {c.innovation for c in child.connections}
+    assert child_innovations <= parent_innovations
+    # Every connection endpoint must have a matching node gene.
+    node_ids = {n.node_id for n in child.nodes}
+    for conn in child.connections:
+        assert conn.in_node in node_ids
+        assert conn.out_node in node_ids
+
+
+def test_crossover_child_builds_valid_network(config):
+    """A crossover child must yield a working NeuralNetwork (topo sort succeeds)."""
+    from src.config import SimConfig  # local: reuse the full config for network dims
+    from src.network import NeuralNetwork
+
+    net_cfg = SimConfig.from_yaml("config/default.yaml")
+    tracker = InnovationTracker()
+    rng = Random(3)
+    ni, no = net_cfg.network.num_inputs, net_cfg.network.num_outputs
+    base = Genome.new_fully_connected(net_cfg.genome, ni, no, rng, tracker)
+    a, b = base.clone(), base.clone()
+    for _ in range(40):
+        a.mutate(net_cfg.genome, rng, tracker)
+        b.mutate(net_cfg.genome, rng, tracker)
+    child = Genome.crossover(a, b, rng)
+    net = NeuralNetwork(child, net_cfg.network)
+    out = net.activate([0.5] * ni)
+    assert len(out) == no
+
+
+def test_crossover_identical_parents_preserves_structure(config):
+    tracker = InnovationTracker()
+    rng = Random(5)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    for _ in range(20):
+        g.mutate(config, rng, tracker)
+    child = Genome.crossover(g, g.clone(), Random(6))
+    # Same innovations in, same innovations out (matching-gene path only).
+    assert {c.innovation for c in child.connections} == {
+        c.innovation for c in g.connections
+    }
+    assert all(abs(c.weight) <= config.weight_max for c in g.connections)
