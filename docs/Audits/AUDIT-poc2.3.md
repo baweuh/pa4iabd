@@ -164,12 +164,16 @@ champion isolé (bruité sous turnover rapide).
 ### Deux enseignements
 
 1. **Les neurones cachés ne sont PAS le discriminant.** Le contrôle en porte
-   autant que les leviers (0,83 en moyenne) tout en étant **anti-fourrageur**
-   (4 %, steer −0,284). La structure émerge partout à 30 000 ticks avec
-   `add_node_rate 0,10` canonique — le « 0 caché » du volet 2 était un artefact du
-   régime à mutation poussée, pas une propriété générale. **Le signal qui compte
-   est le comportement (steering), pas le compte de neurones.** Ceci corrige le
-   cadrage implicite du volet 2.
+   autant que les leviers (0,83 en **moyenne population**) tout en étant
+   **anti-fourrageur** (4 %, steer −0,284). La structure cachée émerge dans les
+   trois conditions à 30 000 ticks avec `add_node_rate 0,10` canonique. À
+   rapprocher du « 0 caché » du volet 2, avec une précision de mesure importante :
+   le volet 2 comptait les **champions** (`best_agents = {0: 53}`), ce volet compte
+   la **population vivante entière** (`run_and_probe`). La lecture combinée est plus
+   forte que « 0 caché » : la population *porte* des neurones cachés (0,5–0,8 en
+   moyenne) qui **ne deviennent jamais record-holders** — ils ne confèrent donc
+   aucun avantage de fitness détectable, exactement la Cause 3 de poc2.2 v3. **Le
+   signal qui compte est le comportement (steering), pas le compte de neurones.**
 
 2. **Le crossover est un levier d'adaptation propre, isolé de la population.** À
    population *identique* (100→200), activer le crossover fait passer le fourrage
