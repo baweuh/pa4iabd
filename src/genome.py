@@ -109,18 +109,36 @@ class Genome:
         rng: Random,
         tracker: InnovationTracker = TRACKER,
     ) -> "Genome":
-        """Create a genome with every input wired to every output.
+        """Create a founder genome wiring inputs to outputs.
 
         Input ids are ``0..num_inputs-1``; output ids follow them. Hidden node
         ids (allocated later by :meth:`add_node`) start above the reserved
         input/output range.
+
+        ``config.genome.initial_connectivity`` (default 1.0) controls how much
+        of the full input×output bipartite graph is wired at genesis: 1.0 wires
+        every input to every output (legacy, exact original behaviour); lower
+        values wire each output to a random sparse subset of inputs (at least
+        one, so no output stays permanently silent).
         """
         tracker.bump_node_floor(num_inputs + num_outputs)
         nodes = [NodeGene(i, INPUT) for i in range(num_inputs)]
         nodes += [NodeGene(num_inputs + j, OUTPUT) for j in range(num_outputs)]
+        output_ids = range(num_inputs, num_inputs + num_outputs)
+        # Precompute each output's wired-input set *before* the weight-drawing
+        # loop below, so the connectivity==1.0 path draws RNG in exactly the
+        # original (i outer, j inner) order — byte-for-byte backward compatible.
+        wired: dict[int, frozenset[int]] = {
+            j: frozenset(
+                cls._founder_inputs_for(num_inputs, config.initial_connectivity, rng)
+            )
+            for j in output_ids
+        }
         connections: list[ConnectionGene] = []
         for i in range(num_inputs):
-            for j in range(num_inputs, num_inputs + num_outputs):
+            for j in output_ids:
+                if i not in wired[j]:
+                    continue
                 connections.append(
                     ConnectionGene(
                         in_node=i,
@@ -131,6 +149,21 @@ class Genome:
                     )
                 )
         return cls(nodes, connections)
+
+    @staticmethod
+    def _founder_inputs_for(
+        num_inputs: int, connectivity: float, rng: Random
+    ) -> list[int]:
+        """Input ids wired to one founder output, per ``initial_connectivity``.
+
+        ``connectivity == 1.0`` returns every input, consuming **no** RNG state
+        (legacy path, preserves the original deterministic weight-draw order).
+        Lower values sample a random subset (at least 1, at most ``num_inputs``).
+        """
+        if connectivity >= 1.0:
+            return list(range(num_inputs))
+        k = max(1, round(connectivity * num_inputs))
+        return rng.sample(range(num_inputs), k)
 
     @staticmethod
     def crossover(fitter: "Genome", other: "Genome", rng: Random) -> "Genome":

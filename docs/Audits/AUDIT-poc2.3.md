@@ -1,6 +1,6 @@
 # Audit poc2.3 — capteurs 67, visualisation réseau, et la relance de l'évolution structurelle
 
-> Branche `poc2.3`. Cinq volets : (1) un enrichissement **perceptif et
+> Branche `poc2.3`. Six volets : (1) un enrichissement **perceptif et
 > instrumental** (67 inputs, proprioception, panneau réseau, sparkline forage,
 > fullscreen) — livré et fonctionnel ; (2) une tentative de débloquer l'évolution
 > structurelle par **réglage de paramètres** (`add_node_rate`) — **échouée**,
@@ -19,7 +19,14 @@
 > (génome initial fully-connected plus large = plus de surface de mutation). Le
 > capteur **49 legacy est promu en défaut** (`config/default.yaml`), via un nouveau
 > layout de capteur **configurable** (`sensors.split_distance/proprioception/
-> apples_in_view`, zéro nombre magique) plutôt qu'un revert de code.
+> apples_in_view`, zéro nombre magique) plutôt qu'un revert de code ; (6) **génome
+> fondateur sparse — falsifié**, et plus lourdement encore : démarrer avec
+> `initial_connectivity 0.1` (~5 connexions/output au lieu de 49) devait réduire la
+> surface de mutation identifiée au volet 5, mais **dégrade les 3 seeds sans
+> exception** (86→6 %, 77→59 %, 42→7 %). La plupart des capteurs restent
+> débranchés trop longtemps ; le fully-connected garantissait au moins un poids
+> (même mauvais) sur chaque capteur dès la naissance — le sparse retire ce filet
+> de sécurité sans le compenser à temps.
 
 ---
 
@@ -411,3 +418,83 @@ capacité à produire 67), le capteur devient **configurable** (invariant n°1) 
 - `config/default.yaml` : monde 2263×1273, agent radius 11.31/speed 4.243, pommes
   160×radius 7.07, mutation 0.15/0.05, `apples_per_offspring 3.0`, pop 200/400,
   capteur 49 (3 toggles `false`). Tout `python main.py` désormais sur cette base.
+
+## Volet 6 — Génome fondateur sparse : hypothèse falsifiée, plus lourdement encore ❌
+
+Priorité toujours performance. Piste suivante identifiée pour remonter seed 123
+(le maillon faible du package promu au volet 5, 42 % à 15k) : le volet 5 a montré
+que la **connexité initiale** du génome (pas le nombre de capteurs) crée la
+surface de mutation qui déstabilise le fourrage seed-dépendant. Hypothèse : un
+génome **sparse** à la naissance (au lieu de fully-connected) devrait réduire
+cette surface sans toucher aux capteurs — potentiellement compatible avec un
+capteur riche (67) si l'effet se confirme.
+
+### Refonte technique : `genome.initial_connectivity`
+
+`GenomeConfig` gagne un champ `initial_connectivity: float = 1.0` (rétro-compatible,
+`_require_rate`). `Genome.new_fully_connected` construit désormais, pour chaque
+output, un sous-ensemble aléatoire d'inputs (`_founder_inputs_for`) au lieu du
+bipartite complet — **au moins 1 connexion par output** (aucune sortie
+définitivement muette), et à `connectivity == 1.0` **zéro tirage RNG
+supplémentaire** : la séquence de poids est garantie identique au comportement
+historique (test `test_full_connectivity_preserves_original_weight_draw_order`,
+garde-fou contre une régression d'ordre de boucle attrapée pendant le
+développement). 155 tests verts, black clean, pylint stable (9.94/10).
+
+### Résultat expérimental : falsifié sur les 3 seeds sans exception
+
+Config `lever_sparse_init.yaml` = `default.yaml` isolation 1 variable
+(`initial_connectivity 1.0→0.1`, soit ~5 connexions/output au lieu de 49). 3 seeds
+/ 15k, `logs/2026-07-08_sparse_init/` :
+
+| Seed | Contrôle (fully-connected) | **Sparse init (0.1)** |
+|------|:---:|:---:|
+| 42   | 86 % | **6 %** 💥 |
+| 7    | 77 % | **59 %** |
+| 123  | 42 % | **7 %** 💥 (steering −0,373, le pire chiffre de toute la campagne poc2.3) |
+
+Pas seulement non robuste : **dégrade tout, y compris la cible seed 123** qu'on
+espérait sauver. Verdict sans appel, pas besoin de creuser d'autres valeurs de
+`initial_connectivity` — le sens de l'effet est déjà contraire à l'hypothèse sur
+tous les seeds.
+
+### Pourquoi ça se retourne contre l'hypothèse
+
+Avec `add_connection_rate` bas (0,05/génération) et ~5 connexions sur 49 capteurs
+au départ, la plupart des inputs restent **complètement débranchés** pendant des
+milliers de ticks — il faut une mutation structurelle rare pour rendre l'agent
+« voyant » sur un capteur donné. Ce n'est pas « moins de poids à régler » comme
+espéré, c'est « l'agent est aveugle sur l'essentiel de ses capteurs, et le
+correctif est trop lent à arriver ». Le fully-connected garantissait au moins un
+poids (même mauvais, même aléatoire) sur chaque capteur dès la naissance — un
+filet de sécurité perceptif que le sparse retire sans le compenser à temps.
+
+### Enseignement transverse
+
+Troisième confirmation (après le crossover au volet 4, et maintenant le génome
+sparse) que dans ce régime, les mécanismes qui **réduisent la richesse effective
+au démarrage** (recombinaison qui moyenne, ou connectivité qui prive l'agent
+d'information) tendent à nuire plutôt qu'aider — même quand la théorie
+(dimensionnalité, variance) est solide. Le seul levier qui a marché dans toute
+l'investigation poc2.2/poc2.3 reste **additif** : plus de population
+(`apple_repro_bigpop`) ou plus de sélection directe
+(`apples_per_offspring`), jamais une réduction de ce que l'agent perçoit ou
+peut recombiner.
+
+### Décision
+
+`config/default.yaml` reste à `initial_connectivity 1.0` (implicite, champ non
+défini). Aucune promotion. La config `lever_sparse_init.yaml` et le mécanisme
+`initial_connectivity` sont conservés (code + config) comme référence
+d'expérience et pour d'éventuels essais futurs à un dosage différent, mais rien
+n'indique qu'un point intermédiaire inverserait la tendance observée sur les 3
+seeds.
+
+### Chiffres clés (vérifiés)
+
+- 3 runs (`lever_sparse_init.yaml`, seeds 42/7/123, 15 000 ticks). Sorties brutes
+  dans `logs/2026-07-08_sparse_init/`.
+- % fourrageurs (r>0.1) / steering moyen : 42 = 6 % / −0,141 ; 7 = 59 % / +0,194 ;
+  123 = 7 % / −0,373. Pop pleine à 400 dans les 3 cas.
+- Pire résultat individuel de toute la campagne poc2.3 : seed 123 à −0,373
+  (steering négatif le plus fort observé, plus bas que le volet 5 arb67 à −0,237).

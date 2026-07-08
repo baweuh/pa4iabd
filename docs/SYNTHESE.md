@@ -223,23 +223,36 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 - ❌ **Capteur 67 : non robuste, non promu par défaut.** Reste disponible via les
   toggles `sensors.*` (config, pas code) pour la viz/observabilité si besoin, mais
   casse le fourrage sur seed 123 — ne pas re-promouvoir sans nouvelle preuve.
-- ⬜ **Piste ouverte** : seed 123 reste le maillon faible du trio (42-56 % selon le
-  run, contre 77-98 % pour 42 et 7) — validation élargie (N seeds) + réglage de K
-  pourrait le remonter, si plus de perf est recherchée.
+- ❌ **Génome fondateur sparse (volet 6) : falsifié, plus lourdement que tout le
+  reste.** `initial_connectivity 0.1` (~5 connexions/output au lieu de 49) devait
+  réduire la surface de mutation identifiée au volet 5, mais dégrade **les 3 seeds
+  sans exception** (86→6 %, 77→59 %, 42→7 % — la cible qu'on voulait sauver est
+  le pire chiffre de toute la campagne). Le fully-connected agit comme filet de
+  sécurité perceptif : le retirer laisse trop de capteurs débranchés trop
+  longtemps. `initial_connectivity` reste à 1.0 dans le défaut.
+- 🔑 **Enseignement transverse (volets 4 + 6)** : dans ce régime, tout mécanisme qui
+  **réduit la richesse effective au démarrage** (crossover qui moyenne,
+  connectivité qui prive d'information) nuit plutôt qu'il n'aide — même quand la
+  théorie est solide. Seul un levier **additif** a marché dans tout le projet
+  (plus de population, plus de sélection directe via `apples_per_offspring`).
+- ⬜ **Piste ouverte** : seed 123 reste le maillon faible du trio (7-56 % selon le
+  run, contre 59-98 % pour 42 et 7) — la suite doit être additive (N seeds /
+  réglage de K / plus de population), pas une réduction de dimensionnalité.
 
 ---
 
 ## 6. État du code & qualité
 
-- **152 tests verts**, `pylint` stable (9.93/10 — deux avertissements
+- **155 tests verts**, `pylint` stable (9.94/10 — deux avertissements
   `too-many-locals`/`too-many-statements` pré-existants dans `renderer.py`, non
-  liés aux volets 4-5), `black` clean.
+  liés aux volets 4-6), `black` clean.
 - Invariants respectés : capteur piloté par config (zéro nombre magique, invariant
   n°1), feedforward garanti dans crossover, spéciation câblée dans le choix du
-  partenaire.
+  partenaire, génome fondateur toujours ≥1 connexion/output (jamais de sortie
+  muette même en sparse).
 - Isolation expérimentale **rigoureuse** sur tout le projet : chaque levier = une
   seule variable modifiée depuis le contrôle (y compris l'ablation capteur du
-  volet 5, canal par canal).
+  volet 5 canal par canal, et le dosage de connectivité du volet 6).
 
 ## 7. Historique des commits clés
 
@@ -252,3 +265,5 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 | `0b12070` | poc2.3 : audit volet 3 — le crossover débloque le fourrage (seed 42) |
 | `4fb0892` | poc2.3 : volet 4 — crossover+bigpop (piste a) falsifiée |
 | `7851137` | poc2.3 : volet 5 — capteur configurable, package 49-inputs promu en défaut |
+| `807906d` | docs : synthèse à jour — volets 4-5 |
+| *(à venir)* | poc2.3 : volet 6 — génome fondateur sparse, falsifié |

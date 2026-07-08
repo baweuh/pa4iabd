@@ -151,6 +151,14 @@ class GenomeConfig:
     remove_connection_rate: float
     weight_max: float  # hard clamp applied after every weight perturbation
     crossover_rate: float = 0.0  # P(birth is sexual); 0.0 = legacy asexual cloning
+    # Fraction of the full input×output bipartite graph wired at genesis.
+    # 1.0 (default) = legacy fully-connected founder (every input -> every
+    # output). Lower values start each output with a random SPARSE subset of
+    # inputs (at least one, so no output is permanently silent) — reduces the
+    # initial weight-vector size independently of num_inputs, so a rich sensor
+    # layout need not mean a large mutation surface at birth (audit poc2.3
+    # volet 5: initial connectivity, not input count, drove instability).
+    initial_connectivity: float = 1.0
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_init_range", "weight_perturbation")
@@ -163,6 +171,7 @@ class GenomeConfig:
             "remove_node_rate",
             "remove_connection_rate",
             "crossover_rate",
+            "initial_connectivity",
         )
 
 

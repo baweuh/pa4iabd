@@ -123,3 +123,13 @@
         seeds robustes (86/77/42 % à 15k, cohérent avec l'étalon 86/84/56 à 30k). 152
         tests verts, black clean, pylint stable. Décision poc2.2 (ligne ci-dessus)
         close : le package apple_repro_bigpop **est** le nouveau défaut.
+- [x] **Volet 6 — génome fondateur sparse** (audit poc2.3 volet 6, `genome.
+        initial_connectivity`, `lever_sparse_init.yaml`) : **FALSIFIÉ, plus lourdement
+        que toutes les pistes précédentes**. Hypothèse : démarrer sparse (~5
+        connexions/output au lieu de 49) réduirait la surface de mutation identifiée
+        au volet 5. Résultat 3 seeds / 15k : **86→6 %, 77→59 %, 42→7 %** — dégrade
+        TOUS les seeds, y compris la cible seed 123 (steering −0,373, pire chiffre de
+        toute la campagne). La plupart des capteurs restent débranchés trop
+        longtemps ; le fully-connected agissait comme filet de sécurité perceptif.
+        `initial_connectivity` reste à 1.0 (implicite) dans `default.yaml`. 155 tests
+        verts, black clean, pylint stable. Mécanisme + config gardés comme référence.

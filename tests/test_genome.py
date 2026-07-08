@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from random import Random
 
 import pytest
@@ -70,6 +71,40 @@ def test_new_fully_connected_shape(config, tracker):
     assert len(g.connections) == NUM_INPUTS * NUM_OUTPUTS
     assert all(c.enabled for c in g.connections)
     assert not _has_cycle(g)
+
+
+def test_full_connectivity_preserves_original_weight_draw_order(config, tracker):
+    """Connections must be drawn in (input outer, output inner) order.
+
+    Regression guard for the initial_connectivity refactor (audit poc2.3
+    volet 6): reordering the loops would silently change which RNG draw
+    lands on which edge, breaking reproducibility for every existing seed
+    even though initial_connectivity defaults to 1.0 (legacy behaviour).
+    """
+    rng = Random(7)
+    g = Genome.new_fully_connected(config, 3, 2, rng, tracker)
+    expected_pairs = [(i, 3 + j) for i in range(3) for j in range(2)]
+    assert [(c.in_node, c.out_node) for c in g.connections] == expected_pairs
+
+
+def test_sparse_initial_connectivity_reduces_connection_count(config, tracker):
+    sparse = dataclasses.replace(config, initial_connectivity=0.1)
+    rng = Random(1)
+    g = Genome.new_fully_connected(sparse, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    expected_per_output = max(1, round(0.1 * NUM_INPUTS))
+    assert len(g.connections) == expected_per_output * NUM_OUTPUTS
+    assert len(g.connections) < NUM_INPUTS * NUM_OUTPUTS
+    assert not _has_cycle(g)
+
+
+def test_sparse_initial_connectivity_never_leaves_an_output_silent(config, tracker):
+    # Even at the extreme low end, every output gets >= 1 input connection.
+    sparse = dataclasses.replace(config, initial_connectivity=0.001)
+    rng = Random(3)
+    g = Genome.new_fully_connected(sparse, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    output_ids = {n.node_id for n in g.nodes if n.node_type == OUTPUT}
+    wired_outputs = {c.out_node for c in g.connections}
+    assert wired_outputs == output_ids
 
 
 def test_node_ids_are_unique(config, tracker):
