@@ -1,10 +1,9 @@
-# Default simulation configuration.
-# Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
-# sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
-# NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
-# adding inputs itself destabilises the fully-connected initial genome. The
-# 49-input legacy layout is the only one that reproduces robust 3-seed foraging
-# (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
+# Ablation capteur (arb_prop) : physique apple_repro_bigpop + B seul : proprioception actual_speed (+1).
+# Isolation 1 variable vs apple_repro_bigpop.yaml : seul network.num_inputs passe
+# 49→67 (le capteur 67 est câblé en dur dans agent.sense() depuis poc2.3). Teste si
+# le package physique gagnant survit au nouveau capteur — sinon le capteur 49 était
+# load-bearing. Tout le reste (monde ×√2, agents plus gros/rapides, pommes denses,
+# mutation basse 0.15, apples_per_offspring 3.0) est identique à l'étalon.
 # Energy is expressed in apple-equivalent units (invariant n°2).
 
 world:
@@ -33,13 +32,13 @@ sensors:
   num_rays: 16
   max_distance: 283    # pixels
   fov: 360             # degrees
-  split_distance: false   # legacy layout: 1 combined nearest-object distance/ray
-  proprioception: false   # legacy layout: no actual_speed input
-  apples_in_view: false   # legacy layout: no apples_in_view input
+  split_distance: false
+  proprioception: true
+  apples_in_view: false
 
 network:
-  num_inputs: 49        # 3*num_rays + 1 : dist, apple_flag, wall_flag (×16) + energy
-  num_outputs: 2         # vx_brut, vy_brut (normalised post-output)
+  num_inputs: 50       # 4*num_rays + 3 : apple_dist, wall_dist, apple_flag, wall_flag (×16) + energy + actual_speed + apples_in_view
+  num_outputs: 2       # vx_brut, vy_brut (normalised post-output)
   activation: "tanh"
 
 apple:
@@ -57,7 +56,7 @@ genome:
   remove_node_rate: 0.01
   remove_connection_rate: 0.02
   weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
-  crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
+  crossover_rate: 0.0          # asexual (étalon prédate le crossover)
 
 speciation:
   # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).

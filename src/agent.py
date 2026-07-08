@@ -92,40 +92,47 @@ class Agent:
     # Perception
     # ------------------------------------------------------------------ #
     def sense(self) -> list[float]:
-        """Return 67 NN inputs.
+        """Return ``config.network.num_inputs`` NN inputs, per the sensor layout.
 
-        Layout:
+        Canonical 67-input layout (all toggles on, ``split_distance``):
         ``[0..15]``   apple_dist  normalised per ray (1.0 = none in range)
         ``[16..31]``  wall_dist   normalised per ray
         ``[32..47]``  apple_flag  binary 0/1 per ray
         ``[48..63]``  wall_flag   binary 0/1 per ray
         ``[64]``      energy      normalised [0→1]
-        ``[65]``      actual_speed proprioception from previous tick [0→1]
-        ``[66]``      apples_in_view fraction of rays that see an apple [0→1]
+        ``[65]``      actual_speed proprioception from previous tick [0→1]  (opt)
+        ``[66]``      apples_in_view fraction of rays that see an apple [0→1] (opt)
+
+        With ``split_distance`` off the two distance blocks collapse into one
+        combined nearest-object distance block (legacy 49-input layout); the two
+        proprioceptive scalars are appended only when their toggle is on.
         """
-        max_dist = self._config.sensors.max_distance
+        sensors = self._config.sensors
+        max_dist = sensors.max_distance
         apple_dists: list[float] = []
         wall_dists: list[float] = []
+        combined_dists: list[float] = []
         apple_flags: list[float] = []
         wall_flags: list[float] = []
-        for angle in ray_angles(
-            self._config.sensors.num_rays, self._config.sensors.fov, self.heading
-        ):
+        for angle in ray_angles(sensors.num_rays, sensors.fov, self.heading):
             apple_d, wall_d = self._cast_ray(math.cos(angle), math.sin(angle), max_dist)
             apple_dists.append(apple_d / max_dist)
             wall_dists.append(wall_d / max_dist)
+            combined_dists.append(min(apple_d, wall_d) / max_dist)
             apple_flags.append(1.0 if apple_d < max_dist else 0.0)
             wall_flags.append(1.0 if wall_d < max_dist else 0.0)
 
         energy_norm = max(0.0, min(1.0, self.energy / self._config.agent.max_energy))
-        apples_in_view = sum(apple_flags) / len(apple_flags)
-        return (
-            apple_dists
-            + wall_dists
-            + apple_flags
-            + wall_flags
-            + [energy_norm, self._last_actual_speed, apples_in_view]
-        )
+        if sensors.split_distance:
+            inputs = apple_dists + wall_dists + apple_flags + wall_flags
+        else:
+            inputs = combined_dists + apple_flags + wall_flags
+        inputs = inputs + [energy_norm]
+        if sensors.proprioception:
+            inputs.append(self._last_actual_speed)
+        if sensors.apples_in_view:
+            inputs.append(sum(apple_flags) / len(apple_flags))
+        return inputs
 
     def _cast_ray(self, dx: float, dy: float, max_dist: float) -> tuple[float, float]:
         """Independent nearest-apple and nearest-wall distances along unit ray (dx, dy).

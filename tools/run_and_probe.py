@@ -14,7 +14,6 @@ import sys
 from random import Random
 
 from src.config import SimConfig
-from src.network import NeuralNetwork
 from src.simulation import Simulation
 from tools.steer_probe import steer_score
 
@@ -24,7 +23,6 @@ def main(argv: list[str]) -> int:
     ticks = int(argv[2])
     label = argv[3] if len(argv) > 3 else config_path
     cfg = SimConfig.from_yaml(config_path)
-    nr = cfg.sensors.num_rays
 
     seed = int(argv[4]) if len(argv) > 4 else cfg.simulation.seed
     sim = Simulation(cfg, Random(seed))
@@ -36,7 +34,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     pop = sim.population
-    scores = [steer_score(a.network, nr, cfg.network.num_inputs) for a in pop]
+    scores = [steer_score(a.network, cfg.sensors) for a in pop]
     hiddens = [sum(1 for n in a.genome.nodes if n.node_type == "hidden") for a in pop]
     positive = sum(1 for s in scores if s > 0.1)
 

@@ -93,13 +93,13 @@ COLOR_NET_POS = (80, 200, 80)
 COLOR_NET_NEG = (200, 80, 80)
 # Input node colours by sensor group (matches 67-input layout).
 _NET_INPUT_GROUPS = [
-    (255, 150,  50),   # [0..n-1]     apple_dist
-    ( 50, 200, 230),   # [n..2n-1]    wall_dist
-    (255, 210, 120),   # [2n..3n-1]   apple_flag
-    (120, 230, 250),   # [3n..4n-1]   wall_flag
-    (100, 230, 100),   # [4n]         energy
-    (230, 230,  80),   # [4n+1]       actual_speed
-    (230, 230, 230),   # [4n+2]       apples_in_view
+    (255, 150, 50),  # [0..n-1]     apple_dist
+    (50, 200, 230),  # [n..2n-1]    wall_dist
+    (255, 210, 120),  # [2n..3n-1]   apple_flag
+    (120, 230, 250),  # [3n..4n-1]   wall_flag
+    (100, 230, 100),  # [4n]         energy
+    (230, 230, 80),  # [4n+1]       actual_speed
+    (230, 230, 230),  # [4n+2]       apples_in_view
 ]
 _NET_OUTPUT_LABELS = ["spd", "trn"]
 
@@ -108,8 +108,8 @@ CHART_W = 360
 CHART_H = 90
 CHART_MARGIN = 12
 CHART_PAD = 8
-CHART_SAMPLE_INTERVAL = 50   # ticks between samples
-CHART_HISTORY_LEN = 300      # samples kept  (300 × 50 = 15 000 ticks window)
+CHART_SAMPLE_INTERVAL = 50  # ticks between samples
+CHART_HISTORY_LEN = 300  # samples kept  (300 × 50 = 15 000 ticks window)
 COLOR_CHART_BG = (12, 12, 20, 200)
 COLOR_CHART_LINE = (80, 220, 180)
 COLOR_CHART_PEAK = (255, 220, 60)
@@ -239,7 +239,9 @@ class Renderer:
         ):
             self._speed_down()
         elif key in (pygame.K_LEFT, pygame.K_RIGHT):  # pylint: disable=no-member
-            self._select_adjacent(-1 if key == pygame.K_LEFT else +1)  # pylint: disable=no-member
+            self._select_adjacent(
+                -1 if key == pygame.K_LEFT else +1
+            )  # pylint: disable=no-member
         elif key == pygame.K_n:  # pylint: disable=no-member
             self._show_network = not self._show_network
         elif key == pygame.K_F11:  # pylint: disable=no-member
@@ -331,7 +333,7 @@ class Renderer:
         chart.fill(COLOR_CHART_BG)
 
         inner_x = CHART_PAD
-        inner_y = CHART_PAD + 14    # reserve top row for title
+        inner_y = CHART_PAD + 14  # reserve top row for title
         inner_w = CHART_W - 2 * CHART_PAD
         inner_h = CHART_H - inner_y - CHART_PAD
 
@@ -347,7 +349,9 @@ class Renderer:
         # Peak reference line (dotted — every 4 px)
         peak_y = inner_y + inner_h - int(self._fitness_peak / y_max * inner_h)
         for dot_x in range(inner_x, inner_x + inner_w, 4):
-            pygame.draw.line(chart, (*COLOR_CHART_PEAK, 100), (dot_x, peak_y), (dot_x + 2, peak_y), 1)
+            pygame.draw.line(
+                chart, (*COLOR_CHART_PEAK, 100), (dot_x, peak_y), (dot_x + 2, peak_y), 1
+            )
 
         # Sparkline
         pts = [_to_px(v, i) for i, v in enumerate(values)]
@@ -360,7 +364,8 @@ class Renderer:
         # Title + values
         title = self._small_font.render(
             f"Forage rate  now:{current:.4f}  peak:{self._fitness_peak:.4f}",
-            True, (200, 200, 200),
+            True,
+            (200, 200, 200),
         )
         chart.blit(title, (CHART_PAD, 3))
 
@@ -391,22 +396,28 @@ class Renderer:
         title = self._small_font.render(
             f"Network  [N]  nodes:{len(genome.nodes)}  hidden:{hidden_count}  "
             f"conn:{sum(1 for c in genome.connections if c.enabled)}",
-            True, (200, 200, 200),
+            True,
+            (200, 200, 200),
         )
         panel.blit(title, (NET_VIZ_PAD, 4))
 
         inner_y0 = NET_VIZ_PAD + 18
-        inner_h  = NET_PANEL_H - inner_y0 - NET_VIZ_PAD
-        col_in   = NET_VIZ_PAD + NET_INPUT_R + 1
-        col_out  = NET_PANEL_W - NET_VIZ_PAD - NET_OUTPUT_R - 1
-        col_hid  = (col_in + col_out) // 2
+        inner_h = NET_PANEL_H - inner_y0 - NET_VIZ_PAD
+        col_in = NET_VIZ_PAD + NET_INPUT_R + 1
+        col_out = NET_PANEL_W - NET_VIZ_PAD - NET_OUTPUT_R - 1
+        col_hid = (col_in + col_out) // 2
 
-        input_nodes  = sorted([n for n in genome.nodes if n.node_type == "input"],
-                               key=lambda n: n.node_id)
-        hidden_nodes = sorted([n for n in genome.nodes if n.node_type == "hidden"],
-                               key=lambda n: n.node_id)
-        output_nodes = sorted([n for n in genome.nodes if n.node_type == "output"],
-                               key=lambda n: n.node_id)
+        input_nodes = sorted(
+            [n for n in genome.nodes if n.node_type == "input"], key=lambda n: n.node_id
+        )
+        hidden_nodes = sorted(
+            [n for n in genome.nodes if n.node_type == "hidden"],
+            key=lambda n: n.node_id,
+        )
+        output_nodes = sorted(
+            [n for n in genome.nodes if n.node_type == "output"],
+            key=lambda n: n.node_id,
+        )
 
         n_rays = self._config.sensors.num_rays
 
@@ -441,12 +452,21 @@ class Renderer:
             if conn.in_node not in node_map or conn.out_node not in node_map:
                 continue
             alpha = int(min(abs(conn.weight) / wmax, 1.0) * 160) + 30
-            col = (*COLOR_NET_POS, alpha) if conn.weight >= 0 else (*COLOR_NET_NEG, alpha)
-            pygame.draw.line(panel, col, _node_pos(node_map[conn.in_node]),
-                             _node_pos(node_map[conn.out_node]), 1)
+            col = (
+                (*COLOR_NET_POS, alpha) if conn.weight >= 0 else (*COLOR_NET_NEG, alpha)
+            )
+            pygame.draw.line(
+                panel,
+                col,
+                _node_pos(node_map[conn.in_node]),
+                _node_pos(node_map[conn.out_node]),
+                1,
+            )
 
         for node in input_nodes:
-            pygame.draw.circle(panel, _input_color(node.node_id), _node_pos(node), NET_INPUT_R)
+            pygame.draw.circle(
+                panel, _input_color(node.node_id), _node_pos(node), NET_INPUT_R
+            )
 
         for node in hidden_nodes:
             pos = _node_pos(node)
@@ -458,9 +478,12 @@ class Renderer:
             pygame.draw.circle(panel, COLOR_NET_OUTPUT, pos, NET_OUTPUT_R)
             lbl = self._small_font.render(
                 _NET_OUTPUT_LABELS[i] if i < len(_NET_OUTPUT_LABELS) else str(i),
-                True, (0, 0, 0),
+                True,
+                (0, 0, 0),
             )
-            panel.blit(lbl, (pos[0] - lbl.get_width() // 2, pos[1] - lbl.get_height() // 2))
+            panel.blit(
+                lbl, (pos[0] - lbl.get_width() // 2, pos[1] - lbl.get_height() // 2)
+            )
 
         self._screen.blit(panel, (px, py))
 
@@ -527,38 +550,55 @@ class Renderer:
         self._draw_agent_rays(self._selected_agent, angles, True)
 
     def _draw_agent_rays(self, agent, angles: list[float], is_selected: bool) -> None:
-        """Draw one agent's rays onto the overlay (67-input encoding).
+        """Draw one agent's rays onto the overlay, per the configured sensor layout.
 
-        New layout: apple_dist [0..n-1], wall_dist [n..2n-1],
-        apple_flag [2n..3n-1], wall_flag [3n..4n-1].
-        When both apple and wall are on the same ray, draws to the nearest hit.
+        Split layout (``sensors.split_distance``): apple_dist [0..n-1],
+        wall_dist [n..2n-1], apple_flag [2n..3n-1], wall_flag [3n..4n-1].
+        Combined layout: dist [0..n-1], apple_flag [n..2n-1], wall_flag [2n..3n-1].
+        When both apple and wall are on the same ray (split only), draws to the
+        nearest hit.
         """
         n = len(angles)
-        max_dist = self._config.sensors.max_distance
+        split = self._config.sensors.split_distance
+        flags_offset = (2 if split else 1) * n
         senses = agent.last_senses or agent.sense()
-        ax, ay = agent.x, agent.y
+        pos = (agent.x, agent.y)
         for i, angle in enumerate(angles):
-            apple_flag = senses[2 * n + i]   # [32..47]
-            wall_flag  = senses[3 * n + i]   # [48..63]
+            apple_flag = senses[flags_offset + i]
+            wall_flag = senses[flags_offset + n + i]
             is_nothing = apple_flag == 0.0 and wall_flag == 0.0
             if not is_selected and is_nothing:
                 continue
-            if apple_flag:
-                d = senses[i] * max_dist           # apple_dist
-            elif wall_flag:
-                d = senses[n + i] * max_dist       # wall_dist
-            else:
-                d = max_dist
+            d = self._ray_hit_distance(senses, i, n, split, apple_flag, wall_flag)
             pygame.draw.line(
                 self._overlay,
                 (
                     *self._ray_color(apple_flag, wall_flag),
                     self._ray_alpha(is_selected, is_nothing),
                 ),
-                (ax, ay),
-                (ax + d * math.cos(angle), ay + d * math.sin(angle)),
+                pos,
+                (pos[0] + d * math.cos(angle), pos[1] + d * math.sin(angle)),
                 RAY_WIDTH,
             )
+
+    def _ray_hit_distance(
+        self,
+        senses: list[float],
+        i: int,
+        n: int,
+        split: bool,
+        apple_flag: float,
+        wall_flag: float,
+    ) -> float:
+        """Nearest-hit distance for ray ``i``, per the configured sensor layout."""
+        max_dist = self._config.sensors.max_distance
+        if not split:
+            return senses[i] * max_dist if (apple_flag or wall_flag) else max_dist
+        if apple_flag:
+            return senses[i] * max_dist  # apple_dist
+        if wall_flag:
+            return senses[n + i] * max_dist  # wall_dist
+        return max_dist
 
     @staticmethod
     def _ray_alpha(is_selected: bool, is_nothing: bool) -> int:

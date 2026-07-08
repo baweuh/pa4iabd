@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import random
 
@@ -38,6 +39,32 @@ def make_agent(cfg, env, genome, position, seed=0, heading=0.0):
     return Agent(genome, position, cfg, env, random.Random(seed), heading=heading)
 
 
+@pytest.fixture(name="split_cfg")
+def split_cfg_fixture(cfg):
+    """Default config with independent apple/wall distance channels re-enabled.
+
+    Exercises the split-distance sensor path (real feature, no longer the
+    default since it destabilises foraging robustness — see
+    docs/Audits/AUDIT-poc2.3.md volet 5) independently of the current default.
+    """
+    sensors = dataclasses.replace(
+        cfg.sensors, split_distance=True, proprioception=False, apples_in_view=False
+    )
+    network = dataclasses.replace(cfg.network, num_inputs=sensors.num_inputs)
+    return dataclasses.replace(cfg, sensors=sensors, network=network)
+
+
+@pytest.fixture(name="split_genome")
+def split_genome_fixture(split_cfg):
+    TRACKER.reset()
+    return Genome.new_fully_connected(
+        split_cfg.genome,
+        split_cfg.network.num_inputs,
+        split_cfg.network.num_outputs,
+        random.Random(0),
+    )
+
+
 # ------------------------------------------------------------------ #
 # Raycasts
 # ------------------------------------------------------------------ #
@@ -66,7 +93,38 @@ def test_ray_angles_rotate_with_heading():
 
 def test_sense_length(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
-    assert len(agent.sense()) == cfg.network.num_inputs  # 49
+    assert len(agent.sense()) == cfg.network.num_inputs  # 67 (default layout)
+
+
+@pytest.mark.parametrize(
+    "split, prop, aiv, expected",
+    [
+        (True, True, True, 67),  # canonical poc2.3 layout
+        (False, False, False, 49),  # legacy apple_repro_bigpop layout
+        (True, False, False, 65),  # distance split alone
+        (False, True, True, 51),  # combined distance + both scalars
+    ],
+)
+def test_sense_length_matches_configurable_layout(cfg, split, prop, aiv, expected):
+    sensors = dataclasses.replace(
+        cfg.sensors, split_distance=split, proprioception=prop, apples_in_view=aiv
+    )
+    assert sensors.num_inputs == expected  # 16 rays assumed
+    network = dataclasses.replace(cfg.network, num_inputs=expected)
+    cfg2 = dataclasses.replace(cfg, sensors=sensors, network=network)
+    env2 = Environment(cfg2, random.Random(0))
+    TRACKER.reset()
+    genome2 = Genome.new_fully_connected(
+        cfg2.genome, expected, cfg2.network.num_outputs, random.Random(0)
+    )
+    agent = Agent(
+        genome2,
+        (cfg2.world.width / 2, cfg2.world.height / 2),
+        cfg2,
+        env2,
+        random.Random(0),
+    )
+    assert len(agent.sense()) == expected
 
 
 def test_last_senses_cached_on_activate(cfg, env, genome):
@@ -84,61 +142,77 @@ def test_energy_input_normalised(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
     inputs = agent.sense()
     n = cfg.sensors.num_rays
-    assert inputs[4 * n] == pytest.approx(cfg.agent.initial_energy / cfg.agent.max_energy)
+    dist_channels = 2 if cfg.sensors.split_distance else 1
+    energy_idx = (dist_channels + 2) * n  # distance block(s) + apple_flag + wall_flag
+    assert inputs[energy_idx] == pytest.approx(
+        cfg.agent.initial_energy / cfg.agent.max_energy
+    )
 
 
-def test_ray_hits_wall(cfg, env, genome):
+def test_ray_hits_wall(split_cfg, env, split_genome):
     # heading=0 → ray 0 points +x; agent 50px from right wall.
     env.apples.clear()
-    agent = make_agent(cfg, env, genome, (cfg.world.width - 50.0, cfg.world.height / 2))
+    agent = make_agent(
+        split_cfg,
+        env,
+        split_genome,
+        (split_cfg.world.width - 50.0, split_cfg.world.height / 2),
+    )
     inputs = agent.sense()
-    n = cfg.sensors.num_rays
-    assert inputs[0] == pytest.approx(1.0)                               # apple_dist = max (no apple)
-    assert inputs[n + 0] == pytest.approx(50.0 / cfg.sensors.max_distance)  # wall_dist
-    assert inputs[2 * n + 0] == 0.0                                      # apple_flag = 0
-    assert inputs[3 * n + 0] == 1.0                                      # wall_flag = 1
+    n = split_cfg.sensors.num_rays
+    assert inputs[0] == pytest.approx(1.0)  # apple_dist = max (no apple)
+    assert inputs[n + 0] == pytest.approx(
+        50.0 / split_cfg.sensors.max_distance
+    )  # wall_dist
+    assert inputs[2 * n + 0] == 0.0  # apple_flag = 0
+    assert inputs[3 * n + 0] == 1.0  # wall_flag = 1
 
 
-def test_ray_hits_apple(cfg, env, genome):
+def test_ray_hits_apple(split_cfg, env, split_genome):
     # heading=0 → ray 0 points +x; single apple 100px to the right.
-    cx, cy = cfg.world.width / 2, cfg.world.height / 2
+    cx, cy = split_cfg.world.width / 2, split_cfg.world.height / 2
     env.apples[:] = [Apple(cx + 100.0, cy)]
-    agent = make_agent(cfg, env, genome, (cx, cy))
+    agent = make_agent(split_cfg, env, split_genome, (cx, cy))
     inputs = agent.sense()
-    n = cfg.sensors.num_rays
-    expected = (100.0 - cfg.apple.radius) / cfg.sensors.max_distance
-    assert inputs[0] == pytest.approx(expected)   # apple_dist
-    assert inputs[n + 0] == pytest.approx(1.0)    # wall_dist = max (wall far away)
-    assert inputs[2 * n + 0] == 1.0               # apple_flag = 1
-    assert inputs[3 * n + 0] == 0.0               # wall_flag = 0
+    n = split_cfg.sensors.num_rays
+    expected = (100.0 - split_cfg.apple.radius) / split_cfg.sensors.max_distance
+    assert inputs[0] == pytest.approx(expected)  # apple_dist
+    assert inputs[n + 0] == pytest.approx(1.0)  # wall_dist = max (wall far away)
+    assert inputs[2 * n + 0] == 1.0  # apple_flag = 1
+    assert inputs[3 * n + 0] == 0.0  # wall_flag = 0
 
 
-def test_ray_sees_nothing(cfg, env, genome):
+def test_ray_sees_nothing(split_cfg, env, split_genome):
     # World centre: every wall is >200px (max_distance) away, no apples.
     env.apples.clear()
-    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2))
+    agent = make_agent(
+        split_cfg,
+        env,
+        split_genome,
+        (split_cfg.world.width / 2, split_cfg.world.height / 2),
+    )
     inputs = agent.sense()
-    n = cfg.sensors.num_rays
+    n = split_cfg.sensors.num_rays
     for i in range(n):
-        assert inputs[i] == pytest.approx(1.0)       # apple_dist = max (no apple)
-        assert inputs[n + i] == pytest.approx(1.0)   # wall_dist = max (walls all >200px)
-        assert inputs[2 * n + i] == 0.0              # apple_flag = 0
-        assert inputs[3 * n + i] == 0.0              # wall_flag = 0
+        assert inputs[i] == pytest.approx(1.0)  # apple_dist = max (no apple)
+        assert inputs[n + i] == pytest.approx(1.0)  # wall_dist = max (walls all >200px)
+        assert inputs[2 * n + i] == 0.0  # apple_flag = 0
+        assert inputs[3 * n + i] == 0.0  # wall_flag = 0
 
 
-def test_apple_occludes_farther_wall(cfg, env, genome):
+def test_apple_occludes_farther_wall(split_cfg, env, split_genome):
     # Apple 50px ahead, wall 150px ahead: both detected on independent channels.
-    agent_x = cfg.world.width - 150.0
-    cy = cfg.world.height / 2
+    agent_x = split_cfg.world.width - 150.0
+    cy = split_cfg.world.height / 2
     env.apples[:] = [Apple(agent_x + 50.0, cy)]  # apple 50px; wall 150px
-    agent = make_agent(cfg, env, genome, (agent_x, cy))
+    agent = make_agent(split_cfg, env, split_genome, (agent_x, cy))
     inputs = agent.sense()
-    n = cfg.sensors.num_rays
-    apple_d = inputs[0]           # apple_dist (normalised)
-    wall_d = inputs[n + 0]        # wall_dist (normalised)
-    assert inputs[2 * n + 0] == 1.0   # apple_flag = 1
-    assert inputs[3 * n + 0] == 1.0   # wall_flag = 1 (independently visible)
-    assert apple_d < wall_d            # apple is closer
+    n = split_cfg.sensors.num_rays
+    apple_d = inputs[0]  # apple_dist (normalised)
+    wall_d = inputs[n + 0]  # wall_dist (normalised)
+    assert inputs[2 * n + 0] == 1.0  # apple_flag = 1
+    assert inputs[3 * n + 0] == 1.0  # wall_flag = 1 (independently visible)
+    assert apple_d < wall_d  # apple is closer
 
 
 # ------------------------------------------------------------------ #
@@ -329,8 +403,9 @@ def test_update_advances_one_tick(cfg, env, genome):
 
 
 def test_heading_initialised_explicitly(cfg, env, genome):
-    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2),
-                       heading=1.23)
+    agent = make_agent(
+        cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2), heading=1.23
+    )
     assert agent.heading == pytest.approx(1.23)
 
 
@@ -345,8 +420,9 @@ def test_heading_updates_after_activate(cfg, env, genome):
 
 
 def test_child_inherits_parent_heading(cfg, env, genome):
-    agent = make_agent(cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2),
-                       heading=0.5)
+    agent = make_agent(
+        cfg, env, genome, (cfg.world.width / 2, cfg.world.height / 2), heading=0.5
+    )
     agent.energy = cfg.agent.reproduction_threshold
     child = agent.reproduce()
     assert child.heading == pytest.approx(0.5)

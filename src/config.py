@@ -82,14 +82,33 @@ class AgentConfig:
 
 @dataclass(frozen=True)
 class SensorConfig:
-    """Raycasting sensor layout."""
+    """Raycasting sensor layout.
+
+    The per-ray and scalar channels are toggleable so the input representation
+    can be ablated without touching code (invariant n°1). Defaults reproduce the
+    canonical 67-input layout (poc2.3). Turning all three off yields the legacy
+    49-input layout (poc2.2 ``apple_repro_bigpop``): a single combined
+    nearest-object distance per ray, two flags, plus energy.
+    """
 
     num_rays: int
     max_distance: float
     fov: float  # field of view, in degrees
+    # Per-ray: True → separate apple_dist + wall_dist (2 channels); False → a
+    # single combined nearest-object distance (1 channel).
+    split_distance: bool = True
+    proprioception: bool = True  # append actual_speed scalar
+    apples_in_view: bool = True  # append fraction-of-rays-seeing-apple scalar
 
     def __post_init__(self) -> None:
         _require_positive(self, "num_rays", "max_distance", "fov")
+
+    @property
+    def num_inputs(self) -> int:
+        """NN input count derived from the enabled channels (no magic number)."""
+        per_ray = (2 if self.split_distance else 1) + 2  # distances + 2 flags
+        scalars = 1 + int(self.proprioception) + int(self.apples_in_view)  # energy +
+        return self.num_rays * per_ray + scalars
 
 
 @dataclass(frozen=True)
@@ -238,11 +257,11 @@ class SimConfig:
 
     def __post_init__(self) -> None:
         # Cross-section invariants.
-        expected_inputs = 4 * self.sensors.num_rays + 3
+        expected_inputs = self.sensors.num_inputs
         if self.network.num_inputs != expected_inputs:
             raise ConfigError(
-                f"network.num_inputs ({self.network.num_inputs}) must equal "
-                f"4 * sensors.num_rays + 3 ({expected_inputs})"
+                f"network.num_inputs ({self.network.num_inputs}) must equal the "
+                f"count derived from the sensor layout ({expected_inputs})"
             )
         if self.network.num_outputs != 2:
             raise ConfigError(

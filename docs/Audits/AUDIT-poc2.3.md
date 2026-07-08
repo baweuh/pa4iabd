@@ -1,6 +1,6 @@
 # Audit poc2.3 — capteurs 67, visualisation réseau, et la relance de l'évolution structurelle
 
-> Branche `poc2.3`. Quatre volets : (1) un enrichissement **perceptif et
+> Branche `poc2.3`. Cinq volets : (1) un enrichissement **perceptif et
 > instrumental** (67 inputs, proprioception, panneau réseau, sparkline forage,
 > fullscreen) — livré et fonctionnel ; (2) une tentative de débloquer l'évolution
 > structurelle par **réglage de paramètres** (`add_node_rate`) — **échouée**,
@@ -12,7 +12,14 @@
 > + bigpop** — **falsifiée** : la combinaison sous-performe *chaque levier pris
 > seul* et rapproche tous les seeds de ~50 %. Le crossover est un opérateur
 > **moyennant** (réduit la variance inter-seeds), pas amplifiant ; le seul levier
-> qui *lève* tous les seeds ensemble reste la **taille de population**.
+> qui *lève* tous les seeds ensemble reste la **taille de population** ; (5) **verdict
+> final, priorité performance** : le capteur 67 inputs (volet 1) **casse la
+> robustesse** (seed 123 : 43 %→1 %) — ni un canal précis ni la combinaison avec la
+> population ne l'expliquent, c'est la **dimensionnalité d'entrée elle-même**
+> (génome initial fully-connected plus large = plus de surface de mutation). Le
+> capteur **49 legacy est promu en défaut** (`config/default.yaml`), via un nouveau
+> layout de capteur **configurable** (`sensors.split_distance/proprioception/
+> apples_in_view`, zéro nombre magique) plutôt qu'un revert de code.
 
 ---
 
@@ -296,3 +303,111 @@ franchiront pas l'étalon `apple_repro_bigpop`, déjà notre meilleur résultat 
 - Comparatif clé : sur seed 42, bigpop seul (76 %) > crossover+bigpop (51 %) →
   le crossover **soustrait** de la performance au bigpop.
 - Cachés (moyenne pop) : 1,24–1,63 — toujours présents, toujours non discriminants.
+
+## Volet 5 — Le capteur 67 casse la robustesse : retour au 49, capteur configurable ✅
+
+Priorité déclarée : **performance des agents**, quitte à revenir sur l'enrichissement
+perceptif du volet 1. Question fermée par ce volet : le package physique robuste
+`apple_repro_bigpop` (86/84/56 %, poc2.2 ÉTAPE 10) survit-il au capteur 67 inputs ?
+
+### Étape 1 — la population seule ne suffit pas (contredit l'hypothèse de départ)
+
+`lever_bigpop67` (pop 200/400, capteur 67, reste identique à `default.yaml`),
+3 seeds / 15k : **51 % / 88 % / 30 %**, seed 123 en steering négatif (−0,099). Ne
+reproduit **pas** 86/84/56. `lever_bigpop67_lowmut` (+ mutation réduite 0,8→0,15) :
+**33 % / 96 % / 22 %** — dégrade encore seed 42, ne sauve pas 123. Aucune des deux
+hypothèses de la piste (b) ne comble l'écart : le facteur manquant n'est ni la seule
+population, ni la seule mutation.
+
+### Étape 2 — le package complet, porté au capteur 67, casse quand même
+
+Config `apple_repro_bigpop67.yaml` = `apple_repro_bigpop.yaml` **isolation stricte** :
+seul `num_inputs` passe 49→67 (le capteur 67 est câblé en dur dans `agent.sense()`
+depuis le volet 1 — portage nécessaire). 3 seeds / 15k :
+
+| Seed | Étalon (49) | arb67 (package complet, 67) |
+|------|:---:|:---:|
+| 42   | 98 % | 59 % / +0,098 |
+| 7    | 86 % | 96 % / +0,367 |
+| 123  | 43 % | **1 % / −0,237** 💥 |
+
+Même package physique exact, seul le capteur change : seed 123 s'effondre
+(43 %→1 %). **Le capteur 67 est bien la cause**, pas un artefact d'une combinaison
+précédente.
+
+### Étape 3 — ablation : aucun canal isolé n'est coupable, c'est la dimensionnalité
+
+Le capteur configurable (`SensorConfig.split_distance/proprioception/apples_in_view`,
+voir « Refonte technique » ci-dessous) permet d'isoler chacun des 3 canaux ajoutés
+par le volet 1 (séparation apple/wall dist +16, proprioception +1, apples_in_view +1),
+sur le même package physique, 3 seeds / 15k :
+
+| Config | inputs | seed 42 | seed 7 | seed 123 |
+|---|:---:|:---:|:---:|:---:|
+| **arb49** (contrôle, tout off) | 49 | **86 %** / +0,352 | **77 %** / +0,125 | **42 %** / +0,118 |
+| arb_split (séparation dist seule) | 65 | 5 % / −0,131 | — | 89 % / +0,220 |
+| arb_prop (proprioception seule) | 50 | 5 % / −0,310 | — | 39 % / +0,070 |
+| arb_aiv (apples_in_view seule) | 50 | 32 % / −0,035 | — | 32 % / +0,058 |
+| arb67 (les 3 ensemble) | 67 | 59 % / +0,098 | 96 % / +0,367 | 1 % / −0,237 |
+
+Aucun canal isolé ne reproduit la robustesse du 49 — chacun dégrade déjà fortement
+seed 42 seul (86→5-32 %), et `arb_split` *sauve* seed 123 (89 %) tout en détruisant
+seed 42 (5 %). **Il n'y a pas de coupable unique** : plus d'inputs signifie plus de
+connexions initiales à régler dans le génome (toujours fully-connected à la
+création), donc plus de surface de mutation et plus d'instabilité selon le seed —
+peu importe la nature du canal ajouté. `mean hidden nodes` reste proche de 0
+partout : ce sont des perceptrons nus qui divergent par le poids initial, pas par
+la structure.
+
+### Décision : capteur 49 promu en défaut
+
+Vu la priorité performance, le capteur 49 legacy l'emporte nettement sur toutes les
+variantes 67/allégées testées, sur les deux seeds discriminants (42, 123).
+`config/default.yaml` est remplacé par le package `apple_repro_bigpop` complet
+(monde ×√2, agents/pommes plus gros, mutation 0,15, `apples_per_offspring 3,0`,
+population 200/400) avec le capteur 49. Confirmé 3/3 seeds à 15k (86/77/42 %,
+cohérent avec l'étalon historique 98/86/43 → 86/84/56 à 30k, physiquement
+identique). Aucun nouveau run 30k n'a été nécessaire : le package est
+comportementalement identique à l'étalon poc2.2 déjà stabilisé sur 30k.
+
+### Refonte technique : capteur configurable (zéro nombre magique)
+
+`apple_repro_bigpop.yaml` utilisait `num_inputs: 49` en dur, incompatible avec
+`agent.sense()` qui ne savait produire que 67 inputs depuis le volet 1 — le
+promouvoir tel quel aurait crashé. Plutôt que de revert le code (perdant la
+capacité à produire 67), le capteur devient **configurable** (invariant n°1) :
+
+- `SensorConfig` gagne 3 toggles (`split_distance`, `proprioception`,
+  `apples_in_view`, tous `True` par défaut = comportement 67 inchangé si non
+  précisés) + une propriété `num_inputs` qui **dérive** le compte au lieu du
+  nombre magique `4*num_rays+3`.
+- `Agent.sense()` construit sa sortie en fonction des 3 toggles ; `split_distance`
+  off → un seul canal de distance combinée (`min(apple_d, wall_d)`, équivalent au
+  raycast legacy — les pommes ne peuvent pas être occluses par un mur car elles ne
+  spawnent jamais au-delà, donc le combiné est fidèle).
+- `SimConfig.__post_init__` valide `network.num_inputs == sensors.num_inputs`
+  (dérivé) au lieu du calcul fixe.
+- `tools/steer_probe.py` prenait le layout par la seule taille `num_inputs`, ce qui
+  est **ambigu** (proprio seul et apples_in_view seul donnent tous deux 50) — corrigé
+  pour reconstruire le vecteur de sonde à partir des 3 toggles réels, comme
+  `agent.sense()`.
+- `src/renderer.py::_draw_agent_rays` reconstruisait les rayons avec des indices
+  4-blocs codés en dur — généralisé aux deux layouts (split/combiné).
+- Tests : `test_sense_length_matches_configurable_layout` (4 layouts paramétrés,
+  49/50/65/67), tests de rayons migrés sur une fixture `split_cfg` dédiée (le
+  comportement split-distance reste testé même s'il n'est plus le défaut).
+  **152 tests verts**, black clean, pylint stable (9.93/10, baseline pré-existante
+  — deux `too-many-locals`/`too-many-statements` dans `renderer.py` antérieurs à
+  ce volet, non introduits ici).
+
+### Chiffres clés (vérifiés)
+
+- 17 runs au total (screening 15k) : `lever_bigpop67`/`lowmut` ×3 seeds (6),
+  `apple_repro_bigpop67` ×3 seeds (3), ablation `arb49/split/prop/aiv` ×2 seeds +
+  `arb49` seed 7 (7), plus 1 smoketest. Sorties dans `logs/2026-07-08_bigpop67_screen/`,
+  `logs/2026-07-08_arb67/`, `logs/2026-07-08_ablation/`.
+- Configs conservées comme référence d'expérience : `lever_bigpop67(.yaml|_lowmut)`,
+  `apple_repro_bigpop67.yaml`, `arb49/arb_split/arb_prop/arb_aiv.yaml`.
+- `config/default.yaml` : monde 2263×1273, agent radius 11.31/speed 4.243, pommes
+  160×radius 7.07, mutation 0.15/0.05, `apples_per_offspring 3.0`, pop 200/400,
+  capteur 49 (3 toggles `false`). Tout `python main.py` désormais sur cette base.

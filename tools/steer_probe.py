@@ -16,47 +16,48 @@ import statistics as st
 import sys
 from random import Random
 
-from src.config import SimConfig
+from src.config import SensorConfig, SimConfig
 from src.genome import TRACKER, Genome
 from src.network import NeuralNetwork
 
 
-def _probe_inputs(k: int, num_rays: int, num_inputs: int) -> list[float]:
-    """Build a sensor vector with a lone apple on ray k, matching the layout.
-
-    Supports both input layouts by size:
-      - 4*num_rays + 3 (67): apple_dist, wall_dist, apple_flag, wall_flag,
-        energy, actual_speed, apples_in_view
-      - 3*num_rays + 1 (49, legacy): dist, apple_flag, wall_flag, energy
-    """
+def _probe_inputs(k: int, sensors: SensorConfig) -> list[float]:
+    """Build a sensor vector with a lone apple on ray k, matching the configured
+    sensor layout (mirrors ``Agent.sense()``'s toggle logic exactly)."""
+    num_rays = sensors.num_rays
     apple_dist = [1.0] * num_rays
     apple_dist[k] = 0.2
+    wall_dist = [1.0] * num_rays  # walls never closer than the probed apple
     appf = [0.0] * num_rays
     appf[k] = 1.0
     wallf = [0.0] * num_rays
-    if num_inputs == 4 * num_rays + 3:
-        wall_dist = [1.0] * num_rays
-        # energy=0.5, actual_speed=0 (still), apples_in_view=one ray of num_rays
-        scalars = [0.5, 0.0, 1.0 / num_rays]
-        vec = apple_dist + wall_dist + appf + wallf + scalars
-    elif num_inputs == 3 * num_rays + 1:
-        vec = apple_dist + appf + wallf + [0.5]
+    if sensors.split_distance:
+        vec = apple_dist + wall_dist + appf + wallf
     else:
-        raise ValueError(f"unsupported input layout: {num_inputs} for {num_rays} rays")
-    if len(vec) != num_inputs:
-        raise ValueError(f"probe built {len(vec)} inputs, expected {num_inputs}")
+        combined = [min(a, w) for a, w in zip(apple_dist, wall_dist)]
+        vec = combined + appf + wallf
+    vec = vec + [0.5]  # energy
+    if sensors.proprioception:
+        vec.append(0.0)  # actual_speed = still
+    if sensors.apples_in_view:
+        vec.append(1.0 / num_rays)  # exactly one ray sees an apple
+    if len(vec) != sensors.num_inputs:
+        raise ValueError(
+            f"probe built {len(vec)} inputs, expected {sensors.num_inputs}"
+        )
     return vec
 
 
-def steer_score(net: NeuralNetwork, num_rays: int, num_inputs: int) -> float:
+def steer_score(net: NeuralNetwork, sensors: SensorConfig) -> float:
     """Pearson r between 'apple on the left' and 'turns left'."""
+    num_rays = sensors.num_rays
     xs: list[float] = []
     ys: list[float] = []
     for k in range(1, num_rays):
         if k == num_rays // 2:
             continue  # directly behind: ambiguous
         ang = k * (2 * math.pi / num_rays)
-        raw = net.activate(_probe_inputs(k, num_rays, num_inputs))
+        raw = net.activate(_probe_inputs(k, sensors))
         xs.append(math.sin(ang))
         ys.append(math.tanh(raw[1]))
     mx, my = st.mean(xs), st.mean(ys)
@@ -70,13 +71,12 @@ def main(argv: list[str]) -> int:
     genome_path = argv[1]
     config_path = argv[2] if len(argv) > 2 else "config/default.yaml"
     cfg = SimConfig.from_yaml(config_path)
-    nr = cfg.sensors.num_rays
 
     champ = Genome.from_json(open(genome_path, encoding="utf-8").read())
     hidden = sum(1 for n in champ.nodes if n.node_type == "hidden")
     enabled = sum(1 for c in champ.connections if c.enabled)
     weights = [c.weight for c in champ.connections if c.enabled]
-    cs = steer_score(NeuralNetwork(champ, cfg.network), nr, cfg.network.num_inputs)
+    cs = steer_score(NeuralNetwork(champ, cfg.network), cfg.sensors)
 
     rng = Random(1234)
     rand_scores: list[float] = []
@@ -85,9 +85,7 @@ def main(argv: list[str]) -> int:
         g = Genome.new_fully_connected(
             cfg.genome, cfg.network.num_inputs, cfg.network.num_outputs, rng
         )
-        rand_scores.append(
-            steer_score(NeuralNetwork(g, cfg.network), nr, cfg.network.num_inputs)
-        )
+        rand_scores.append(steer_score(NeuralNetwork(g, cfg.network), cfg.sensors))
 
     better = sum(1 for r in rand_scores if r > cs)
     print(

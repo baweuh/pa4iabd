@@ -1,23 +1,22 @@
-# Default simulation configuration.
-# Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
-# sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
-# NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
-# adding inputs itself destabilises the fully-connected initial genome. The
-# 49-input legacy layout is the only one that reproduces robust 3-seed foraging
-# (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
+# Étape 2 (candidat perf) : bigpop67 + mutation réduite.
+# Base = lever_bigpop67.yaml (pop 200/400, capteur 67, apples_per_offspring 5.0).
+# Isolation 1 variable vs lever_bigpop67 : weight_mutation_rate 0.8→0.15 et
+# weight_perturbation 0.2→0.05 (levier L1 poc2.2 = rendre un bon contrôleur héréditaire).
+# Hypothèse : maintenant que apples_per_offspring fournit la pression de sélection,
+# baisser la mutation devrait laisser la compétence s'accumuler (vs L1 seul = null).
 # Energy is expressed in apple-equivalent units (invariant n°2).
 
 world:
-  width: 2263          # pixels
-  height: 1273          # pixels
+  width: 2000          # pixels
+  height: 1125         # pixels
 
 penalty_zone:
-  width: 141           # thickness from the wall, in pixels
+  width: 100           # thickness from the wall, in pixels
   max_drain: 0.003     # energy drained per tick at the wall (softened: was 0.005)
 
 agent:
-  radius: 11.31
-  max_speed: 4.243
+  radius: 8
+  max_speed: 3.0
   initial_energy: 1.0
   max_energy: 2.0
   energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
@@ -27,34 +26,31 @@ agent:
   end_of_life_ticks: 500
   max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
   move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
-  apples_per_offspring: 3.0      # >0 = fecundity from cumulative apples (structural)
+  apples_per_offspring: 5.0      # >0 = fecundity from cumulative apples (structural)
 
 sensors:
   num_rays: 16
-  max_distance: 283    # pixels
+  max_distance: 200    # pixels
   fov: 360             # degrees
-  split_distance: false   # legacy layout: 1 combined nearest-object distance/ray
-  proprioception: false   # legacy layout: no actual_speed input
-  apples_in_view: false   # legacy layout: no apples_in_view input
 
 network:
-  num_inputs: 49        # 3*num_rays + 1 : dist, apple_flag, wall_flag (×16) + energy
-  num_outputs: 2         # vx_brut, vy_brut (normalised post-output)
+  num_inputs: 67       # 4*num_rays + 3 : apple_dist, wall_dist, apple_flag, wall_flag (×16) + energy + actual_speed + apples_in_view
+  num_outputs: 2       # vx_brut, vy_brut (normalised post-output)
   activation: "tanh"
 
 apple:
-  count: 160            # denser food → random walkers stumble on it sooner (was 50)
-  radius: 7.07
+  count: 125           # scaled with map area 1600×900→2000×1125 (+56% surface)
+  radius: 5
   energy: 0.5
   respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
 
 genome:
   weight_init_range: 1.0
-  weight_mutation_rate: 0.15
-  weight_perturbation: 0.05
-  add_node_rate: 0.03
-  add_connection_rate: 0.05
-  remove_node_rate: 0.01
+  weight_mutation_rate: 0.15   # L1 : mutation réduite (était 0.8) → héritabilité
+  weight_perturbation: 0.05    # L1 : perturbation réduite (était 0.2)
+  add_node_rate: 0.10
+  add_connection_rate: 0.08
+  remove_node_rate: 0.00
   remove_connection_rate: 0.02
   weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
   crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
@@ -85,5 +81,5 @@ logging:
 
 render:
   fps: 60
-  window_width: 2263
-  window_height: 1273
+  window_width: 2000
+  window_height: 1125

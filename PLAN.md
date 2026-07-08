@@ -74,8 +74,11 @@
         >0 = fécondité ∝ pommes cumulées) + `agent.move_cost`
 - [x] Résultat : `config/apple_repro_bigpop.yaml` = 1ʳᵉ émergence de fourrage
         **robuste (3 seeds) ET stable (30k)** : 86/84/56 % fourrageurs
-- [ ] ⬜ Décision : promouvoir `apple_repro_bigpop` en défaut ? (change monde/pop)
-- [ ] ⬜ Validation élargie (N seeds) + réglage de K pour remonter seed 123
+- [x] Décision : promouvoir `apple_repro_bigpop` en défaut ? → **OUI**, tranché en
+        poc2.3 volet 5 (voir ci-dessous) après l'ablation du capteur 67.
+- [ ] ⬜ Validation élargie (N seeds) + réglage de K pour remonter seed 123 (toujours
+        le plus faible du trio, 42-56 % selon le run — piste ouverte si besoin de plus
+        de perf)
 
 ## Branche poc2.3 — Capteurs 67 + visualisation + relance structurelle ✅
 > POC hors numérotation. Journal complet dans `docs/Audits/AUDIT-poc2.3.md`.
@@ -105,6 +108,18 @@
         (seed 42 : bigpop 76 % vs combiné 51 %). Enseignement : le crossover est un
         opérateur **moyennant** (rapproche tous les seeds de ~50 %, réduit la variance
         inter-seeds), pas amplifiant → seule la **taille de pop** lève tous les seeds.
-- [ ] ⬜ Pistes restantes (b) crossover_rate plus bas / (c) N seeds : même régime
-        d'homogénéisation, ne franchiront pas l'étalon `apple_repro_bigpop` (86/84/56,
-        déjà notre meilleur résultat robuste). `default.yaml` reste `crossover_rate 0.0`.
+- [x] Pistes restantes (b) crossover_rate plus bas / (c) N seeds : abandonnées, même
+        régime d'homogénéisation que la piste (a) falsifiée. `default.yaml` reste
+        `crossover_rate 0.0`.
+- [x] **Volet 5 — verdict final capteur, priorité performance** (audit poc2.3 volet 5) :
+        le capteur 67 (volet 1) **casse la robustesse** (seed 123 : 43 %→1 %), aucun
+        canal isolé n'est coupable (ablation split/proprio/apples_in_view) — c'est la
+        **dimensionnalité d'entrée** (génome fully-connected plus large = plus de
+        surface de mutation). Capteur devenu **configurable**
+        (`sensors.split_distance/proprioception/apples_in_view`, zéro nombre magique,
+        `SensorConfig.num_inputs` dérivé). **`config/default.yaml` PROMU** au package
+        complet `apple_repro_bigpop` (monde ×√2, agents/pommes plus gros, mutation
+        0,15, `apples_per_offspring 3.0`, pop 200/400, capteur **49 legacy**) — 3/3
+        seeds robustes (86/77/42 % à 15k, cohérent avec l'étalon 86/84/56 à 30k). 152
+        tests verts, black clean, pylint stable. Décision poc2.2 (ligne ci-dessus)
+        close : le package apple_repro_bigpop **est** le nouveau défaut.
