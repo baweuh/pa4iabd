@@ -23,6 +23,8 @@ from __future__ import annotations
 import math
 from random import Random
 
+import numpy as np
+
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import Genome
@@ -109,23 +111,21 @@ class Agent:
         """
         sensors = self._config.sensors
         max_dist = sensors.max_distance
-        apple_dists: list[float] = []
-        wall_dists: list[float] = []
-        combined_dists: list[float] = []
-        apple_flags: list[float] = []
-        wall_flags: list[float] = []
-        for angle in ray_angles(sensors.num_rays, sensors.fov, self.heading):
-            apple_d, wall_d = self._cast_ray(math.cos(angle), math.sin(angle), max_dist)
-            apple_dists.append(apple_d / max_dist)
-            wall_dists.append(wall_d / max_dist)
-            combined_dists.append(min(apple_d, wall_d) / max_dist)
-            apple_flags.append(1.0 if apple_d < max_dist else 0.0)
-            wall_flags.append(1.0 if wall_d < max_dist else 0.0)
+        angles = np.array(
+            ray_angles(sensors.num_rays, sensors.fov, self.heading), dtype=np.float64
+        )
+        apple_dist, wall_dist = self._cast_rays(angles, max_dist)
+
+        apple_dists = (apple_dist / max_dist).tolist()
+        wall_dists = (wall_dist / max_dist).tolist()
+        apple_flags = (apple_dist < max_dist).astype(np.float64).tolist()
+        wall_flags = (wall_dist < max_dist).astype(np.float64).tolist()
 
         energy_norm = max(0.0, min(1.0, self.energy / self._config.agent.max_energy))
         if sensors.split_distance:
             inputs = apple_dists + wall_dists + apple_flags + wall_flags
         else:
+            combined_dists = (np.minimum(apple_dist, wall_dist) / max_dist).tolist()
             inputs = combined_dists + apple_flags + wall_flags
         inputs = inputs + [energy_norm]
         if sensors.proprioception:
@@ -134,30 +134,32 @@ class Agent:
             inputs.append(sum(apple_flags) / len(apple_flags))
         return inputs
 
-    def _cast_ray(self, dx: float, dy: float, max_dist: float) -> tuple[float, float]:
-        """Independent nearest-apple and nearest-wall distances along unit ray (dx, dy).
+    def _cast_rays(
+        self, angles: "np.ndarray", max_dist: float
+    ) -> tuple["np.ndarray", "np.ndarray"]:
+        """Independent nearest-apple and nearest-wall distances for ALL rays at once.
 
-        Returns ``(apple_dist, wall_dist)``, each clamped to ``max_dist`` when no
-        hit of that type lies within range.  Both channels are always populated so
-        the network has independent weights for food vs obstacle proximity — a ray
-        that hits an apple in front of a wall now encodes both distances.
+        Returns ``(apple_dists, wall_dists)`` arrays (one entry per ray), each
+        clamped to ``max_dist`` when no hit of that type lies within range — same
+        semantics as casting each ray one at a time, but batched with NumPy: the
+        raycast is the perf-critical path (O(rays×live apples) per agent per
+        tick), so this replaces the nested Python loop with vectorised array ops.
         """
-        apple_dist = max_dist
-        apple_radius = self._config.apple.radius
-        for apple in self._env.apples:
-            t = _ray_circle(self.x, self.y, dx, dy, apple.x, apple.y, apple_radius)
-            if t is not None and t < apple_dist:
-                apple_dist = t
-
-        wall_t = _ray_walls(
-            self.x,
-            self.y,
-            dx,
-            dy,
-            self._config.world.width,
-            self._config.world.height,
+        dx = np.cos(angles)
+        dy = np.sin(angles)
+        wall_dist = _ray_walls_vec(
+            self.x, self.y, dx, dy, self._config.world.width, self._config.world.height
         )
-        wall_dist = wall_t if (wall_t is not None and wall_t < max_dist) else max_dist
+        wall_dist = np.minimum(wall_dist, max_dist)
+
+        cx, cy = self._env.live_apple_coords()
+        if cx.size:
+            apple_dist = _ray_circles_vec(
+                self.x, self.y, dx, dy, cx, cy, self._config.apple.radius
+            )
+            apple_dist = np.minimum(apple_dist, max_dist)
+        else:
+            apple_dist = np.full(angles.shape, max_dist)
 
         return apple_dist, wall_dist
 
@@ -288,61 +290,59 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def _ray_walls(
-    px: float, py: float, dx: float, dy: float, width: float, height: float
-) -> float | None:
-    """Smallest positive distance from (px, py) along (dx, dy) to a box wall.
-
-    The ray direction is a unit vector, so the parameter ``t`` equals distance.
-    Returns ``None`` only for the degenerate zero-direction ray.
-    """
-    best: float | None = None
-    if dx > 0:
-        best = _closer(best, (width - px) / dx)
-    elif dx < 0:
-        best = _closer(best, (0.0 - px) / dx)
-    if dy > 0:
-        best = _closer(best, (height - py) / dy)
-    elif dy < 0:
-        best = _closer(best, (0.0 - py) / dy)
-    return best
-
-
-def _ray_circle(
+def _ray_walls_vec(
     px: float,
     py: float,
-    dx: float,
-    dy: float,
-    cx: float,
-    cy: float,
-    radius: float,
-) -> float | None:
-    """Nearest positive distance from (px, py) along unit (dx, dy) to a circle.
+    dx: "np.ndarray",
+    dy: "np.ndarray",
+    width: float,
+    height: float,
+) -> "np.ndarray":
+    """Smallest positive distance from (px, py) along each (dx, dy) to a box wall.
 
-    Returns ``None`` when the ray misses the circle or only meets it behind the
-    origin. Solves ``|P + t·D − C|² = r²`` with ``|D| = 1`` (a == 1).
+    Vectorised over rays (one ``dx``/``dy`` pair per ray). The ray directions
+    are unit vectors, so the parameter ``t`` equals distance. A ray exactly
+    parallel to an axis (``dx`` or ``dy`` == 0) contributes no candidate on
+    that axis, same as the scalar version this replaces.
     """
-    fx = px - cx
-    fy = py - cy
-    b = 2.0 * (fx * dx + fy * dy)
-    c = fx * fx + fy * fy - radius * radius
-    disc = b * b - 4.0 * c
-    if disc < 0.0:
-        return None
-    sqrt_disc = math.sqrt(disc)
-    t_near = (-b - sqrt_disc) / 2.0
-    if t_near > 0.0:
-        return t_near
-    t_far = (-b + sqrt_disc) / 2.0
-    if t_far > 0.0:
-        return t_far
-    return None
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tx = np.where(
+            dx > 0, (width - px) / dx, np.where(dx < 0, (0.0 - px) / dx, np.inf)
+        )
+        ty = np.where(
+            dy > 0, (height - py) / dy, np.where(dy < 0, (0.0 - py) / dy, np.inf)
+        )
+    tx = np.where(tx > 0.0, tx, np.inf)
+    ty = np.where(ty > 0.0, ty, np.inf)
+    return np.minimum(tx, ty)
 
 
-def _closer(current: float | None, candidate: float) -> float | None:
-    """Keep the smaller strictly-positive distance."""
-    if candidate <= 0.0:
-        return current
-    if current is None or candidate < current:
-        return candidate
-    return current
+def _ray_circles_vec(
+    px: float,
+    py: float,
+    dx: "np.ndarray",
+    dy: "np.ndarray",
+    cx: "np.ndarray",
+    cy: "np.ndarray",
+    radius: float,
+) -> "np.ndarray":
+    """Nearest positive distance from (px, py) along each unit (dx, dy) to the
+    nearest of the circles centred at (cx, cy) — one distance per ray.
+
+    Vectorised over the full (rays × circles) grid at once. ``inf`` where a
+    ray misses every circle or only meets them behind the origin. Solves
+    ``|P + t·D − C|² = r²`` with ``|D| = 1`` (a == 1), same formula as the
+    scalar version this replaces.
+    """
+    fx = px - cx[np.newaxis, :]  # (1, A)
+    fy = py - cy[np.newaxis, :]
+    b = 2.0 * (fx * dx[:, np.newaxis] + fy * dy[:, np.newaxis])  # (R, A)
+    disc = b * b - 4.0 * (fx * fx + fy * fy - radius * radius)  # (1, A) -> (R, A)
+    sqrt_disc = np.sqrt(np.where(disc >= 0.0, disc, 0.0))
+    near, far = (-b - sqrt_disc) / 2.0, (-b + sqrt_disc) / 2.0
+    hit = np.where(
+        (disc >= 0.0) & (near > 0.0),
+        near,
+        np.where((disc >= 0.0) & (far > 0.0), far, np.inf),
+    )
+    return np.min(hit, axis=1)  # (R,) nearest circle per ray

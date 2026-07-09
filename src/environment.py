@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from random import Random
 
+import numpy as np
+
 from src.apple import Apple
 from src.config import AppleConfig, PenaltyZoneConfig, SimConfig, WorldConfig
 
@@ -45,6 +47,13 @@ class Environment:
         ]
         # Apples eaten this period, counting down to their respawn.
         self._pending: list[Apple] = []
+        # Cached (x, y) NumPy arrays of ``apples``, used by Agent's vectorised
+        # raycast (perf-critical: called once per living agent per tick).
+        # Invalidated (set to None) whenever ``apples`` changes membership or an
+        # apple's position moves (mark_eaten / tick_respawns), then rebuilt lazily
+        # on the next access — apples change at most a couple of times per tick
+        # (~1 eaten, ~1 respawned) versus hundreds of agents reading them.
+        self._apple_coords_cache: tuple[np.ndarray, np.ndarray] | None = None
 
     # ------------------------------------------------------------------ #
     # Public geometry helpers
@@ -69,6 +78,22 @@ class Environment:
         """True when (x, y) is outside the penalty zone (agent-facing helper)."""
         return self.dist_to_wall(x, y) >= self._pz.width
 
+    def live_apple_coords(self) -> tuple[np.ndarray, np.ndarray]:
+        """Cached ``(x, y)`` NumPy arrays of every live apple, one entry each.
+
+        Rebuilt lazily the first time it's read after ``apples`` changes; reused
+        as-is by every agent that senses in between (see cache comment above).
+        """
+        if self._apple_coords_cache is None:
+            xs = np.fromiter(
+                (a.x for a in self.apples), dtype=np.float64, count=len(self.apples)
+            )
+            ys = np.fromiter(
+                (a.y for a in self.apples), dtype=np.float64, count=len(self.apples)
+            )
+            self._apple_coords_cache = (xs, ys)
+        return self._apple_coords_cache
+
     def mark_eaten(self, apple: Apple) -> None:
         """Remove a just-eaten apple from play; it will respawn after the delay.
 
@@ -78,6 +103,7 @@ class Environment:
         self.apples.remove(apple)
         apple.respawn_timer = self._apple_cfg.respawn_delay
         self._pending.append(apple)
+        self._apple_coords_cache = None
 
     def tick_respawns(self, rng: Random) -> None:
         """Advance every pending apple's countdown; respawn the ones that are due.
@@ -93,6 +119,7 @@ class Environment:
                 apple.respawn_timer = 0
                 apple.x, apple.y = self._random_safe_position(rng)
                 self.apples.append(apple)
+                self._apple_coords_cache = None
             else:
                 still_pending.append(apple)
         self._pending = still_pending
