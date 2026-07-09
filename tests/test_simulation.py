@@ -379,3 +379,74 @@ def test_apples_per_offspring_zero_keeps_legacy_energy_path(tmp_path):
     sim._repro_credit[sim.population[0]] = 0.0  # no apple credit at all
     sim.tick()
     assert sim.total_reproductions >= 2  # legacy energy path still fires
+
+
+# ------------------------------------------------------------------ #
+# Fitness sharing (speciation.fitness_sharing — species-relative priority)
+# ------------------------------------------------------------------ #
+def _split_into_dominant_pair_and_novel(cfg, sim):
+    """3 living agents: dominant_a/dominant_b share one (size-2) species,
+    novel diverges enough to form its own (size-1) species."""
+    dominant_a, dominant_b, novel = sim.population
+    dominant_b.genome = dominant_a.genome.clone()
+    rng = random.Random(3)
+    for _ in range(5):  # > compatibility_threshold worth of excess genes
+        novel.genome.add_node(cfg.genome, rng)
+    return dominant_a, dominant_b, novel
+
+
+def test_fitness_sharing_off_by_default(tmp_path):
+    assert build_config(tmp_path).speciation.fitness_sharing is False
+
+
+def test_fitness_sharing_off_keeps_raw_priority(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 1.0,
+            "max_energy": 2.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.05,
+            "apples_per_offspring": 0.0,
+        },
+        population={"initial_size": 3, "max_size": 4},
+    )
+    sim = Simulation(cfg, random.Random(9))
+    sim.env.apples.clear()
+    dominant_a, dominant_b, novel = _split_into_dominant_pair_and_novel(cfg, sim)
+    dominant_a.energy, dominant_a.generation = 1.0, 10  # raw fitness winner
+    dominant_b.energy, dominant_b.generation = 0.1, 20  # ineligible, pads the species
+    novel.energy, novel.generation = 0.6, 30  # raw fitness loser
+
+    sim.tick()  # one free slot (4 - 3 survivors)
+
+    generations = {a.generation for a in sim.population}
+    assert 11 in generations  # dominant_a wins on raw energy alone
+    assert 31 not in generations
+
+
+def test_fitness_sharing_on_lets_small_species_outrank_larger_one(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 1.0,
+            "max_energy": 2.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.05,
+            "apples_per_offspring": 0.0,
+        },
+        population={"initial_size": 3, "max_size": 4},
+        speciation={"fitness_sharing": True},
+    )
+    sim = Simulation(cfg, random.Random(9))
+    sim.env.apples.clear()
+    dominant_a, dominant_b, novel = _split_into_dominant_pair_and_novel(cfg, sim)
+    dominant_a.energy, dominant_a.generation = 1.0, 10  # shared: 1.0 / 2 = 0.5
+    dominant_b.energy, dominant_b.generation = 0.1, 20  # ineligible, pads the species
+    novel.energy, novel.generation = 0.6, 30  # shared: 0.6 / 1 = 0.6 → wins
+
+    sim.tick()  # one free slot (4 - 3 survivors)
+
+    generations = {a.generation for a in sim.population}
+    assert 31 in generations  # novel's shared fitness beats dominant_a's diluted one
+    assert 11 not in generations

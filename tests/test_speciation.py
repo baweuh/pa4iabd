@@ -11,6 +11,7 @@ import pytest
 from src.config import SimConfig
 from src.genome import Genome, InnovationTracker
 from src.speciation import (
+    assign_species,
     compatibility_distance,
     count_species,
     mean_pairwise_distance,
@@ -103,6 +104,29 @@ def test_divergent_genomes_form_multiple_species(spec, gcfg):
 
 def test_empty_population_zero_species(spec):
     assert count_species([], spec) == 0
+
+
+# --------------------------------------------------------------------------- #
+# assign_species (backs fitness sharing in Simulation, not just the metrics)
+# --------------------------------------------------------------------------- #
+def test_assign_species_clones_share_one_id(spec):
+    genome = _fresh(4)
+    population = [genome.clone() for _ in range(10)]
+    assert assign_species(population, spec) == [0] * 10
+
+
+def test_assign_species_divergent_genomes_get_distinct_ids(spec, gcfg):
+    tracker = InnovationTracker()
+    base = Genome.new_fully_connected(gcfg, NUM_INPUTS, NUM_OUTPUTS, Random(5), tracker)
+    far = base.clone()
+    rng = Random(7)
+    for _ in range(5):
+        far.add_node(gcfg, rng, tracker)
+    assert assign_species([base, far], spec) == [0, 1]
+
+
+def test_assign_species_empty_population():
+    assert not assign_species([], SimConfig.from_yaml("config/default.yaml").speciation)
 
 
 # --------------------------------------------------------------------------- #

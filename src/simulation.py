@@ -28,16 +28,18 @@ Per-tick orchestration (staged pipeline):
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from random import Random
-from typing import TextIO
+from typing import Callable, TextIO
 
 from src.agent import Agent
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import TRACKER, Genome
 from src.speciation import (
+    assign_species,
     compatibility_distance,
     count_species,
     mean_pairwise_distance,
@@ -219,14 +221,15 @@ class Simulation:
     def _reproduce_by_energy(self, survivors: list[Agent], slots: int) -> list[Agent]:
         """Legacy reproduction: energy-threshold eligibility, priority by energy.
 
-        Highest-energy eligible agents fill the scarce slots first; fecundity per
-        agent is bounded by how many times its energy exceeds the threshold.
+        Highest-energy eligible agents fill the scarce slots first (species-shared
+        when ``speciation.fitness_sharing`` is on, see :meth:`_priority_fn`);
+        fecundity per agent is bounded by how many times its energy exceeds the
+        threshold.
         """
         children: list[Agent] = []
+        priority = self._priority_fn(survivors, lambda a: a.energy)
         eligible = sorted(
-            (a for a in survivors if a.can_reproduce()),
-            key=lambda a: a.energy,
-            reverse=True,
+            (a for a in survivors if a.can_reproduce()), key=priority, reverse=True
         )
         for agent in eligible:
             while agent.can_reproduce() and len(children) < slots:
@@ -244,14 +247,17 @@ class Simulation:
         ``per_child`` credit per offspring, so lifetime offspring ≈ apples_eaten /
         per_child — reproductive success scales linearly with foraging competence,
         decoupled from the instantaneous-energy cap. At the cap the best-fed
-        foragers fill the slots first (priority by unspent credit). The parent still
-        pays ``reproduction_cost`` energy per child (a birth is not free) and stops
-        once out of energy, so a starving forager cannot cash in credit it can't fuel.
+        foragers fill the slots first (priority by unspent credit, species-shared
+        when ``speciation.fitness_sharing`` is on, see :meth:`_priority_fn`). The
+        parent still pays ``reproduction_cost`` energy per child (a birth is not
+        free) and stops once out of energy, so a starving forager cannot cash in
+        credit it can't fuel.
         """
         children: list[Agent] = []
+        priority = self._priority_fn(survivors, lambda a: self._repro_credit[a])
         eligible = sorted(
             (a for a in survivors if self._repro_credit[a] >= per_child),
-            key=lambda a: self._repro_credit[a],
+            key=priority,
             reverse=True,
         )
         for agent in eligible:
@@ -265,6 +271,31 @@ class Simulation:
             if len(children) >= slots:
                 break
         return children
+
+    def _priority_fn(
+        self, survivors: list[Agent], raw: Callable[[Agent], float]
+    ) -> Callable[[Agent], float]:
+        """Reproduction-priority function: ``raw`` as-is, or fitness-shared.
+
+        ``speciation.fitness_sharing`` off (default): returns ``raw`` unchanged —
+        zero extra cost, legacy behaviour. On: divides each agent's raw value by
+        the size of its NEAT species (``f'_i = f_i / |species_i|``, canonical
+        NEAT fitness sharing, Stanley & Miikkulainen 2002) — a large/dominant
+        species no longer autowins scarce reproduction slots on raw fitness
+        alone, giving small/novel species room to prove themselves before being
+        outcompeted head-on by an already-optimised dominant lineage.
+        """
+        if not self._config.speciation.fitness_sharing:
+            return raw
+        species_ids = assign_species(
+            [a.genome for a in survivors], self._config.speciation
+        )
+        sizes = Counter(species_ids)
+        shared = {
+            agent: raw(agent) / sizes[species_id]
+            for agent, species_id in zip(survivors, species_ids)
+        }
+        return shared.__getitem__
 
     def _birth(self, parent: Agent, pool: list[Agent]) -> Agent:
         """Spawn one child from ``parent``, register its bookkeeping, count it.

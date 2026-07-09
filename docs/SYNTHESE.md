@@ -2,7 +2,8 @@
 
 > Vue d'ensemble transverse : de la fondation technique (Phases 1-8) à la branche
 > `poc2.3`. Pour le détail, voir `docs/Phase/*` (implémentation) et
-> `docs/Audits/AUDIT-poc2.2-v3.md` + `AUDIT-poc2.3.md` (investigations).
+> `docs/Audits/AUDIT-poc2.2-v3.md` + `AUDIT-poc2.3.md` (investigations) +
+> `AUDIT-poc2.3-tuyauterie.md` (audit de connectivité fonctionnelle, 2026-07-09).
 > Rédigé le 2026-07-08, mis à jour le 2026-07-08 (volets 4-5 : crossover+bigpop
 > falsifié, capteur 49 promu en défaut).
 
@@ -238,6 +239,100 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 - ⬜ **Piste ouverte** : seed 123 reste le maillon faible du trio (7-56 % selon le
   run, contre 59-98 % pour 42 et 7) — la suite doit être additive (N seeds /
   réglage de K / plus de population), pas une réduction de dimensionnalité.
+- ⬜ **À rectifier — durée de vie des pommes trop courte (observé en jeu,
+  2026-07-09, Robin)** : à population proche du plafond (`max_size: 400`) sur la
+  carte 2263×1273 avec 160 pommes, les pommes semblent mangées quasi
+  instantanément (~1,5 s), probablement par des trajectoires d'agents non
+  dirigées plutôt que par du fourrage skillé — la carte est surpeuplée relatif à
+  l'offre. Risque : dilue le signal de sélection que `apples_per_offspring` est
+  censé fournir (manger devient fortuite plutôt que discriminant). Lié à la
+  cause #1 du diagnostic poc2.2 (« sélection sur le fourrage minuscule ») mais
+  sous l'angle inverse (trop de densité agents/pommes plutôt que pas assez de
+  pression). À investiguer avant tout nouveau levier de sélection (fitness
+  sharing y compris) : instrumenter la durée de vie moyenne des pommes et/ou
+  distinguer captures dirigées (steering positif juste avant capture) vs
+  fortuites — sinon le signal qu'on cherche à amplifier (fitness sharing) est
+  peut-être déjà noyé en amont.
+
+  **Vérifié 2026-07-09** (`tools/apple_capture_probe.py`, pop pleine 400/400,
+  2 seeds) : confirmé, et pire que l'estimation visuelle — durée de vie
+  médiane **0,20-0,27 s** (pas 1,5 s), seulement **7-11 %** des 160 pommes
+  vivantes à tout instant (file de respawn saturée). Classification par
+  capture (adjacent = agent déjà sur place à l'apparition ; directed =
+  approche mesurée nette ; undirected = ni l'un ni l'autre) :
+
+  | Seed | adjacent | directed | undirected | lifetime médiane |
+  |---|---|---|---|---|
+  | 42  | 23 % | 48 % | 29 % | 12 ticks (0,20 s) |
+  | 123 | 25 % | 44 % | 31 % | 16 ticks (0,27 s) |
+
+  **52-56 % des captures ne montrent pas d'approche dirigée nette**, cohérent
+  sur les deux seeds testés. Confirme qu'il faut traiter ce goulot AVANT
+  d'amplifier la sélection (le fitness sharing amplifierait un signal déjà à
+  moitié bruité). Piste additive préférée (cohérente avec le pattern
+  transverse) : augmenter l'offre de pommes (`apple.count` et/ou
+  `respawn_delay` plus court) ou agrandir la carte, plutôt que réduire
+  `population.max_size` (réducteur — pattern qui a toujours cassé la
+  robustesse ailleurs dans le projet).
+
+  **Testé 2026-07-09** : levier « agrandir la carte » (choix de Robin),
+  `config/lever_bigmap.yaml` (world ×√2, 2263×1273→3200×1800, tout le reste
+  isolé/inchangé). Effet de bord observé pendant le test : la carte plus
+  grande **ralentit encore la sim** (moins de pommes mangées vite → plus de
+  pommes vivantes simultanément → raycast plus cher) — même mécanisme de coût
+  que les leviers apple.count/respawn_delay écartés plus haut ; a motivé la
+  priorité NumPy ci-dessous.
+
+  Résultat (seed 42, 4000 ticks vs contrôle 8000 ticks — run réduit pour
+  tenir dans le budget) :
+
+  | | contrôle (2263×1273) | bigmap (3200×1800) |
+  |---|---|---|
+  | food vivant | 11/160 | 38/160 |
+  | lifetime médiane | 12 ticks (0,20s) | 27,5 ticks (0,66s) |
+  | adjacent | 23% | **12%** |
+  | directed | 48% | **63%** |
+  | undirected | 29% | 25% |
+
+  Progrès net sur les 3 axes (moins de gratuit, plus de dirigé, pommes qui
+  durent 2× plus longtemps). **Pas encore validé au niveau évolutif** : un
+  seul seed, run court, mesure la composition des captures pas le %
+  fourrageurs — avant promotion en défaut, refaire la campagne complète
+  (3 seeds/15-30k ticks, `tools/run_and_probe.py`) comme pour chaque levier
+  précédent du projet. Mis en pause au profit du chantier NumPy (perf
+  bloquante pour ces campagnes) puis du fitness sharing (ordre convenu avec
+  Robin).
+
+- ✅ **Fait — raycast vectorisé NumPy + cache pommes** (2026-07-09, suite au
+  test bigmap). `CLAUDE.md` liste déjà NumPy dans le stack autorisé
+  (l'interdiction ne vise que les frameworks ML : neat-python/torch/tensorflow/
+  gym) ; le code ne l'utilisait nulle part avant cette session. Deux étapes :
+  1. `agent._cast_ray` (boucle Python par rayon×pomme) → `_cast_rays` +
+     `_ray_walls_vec`/`_ray_circles_vec` (`src/agent.py`), calcul batché en
+     array NumPy pour un agent. Seul, ce changement n'a donné que **+7%**
+     (14,44→15,46 ticks/s) : l'overhead fixe NumPy par appel mange presque
+     tout le gain à ces tailles de tableau (16 rayons × ~11-38 pommes vivantes).
+  2. Vrai goulot identifié en creusant : `agent.sense()` reconstruisait les
+     tableaux NumPy des positions de pommes **à partir de la liste Python à
+     chaque agent** (400×/tick) alors que la liste ne change que ~1-2×/tick.
+     Fix : `Environment.live_apple_coords()` (`src/environment.py`), cache
+     invalidé uniquement par `mark_eaten`/`tick_respawns`. **+25% au total**
+     (14,44→18,04 ticks/s), zéro changement de comportement (même ordre
+     séquentiel agent par agent, même détermisme).
+  **Piste écartée délibérément** : batcher toute la population en un seul
+  appel NumPy (tableau pop×rayons×pommes) irait sans doute plus vite mais
+  **change la sémantique** — aujourd'hui un agent traité après un autre dans
+  le même tick ne voit plus une pomme que ce dernier vient de manger
+  (perception séquentielle) ; batcher toute la population calculerait les
+  perceptions AVANT que quiconque ait mangé ce tick, ce qui change le
+  comportement émergent et invaliderait silencieusement les campagnes de
+  robustesse déjà validées (86/84/56 etc.) sans revalidation. Décision prise
+  avec Robin : ne pas le faire, le +25% sans risque suffit pour l'instant.
+  Ne PAS utiliser torch/tensorflow pour le NN : le forward pass n'est pas le
+  goulot, ce projet ne calcule jamais de gradient (poids évolués par mutation
+  NEAT, pas par backprop), et chaque agent a une topologie différente
+  (mauvais fit pour du calcul batché à architecture fixe). 148 tests verts,
+  pylint 10/10, black clean.
 
 ---
 
@@ -272,6 +367,81 @@ nettoyages livrés :
 vraie tuyauterie calculée (`speciation.py`) mais jamais reliée à la sélection.
 Pattern des échecs volets 4/5/6 : les leviers *réducteurs* (crossover, +inputs,
 sparse) cassent ; seuls les *additifs* (population, sélection directe) marchent.
+
+### Audit de tuyauterie fonctionnelle (2026-07-09)
+
+Enquête « est-ce que tout est connecté, fonctionnel et *utilisé* ? », centrée
+agents — détail dans `docs/Audits/AUDIT-poc2.3-tuyauterie.md`. **Verdict** : la
+boucle de vie de l'agent est pleinement connectée et fonctionne (vérifié par run
+instrumentée : nourriture 160→24, record→15, repro→231, maxgen→5 en 1250 ticks).
+Mais une part notable du code est **câblée + testée + jamais empruntée** par
+`default.yaml` : chemin de repro par énergie, crossover (donc `compatibility_distance`
+côté sélection), capteurs riches (`_last_actual_speed` calculé pour rien chaque
+tick), `move_cost`, connectivité sparse. Seul code vraiment mort : `in_safe_zone()`
+(tests only). Point faible réel = **perf** : raycast O(pop×rayons×pommes), ~15–25
+ticks/s à capacité (15–30 min pour 15k–30k ticks).
+
+### Fitness sharing NEAT câblé (2026-07-09)
+
+Chantier n°1 de la feuille de route recherche (`speciation.py` calculait déjà
+`compatibility_distance`/`count_species` mais uniquement pour le CSV + le choix
+de partenaire crossover, jamais pour la sélection). Implémenté :
+- `speciation.assign_species(genomes, config) -> list[int]` : même clustering
+  glouton que `count_species`, mais renvoie l'id d'espèce par génome au lieu
+  du seul décompte (`count_species` refactorée pour la réutiliser, zéro
+  duplication de logique).
+- `SpeciationConfig.fitness_sharing: bool = False` (rétro-compatible, comme
+  `crossover_rate`/`initial_connectivity`) : off = comportement legacy
+  identique bit à bit (aucun coût ajouté sur le chemin par défaut).
+- `Simulation._priority_fn` : quand `fitness_sharing` est activé, divise la
+  clé de tri de priorité de reproduction (énergie ou crédit forage cumulé)
+  par la taille de l'espèce NEAT de l'agent (`f'_i = f_i / |espèce_i|`,
+  formule canonique Stanley & Miikkulainen 2002) avant de trier les éligibles
+  aux slots de repro rares — branché dans `_reproduce_by_energy` ET
+  `_reproduce_by_foraging`. Le crédit/énergie réellement dépensé à la
+  naissance n'est PAS modifié, seul l'ordre de priorité pour les slots change.
+- 6 tests ajoutés (`test_speciation.py` : `assign_species` seul ;
+  `test_simulation.py` : preuve d'intégration — une espèce isolée de taille 1
+  bat une espèce dominante de taille 2 sur fitness partagée alors qu'elle
+  perd sur fitness brute, ET preuve que `fitness_sharing: false` préserve
+  l'ancien comportement dans le même scénario). 154 tests verts, pylint 10/10.
+- Perf mesurée (`config/lever_fitness_sharing.yaml`, seed 42, pop pleine) :
+  **18,02 ticks/s**, quasi identique aux 18,04 ticks/s sans (le calcul
+  d'espèces ne tourne que dans la branche `slots > 0`, donc rarement à pleine
+  capacité) — le recalcul périodique anticipé en amont n'a pas été
+  nécessaire.
+
+**Campagne de validation 3 seeds / 15k (2026-07-09) — FALSIFIÉ ❌**
+(isolation à une variable, `config/lever_fitness_sharing.yaml` vs `default.yaml`,
+% fourrageurs r>0,1) :
+
+| Seed | Contrôle | Fitness Sharing | Δ | neurones cachés moy. (ctrl→FS) |
+|------|:---:|:---:|:---:|:---:|
+| 42   | **86 %** | 58 % | **−28** | 0,05 → **0,80** |
+| 7    | 77 %     | 73 % | −4      | 0,13 → **0,97** |
+| 123  | 42 %     | 46 % | +4      | 0,10 → **0,23** |
+| **moyenne** | **68 %** | **59 %** | **−9** | |
+
+**Même signature exacte que le crossover (volet 4) : un opérateur MOYENNANT.**
+Aide marginalement le maillon faible (123 : +4) mais écrase le gagnant
+historique (42 : −28), tirant tout le monde vers ~50-70 % ; la moyenne baisse
+(68→59 %). Ne franchit PAS le 3/3 robuste de `apple_repro_bigpop`.
+
+**Le détail mécanistique confirme que le fitness sharing marche exactement
+comme prévu** — les neurones cachés moyens EXPLOSENT (42 : 0,05→0,80 ; 7 :
+0,13→0,97) : il a bien **protégé l'innovation structurelle de l'écrasement**,
+sa mission théorique. Mais cette structure protégée **n'améliore pas le
+fourrage**, ce qui reconfirme le verdict du volet 3 (« les neurones cachés ne
+discriminent PAS — le signal est le comportement, pas la structure »).
+Protéger la structure protège quelque chose qui ne compte pas pour la tâche,
+au prix de diluer le signal comportemental qui compte. **4e mécanisme
+« réducteur » falsifié** (après crossover, capteur 67, sparse), tous du même
+côté du pattern transverse : seul l'ADDITIF (population, sélection directe)
+élève tous les seeds ensemble.
+
+**Statut : câblé + testé + falsifié, non promu.** `default.yaml` garde
+`fitness_sharing: false`. Mécanisme + `config/lever_fitness_sharing.yaml`
+conservés comme référence d'expérience. Ne pas re-tenter comme levier de perf.
 
 ## 7. Historique des commits clés
 

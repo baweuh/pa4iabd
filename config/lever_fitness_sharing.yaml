@@ -1,3 +1,16 @@
+# Lever test (2026-07-09): NEAT fitness sharing (f'_i = f_i / |species_i|),
+# wired into reproduction priority (src/simulation.py::_priority_fn) but never
+# promoted to default.yaml — needs a validated 3-seed campaign first, same
+# methodology as every other lever in this project.
+#
+# Isolation to ONE variable vs default.yaml: speciation.fitness_sharing only.
+# Hypothesis (see docs/SYNTHESE.md §6, research-roadmap): the missing piece
+# explaining why crossover/richer-sensor/sparse-genome innovations kept
+# getting crushed before proving themselves — without species-relative
+# priority, a large already-optimised lineage always outcompetes a small
+# novel one on raw fitness alone, so novelty never survives long enough to be
+# refined by mutation. Fitness sharing gives small species room to persist.
+#
 # Default simulation configuration.
 # Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
 # sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
@@ -70,7 +83,7 @@ speciation:
   c_disjoint: 1.0
   c_weight: 0.4
   compatibility_threshold: 3.0   # genomes closer than this share a species
-  fitness_sharing: false
+  fitness_sharing: true
 
 population:
   initial_size: 200        # large initial pool → more random walkers find food naturally

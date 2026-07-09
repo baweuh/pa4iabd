@@ -11,10 +11,12 @@ matching genes. Two genomes whose distance is below ``compatibility_threshold``
 belong to the same species (greedy single-pass clustering, as in canonical
 NEAT).
 
-These functions never influence selection or reproduction — the simulation stays
-a continuous, asexual ALife model. They exist so evolution becomes *measurable*:
-genetic-diversity collapse and the appearance of distinct species show up in the
-metrics CSV (CLAUDE.md goal: "voir des espèces apparaître").
+``compatibility_distance``/``count_species``/``mean_pairwise_distance`` are
+read-only observers (metrics CSV, mate selection). ``assign_species`` backs
+those AND fitness sharing in ``Simulation`` (species-relative reproduction
+priority — a large species no longer autowins scarce reproduction slots just
+by raw fitness, protecting small/novel species from being crushed before they
+can prove themselves; canonical NEAT, Stanley & Miikkulainen 2002).
 
 Invariants honoured here:
 - n°1 — zero hardcoding: every coefficient comes from :class:`SpeciationConfig`.
@@ -74,21 +76,36 @@ def compatibility_distance(
     )
 
 
-def count_species(genomes: Sequence[Genome], config: SpeciationConfig) -> int:
-    """Number of species via greedy clustering on compatibility distance.
+def assign_species(genomes: Sequence[Genome], config: SpeciationConfig) -> list[int]:
+    """Species id (0-based) for each genome, via greedy single-pass clustering.
 
-    Each genome joins the first representative within ``compatibility_threshold``;
-    a genome matching none becomes a new representative. Returns the
-    representative count (0 for an empty population).
+    Each genome joins the first representative within ``compatibility_threshold``
+    (in ``genomes`` order); a genome matching none becomes a new representative
+    and its own species. Same clustering rule as canonical NEAT — deterministic
+    given a fixed input order, which the caller controls.
     """
     representatives: list[Genome] = []
+    assignments: list[int] = []
     for genome in genomes:
-        if not any(
-            compatibility_distance(genome, rep, config) < config.compatibility_threshold
-            for rep in representatives
-        ):
+        species_id = next(
+            (
+                i
+                for i, rep in enumerate(representatives)
+                if compatibility_distance(genome, rep, config)
+                < config.compatibility_threshold
+            ),
+            None,
+        )
+        if species_id is None:
             representatives.append(genome)
-    return len(representatives)
+            species_id = len(representatives) - 1
+        assignments.append(species_id)
+    return assignments
+
+
+def count_species(genomes: Sequence[Genome], config: SpeciationConfig) -> int:
+    """Number of species via greedy clustering on compatibility distance."""
+    return len(set(assign_species(genomes, config)))
 
 
 def mean_pairwise_distance(

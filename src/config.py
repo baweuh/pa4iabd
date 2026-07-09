@@ -179,15 +179,24 @@ class GenomeConfig:
 class SpeciationConfig:
     """Coefficients for the NEAT compatibility-distance diversity metrics.
 
-    Used only by ``src.speciation`` to *observe* the population (species count,
-    genetic diversity); these values never influence selection or reproduction.
-    Defaults follow the canonical NEAT paper (Stanley & Miikkulainen 2002).
+    ``c_excess``/``c_disjoint``/``c_weight``/``compatibility_threshold`` feed
+    ``src.speciation`` for both the read-only diversity metrics (species count,
+    genetic diversity in the CSV) AND, when ``fitness_sharing`` is on, the
+    species-relative reproduction priority. Defaults follow the canonical NEAT
+    paper (Stanley & Miikkulainen 2002).
     """
 
     c_excess: float  # weight of excess genes in the distance
     c_disjoint: float  # weight of disjoint genes in the distance
     c_weight: float  # weight of the mean matching-weight difference
     compatibility_threshold: float  # distance below which two genomes share a species
+    # NEAT fitness sharing (f'_i = f_i / |species_i|): divides an agent's
+    # reproduction priority by its species size before ranking for scarce
+    # slots, protecting small/novel species from being crushed by a larger
+    # one's raw fitness before they get a chance to improve. False (default)
+    # = legacy behaviour, species purely observational (never promoted to
+    # default.yaml without a validated 3-seed campaign).
+    fitness_sharing: bool = False
 
     def __post_init__(self) -> None:
         _require_positive(self, "compatibility_threshold")
