@@ -29,6 +29,7 @@ from src.config import SimConfig
 from src.environment import Environment
 from src.genome import Genome
 from src.network import NeuralNetwork
+from src.novelty import behavior_descriptor as _compute_descriptor
 
 
 def ray_angles(num_rays: int, fov_degrees: float, heading: float = 0.0) -> list[float]:
@@ -89,6 +90,9 @@ class Agent:
         # Lifetime apples eaten — updated by Simulation each tick, read by the renderer
         # to identify the best forager (forage_rate = apples_eaten / max(age, 1)).
         self.apples_eaten: int = 0
+        # Behavioural-novelty descriptor (turn-response profile). Deterministic
+        # from the network → computed once, lazily, and cached for life.
+        self._behavior_descriptor: list[float] | None = None
 
     # ------------------------------------------------------------------ #
     # Perception
@@ -218,6 +222,19 @@ class Agent:
         population without reaching into a protected attribute.
         """
         return self._last_actual_speed
+
+    @property
+    def behavior_descriptor(self) -> list[float]:
+        """Cached turn-response profile (novelty descriptor); computed once.
+
+        Deterministic from the (frozen) network, so it is safe to memoise for the
+        agent's whole life — mirrors how the network's topo-sort is cached once.
+        """
+        if self._behavior_descriptor is None:
+            self._behavior_descriptor = _compute_descriptor(
+                self.network, self._config.sensors
+            )
+        return self._behavior_descriptor
 
     # ------------------------------------------------------------------ #
     # Energy (per TICK — invariant n°2)

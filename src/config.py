@@ -204,6 +204,34 @@ class SpeciationConfig:
 
 
 @dataclass(frozen=True)
+class NoveltyConfig:
+    """Additive behavioural-novelty bonus on reproduction priority.
+
+    Novelty search (Lehman & Stanley 2011), used here as an ADDITIVE bonus on top
+    of raw fitness — never replacing it. Behaviour is characterised by each
+    network's turn-response profile (its steering reaction to a lone apple on
+    each ray, deterministic and cached per agent). Novelty = mean distance to the
+    ``neighbors`` nearest behaviours in the current population; the most novel
+    agents get a bounded priority bonus of up to ``weight × mean(raw fitness)``.
+
+    Additive by design: it is the only pattern that has held up on this project
+    (reducer mechanisms — crossover, richer sensors, sparse genome, fitness
+    sharing — were all falsified). Disabled by default; the whole section may be
+    omitted from a config (then off), so every pre-existing config keeps working.
+    Never promoted to default.yaml without a validated 3-seed campaign.
+    """
+
+    enabled: bool = False
+    weight: float = 0.0  # bonus scale, in units of mean raw fitness
+    neighbors: int = 15  # k for the k-nearest-behaviours novelty
+
+    def __post_init__(self) -> None:
+        _require_non_negative(self, "weight")
+        if self.neighbors < 1:
+            raise ConfigError(f"novelty.neighbors must be >= 1, got {self.neighbors}")
+
+
+@dataclass(frozen=True)
 class PopulationConfig:
     """Population bounds.
 
@@ -272,6 +300,7 @@ class SimConfig:
     apple: AppleConfig
     genome: GenomeConfig
     speciation: SpeciationConfig
+    novelty: NoveltyConfig
     population: PopulationConfig
     simulation: SimulationConfig
     logging: LoggingConfig
@@ -317,6 +346,13 @@ class SimConfig:
             apple=_build(AppleConfig, "apple", data),
             genome=_build(GenomeConfig, "genome", data),
             speciation=_build(SpeciationConfig, "speciation", data),
+            # Optional section: absent -> novelty disabled (backward-compatible,
+            # every pre-novelty config keeps loading unchanged).
+            novelty=(
+                _build(NoveltyConfig, "novelty", data)
+                if "novelty" in data
+                else NoveltyConfig()
+            ),
             population=_build(PopulationConfig, "population", data),
             simulation=_build(SimulationConfig, "simulation", data),
             logging=_build(LoggingConfig, "logging", data),

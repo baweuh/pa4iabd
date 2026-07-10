@@ -34,9 +34,12 @@ from pathlib import Path
 from random import Random
 from typing import Callable, TextIO
 
+import numpy as np
+
 from src.agent import Agent, batch_sense
 from src.config import SimConfig
 from src.environment import Environment
+from src.novelty import population_novelty
 from src.genome import TRACKER, Genome
 from src.speciation import (
     assign_species,
@@ -282,27 +285,62 @@ class Simulation:
     def _priority_fn(
         self, survivors: list[Agent], raw: Callable[[Agent], float]
     ) -> Callable[[Agent], float]:
-        """Reproduction-priority function: ``raw`` as-is, or fitness-shared.
+        """Reproduction-priority function, optionally modified by two mechanisms.
 
-        ``speciation.fitness_sharing`` off (default): returns ``raw`` unchanged —
-        zero extra cost, legacy behaviour. On: divides each agent's raw value by
-        the size of its NEAT species (``f'_i = f_i / |species_i|``, canonical
-        NEAT fitness sharing, Stanley & Miikkulainen 2002) — a large/dominant
-        species no longer autowins scarce reproduction slots on raw fitness
-        alone, giving small/novel species room to prove themselves before being
-        outcompeted head-on by an already-optimised dominant lineage.
+        Both off (default): returns ``raw`` unchanged — zero extra cost, legacy
+        behaviour. The two modifiers compose (either, both, or neither):
+
+        - ``speciation.fitness_sharing`` (REDUCER, falsified): divides each raw
+          value by the agent's NEAT species size (``f'_i = f_i / |species_i|``,
+          Stanley & Miikkulainen 2002), so a dominant lineage no longer autowins
+          scarce slots on raw fitness alone.
+        - ``novelty.enabled`` (ADDITIVE): adds a bounded bonus for behaviourally
+          novel agents (see :meth:`_add_novelty_bonus`), on top of the base value
+          — never penalising, matching the only pattern that has worked here.
         """
-        if not self._config.speciation.fitness_sharing:
+        novelty_on = self._config.novelty.enabled and self._config.novelty.weight > 0.0
+        if not self._config.speciation.fitness_sharing and not novelty_on:
             return raw
-        species_ids = assign_species(
-            [a.genome for a in survivors], self._config.speciation
-        )
-        sizes = Counter(species_ids)
-        shared = {
-            agent: raw(agent) / sizes[species_id]
-            for agent, species_id in zip(survivors, species_ids)
-        }
-        return shared.__getitem__
+
+        if self._config.speciation.fitness_sharing:
+            species_ids = assign_species(
+                [a.genome for a in survivors], self._config.speciation
+            )
+            sizes = Counter(species_ids)
+            values = {
+                agent: raw(agent) / sizes[species_id]
+                for agent, species_id in zip(survivors, species_ids)
+            }
+        else:
+            values = {agent: raw(agent) for agent in survivors}
+
+        if novelty_on and len(survivors) > 1:
+            self._add_novelty_bonus(survivors, values)
+
+        return values.__getitem__
+
+    def _add_novelty_bonus(
+        self, survivors: list[Agent], values: dict[Agent, float]
+    ) -> None:
+        """Add a bounded behavioural-novelty bonus to ``values`` in place.
+
+        Novelty search (Lehman & Stanley 2011) as an ADDITIVE term: the most
+        novel agent gets up to ``weight × mean(base value)`` extra priority, the
+        least novel gets nothing (min-max normalised novelty ∈ [0, 1]). Scale-free
+        — the bonus tracks whatever fitness scale (energy or foraging credit) is
+        in play. Descriptors are cached per agent, so this costs one NumPy
+        pairwise-distance pass over the survivors' behaviours per reproduction.
+        """
+        cfg = self._config.novelty
+        descriptors = np.array([agent.behavior_descriptor for agent in survivors])
+        novelty = population_novelty(descriptors, cfg.neighbors)
+        low, high = float(novelty.min()), float(novelty.max())
+        span = high - low
+        mean_base = sum(values.values()) / len(values)
+        scale = cfg.weight * mean_base
+        for i, agent in enumerate(survivors):
+            normalised = (novelty[i] - low) / span if span > 1e-12 else 0.0
+            values[agent] += scale * normalised
 
     def _birth(self, parent: Agent, pool: list[Agent]) -> Agent:
         """Spawn one child from ``parent``, register its bookkeeping, count it.
