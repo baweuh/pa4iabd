@@ -188,3 +188,28 @@
         situationnel**. `bias_enabled` reste `false`. Mécanisme gardé câblé +
         testé comme référence (add_connection corrige au passage un bug latent
         de repli sens-inverse). 181 tests verts, black clean, pylint 10/10.
+- [x] **Bug freeze ~100 ticks — CORRIGÉ** (signalé par Robin en jeu) :
+        `mean_pairwise_distance` (diversité génétique, colonne CSV) tournait en
+        pur Python O(pop²), profilé à **318 ms** pour pop≈230 (pire près de
+        `population.max_size` 400) — déclenché toutes les `log_interval_ticks`
+        (100), bien au-delà du budget d'une frame à 60 ticks/s. `count_species`
+        n'était pas concerné (peu d'espèces, déjà rapide). Fix à deux niveaux
+        (`src/speciation.py`) : cache `_Profile` par génome pour
+        `compatibility_distance`/`assign_species` (plus de dict/set/max
+        reconstruits par PAIRE) ; `mean_pairwise_distance` réécrite en NumPy
+        (même idée que `batch_sense`/`population_novelty` — peu d'innovations
+        distinctes en pratique, ~100-200, donc une matrice dense (pop,
+        innovations) est bon marché). **318→39 ms à pop=400 (~8x)**.
+        Équivalence numérique (pas bit-exacte, ordre de sommation flottant)
+        vérifiée contre une référence indépendante. 182 tests verts.
+- [ ] 🔄 **Bug densité agents/pommes — en cours de validation** (signalé par
+        Robin en jeu, confirme [[apple-density-signal]] du 2026-07-09) :
+        `tools/apple_capture_probe` reconfirme le surpeuplement avec novelty
+        actif (lifetime médiane pomme 14 ticks/0,23s, 20/160 pommes vivantes en
+        moyenne, 54 % des captures non clairement dirigées). Rafraîchi
+        `config/lever_bigmap.yaml` (monde ×√2, 3200×1800, isolé au SEUL
+        changement vs `default.yaml` actuel — la version 2026-07-09 était
+        périmée, ne portait pas encore `novelty`). Sonde direct : lifetime
+        médiane 14→29 ticks, captures « gratuites » 24 %→12 %, dirigées
+        46 %→56 %. Campagne 6 seeds/15k lancée pour valider l'impact évolutif
+        avant décision de promotion.

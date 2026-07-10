@@ -1,17 +1,30 @@
-# Lever test (2026-07-09): does enlarging the map alone (world ×√2 again, one
-# more step of the precedented apple_repro→apple_repro_bigpop scaling) thin out
-# the overcrowding observed in default.yaml (apple lifetime ~0.2-0.3s, 52-56% of
-# captures showing no directed approach — cf. docs/SYNTHESE.md §5)?
+# Lever test (2026-07-09, refreshed 2026-07-10 against the current default —
+# now includes novelty, absent when this lever was first written): does
+# enlarging the map alone (world ×√2 again, one more step of the precedented
+# apple_repro→apple_repro_bigpop scaling) thin out the overcrowding Robin
+# observed live and tools/apple_capture_probe confirmed (apple lifetime
+# median ~14 ticks/0.23s, only ~20/160 apples alive at any instant, 54% of
+# captures showing no directed approach — cf. docs/SYNTHESE.md §5,
+# [[apple-density-signal]]).
 #
-# Isolation to ONE variable vs default.yaml: world.width/height (and the render
-# window to match) only. Population, apple.count, respawn_delay, agent/apple
-# radius and speed are all left untouched on purpose — unlike the historical
-# apple_repro→bigpop scaling (which grew pop+apples+sizes together to PRESERVE
-# density while accommodating more agents), this lever REDUCES density by
-# growing the world under a fixed population/apple count.
+# Isolation to ONE variable vs default.yaml: world.width/height (and the
+# render window to match) only. Population, apple.count, respawn_delay,
+# agent/apple radius and speed are all left untouched on purpose — unlike the
+# historical apple_repro→bigpop scaling (which grew pop+apples+sizes together
+# to PRESERVE density while accommodating more agents), this lever REDUCES
+# density by growing the world under a fixed population/apple count.
+#
+# Default simulation configuration.
+# Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
+# sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
+# NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
+# adding inputs itself destabilises the fully-connected initial genome. The
+# 49-input legacy layout is the only one that reproduces robust 3-seed foraging
+# (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
+# Energy is expressed in apple-equivalent units (invariant n°2).
 
 world:
-  width: 3200          # pixels (2263 * sqrt(2), rounded)
+  width: 3200          # pixels (2263 * sqrt(2), rounded) — the ONE change vs default.yaml
   height: 1800          # pixels (1273 * sqrt(2), rounded)
 
 penalty_zone:
@@ -46,7 +59,7 @@ network:
   activation: "tanh"
 
 apple:
-  count: 160            # unchanged on purpose (isolation to world size only)
+  count: 160            # denser food → random walkers stumble on it sooner (was 50)
   radius: 7.07
   energy: 0.5
   respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
@@ -64,16 +77,34 @@ genome:
 
 speciation:
   # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
-  # Observability only: used to count species + measure genetic diversity in the
-  # metrics CSV; never feed back into selection or reproduction.
+  # Used to count species + measure genetic diversity in the metrics CSV, and
+  # (only when fitness_sharing: true) to divide reproduction priority by
+  # species size. fitness_sharing defaults to false: observability only, same
+  # as before — not yet promoted (needs a validated 3-seed campaign, see
+  # config/lever_fitness_sharing.yaml).
   c_excess: 1.0
   c_disjoint: 1.0
   c_weight: 0.4
   compatibility_threshold: 3.0   # genomes closer than this share a species
+  fitness_sharing: false
+
+# Additive behavioural-novelty bonus on reproduction priority (novelty search,
+# Lehman & Stanley 2011). PROMOTED to default in poc2.4: the first lever to lift
+# every seed without regressing any — validated 6-seed campaign (15k), mean
+# foragers 52% -> 62% (+10), seeds the baseline nearly fails (1:9->27, 99:6->25)
+# helped most. Additive (never penalises), unlike the falsified reducer levers.
+# weight=1.0 is the swept optimum (0.5-1.0 plateau; 2.0 over-dilutes foraging).
+# recompute_interval=10 amortises the O(pop^2) scoring back to baseline speed
+# with no loss of gain. See docs/RESULTS-novelty.md and config/lever_novelty.yaml.
+novelty:
+  enabled: true
+  weight: 1.0
+  neighbors: 15
+  recompute_interval: 10
 
 population:
-  initial_size: 200        # unchanged on purpose (isolation to world size only)
-  max_size: 400            # unchanged on purpose (isolation to world size only)
+  initial_size: 200        # large initial pool → more random walkers find food naturally
+  max_size: 400            # accommodate growth from successful hunters
 
 simulation:
   ticks_per_second: 60
