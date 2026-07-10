@@ -488,6 +488,27 @@ poc2.3 (ajouter une source au génome fondateur élargit la surface de mutation
 initiale et casse la robustesse), en pire ici car permanent plutôt que
 situationnel. `bias_enabled` reste `false`. 181 tests verts, pylint 10/10.
 
+**Bug freeze ~100 ticks — corrigé** : signalé par Robin en jeu.
+`mean_pairwise_distance` (diversité génétique, colonne CSV passive) tournait
+en pur Python O(pop²), 318ms à pop≈400 — déclenché toutes les
+`log_interval_ticks` (100), bien au-delà du budget d'une frame à 60 ticks/s.
+Vectorisée en NumPy (`src/speciation.py`, même idée que
+`batch_sense`/`population_novelty`) : **318→39ms (~8x)**. 182 tests verts.
+
+**Densité agents/pommes — carte agrandie + vitesse ÷2, PROMU EN DÉFAUT** :
+Robin a signalé un surpeuplement visible (pommes mangées par accident,
+~0,2s de durée de vie). `tools/apple_capture_probe` confirme (54% de
+captures non dirigées). Carte agrandie seule (×√2) améliore le symptôme
+direct mais est mean-négative à l'évolution (62%→57%, 15k) — falsifiée.
+Combinée à `agent.max_speed` divisé par 2 (moins de balayage/tick), la
+campagne 15k reste sous le défaut (58%) mais **passe positive à 30k
+(62%→66%, +4)**, avec un gain massif sur le seed historiquement le plus dur
+(1 : 23%→58%). `default.yaml` promeut world 2263×1273→3200×1800 et
+`max_speed` 4,243→2,122 ; population/pommes/capteurs inchangés —
+`population.max_size` n'a volontairement pas été touché (poc2.2 ÉTAPES 7-10
+ont déjà montré qu'une population plus petite rouvre la dérive fondatrice).
+Voir `docs/RESULTS-density.md`.
+
 ## 7. Historique des commits clés
 
 | Commit | Objet |
@@ -509,3 +530,4 @@ situationnel. `bias_enabled` reste `false`. 181 tests verts, pylint 10/10.
 | `eaf6e72` | poc2.4 : nouveauté promue en défaut + recalcul périodique (sweep weight=1.0) |
 | `282d3aa` | poc2.4 : archive de nouveauté câblée puis falsifiée (moy 62→55) |
 | `6ef2938` | poc2.4 : nœud de biais NEAT câblé puis falsifiée (moy 62→28, pire régression) |
+| `21c82a6` | poc2.4 : fix freeze ~100 ticks — mean_pairwise_distance vectorisée NumPy (318→39ms) |

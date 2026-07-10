@@ -220,6 +220,31 @@
         de portée du raycast, donc moins de signal sensoriel exploitable pour
         apprendre à diriger, ce qui peut annuler le bénéfice de la densité
         réduite. Symptôme réel et mesuré, mais ce correctif précis **non
-        promu en l'état** (mean négative, seed le plus faible aggravé) — piste
-        de suite possible : agrandir `max_distance` en même temps que le
-        monde (pas encore testé). Décision de suite à prendre avec Robin.
+        promu en l'état** (mean négative, seed le plus faible aggravé).
+- [x] **Densité — 2ᵉ levier : carte agrandie + vitesse ÷2 — PROMU EN DÉFAUT**
+        (Robin : ralentir les agents pour réduire le *balayage*/tick, pas
+        seulement la densité statique ; `config/lever_bigmap_slow.yaml`,
+        `max_speed` 4,243→2,122, monde ×√2, `max_size` volontairement
+        inchangé — voir note infra). Sonde directe : lifetime médiane pomme
+        **14→58 ticks (×4)**, adjacent (capture gratuite) stable 12 %.
+        Campagne 6 seeds/15k : moy foragers 62 %→58 % (−4), sous le défaut —
+        décision Robin : **valider à 30k avant de trancher** (hypothèse :
+        agents plus lents mangent moins/tick, la sélection a besoin de plus
+        de temps). **Campagne 30k : l'hypothèse se confirme, le levier passe
+        POSITIF** : moy foragers **62 %→66 % (+4)**, 4/6 seeds montent dont un
+        gain massif sur le seed historiquement le plus dur (1 : 23→58, +35),
+        les 2 seeds les plus faibles du défaut (1, 99) montent tous les deux.
+        2/6 régressent modérément (7:−7, 123:−15). **PROMU** : `default.yaml`
+        world 2263×1273→3200×1800, `agent.max_speed` 4,243→2,122. Population,
+        pommes, capteurs, réseau inchangés. Détails complets, tableaux
+        complets des 3 campagnes : `docs/RESULTS-density.md`. 182 tests
+        verts, black clean, pylint stable.
+        **Note `max_size`** : NON réduit à 200 malgré l'intuition « stabiliser
+        la pop plus bas » — poc2.2 ÉTAPES 7-10 ont établi empiriquement
+        qu'une population plus PETITE rouvre la dérive fondatrice (variance
+        inter-seed énorme, un seed bloqué ~14 %) que la grande population a
+        justement corrigée ; `max_size 400` est un des deux piliers du seul
+        régime robuste+stable connu (`apple_repro_bigpop`). Pas de file
+        d'attente de repro : à chaque tick `slots = max_size − survivants`,
+        les morts du tick sont remplacés le tick même par les agents de plus
+        haute priorité (énergie ou crédit de fourrage).

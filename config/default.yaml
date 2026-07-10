@@ -6,10 +6,21 @@
 # 49-input legacy layout is the only one that reproduces robust 3-seed foraging
 # (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
 # Energy is expressed in apple-equivalent units (invariant n°2).
+#
+# world/agent.max_speed PROMOTED from config/lever_bigmap_slow.yaml (poc2.4,
+# 2026-07-10): Robin flagged live overcrowding (apples eaten within ~0.2s,
+# mostly by undirected collision, not steering — confirmed by
+# tools/apple_capture_probe). world ×√2 (thins static density) + max_speed
+# halved (thins per-tick sweep, so fewer random-walk collisions) fixes the
+# symptom directly (apple lifetime median 14→58 ticks) and, validated over
+# 30k ticks / 6 seeds, nets POSITIVE on the forager-% benchmark too (62%→66%,
+# seed 1 : 23%→58%) even though the same lever was mean-negative at 15k
+# (agents eat less per tick, so foraging selection needs more ticks to show).
+# See docs/RESULTS-density.md.
 
 world:
-  width: 2263          # pixels
-  height: 1273          # pixels
+  width: 3200          # pixels (2263 * sqrt(2), rounded)
+  height: 1800          # pixels (1273 * sqrt(2), rounded)
 
 penalty_zone:
   width: 141           # thickness from the wall, in pixels
@@ -17,7 +28,7 @@ penalty_zone:
 
 agent:
   radius: 11.31
-  max_speed: 4.243
+  max_speed: 2.122      # halved (was 4.243) — less ground swept per tick, see header
   initial_energy: 1.0
   max_energy: 2.0
   energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
@@ -102,5 +113,5 @@ logging:
 
 render:
   fps: 60
-  window_width: 2263
-  window_height: 1273
+  window_width: 3200
+  window_height: 1800

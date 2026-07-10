@@ -23,7 +23,7 @@ def raw_fixture() -> dict:
 def test_load_default_yaml() -> None:
     cfg = SimConfig.from_yaml(DEFAULT_YAML)
     assert isinstance(cfg, SimConfig)
-    assert cfg.agent.max_speed == pytest.approx(4.243)
+    assert cfg.agent.max_speed == pytest.approx(2.122)
     assert cfg.sensors.num_rays == 16
     assert cfg.network.activation == "tanh"
 
@@ -41,7 +41,7 @@ def test_frozen() -> None:
 
 def test_from_dict(raw: dict) -> None:
     cfg = SimConfig.from_dict(raw)
-    assert cfg.world.width == 2263
+    assert cfg.world.width == 3200
     assert cfg.population.initial_size == 200
 
 
