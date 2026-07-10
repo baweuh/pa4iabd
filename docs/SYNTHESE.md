@@ -509,6 +509,20 @@ campagne 15k reste sous le défaut (58%) mais **passe positive à 30k
 ont déjà montré qu'une population plus petite rouvre la dérive fondatrice).
 Voir `docs/RESULTS-density.md`.
 
+**Critère minimal de reproduction — câblé + testé, validation coupée** :
+Robin veut une repro non frénétique (réservée aux profils durablement
+compétents) et une pop qui flotte dans une bande 400-500 au lieu d'être
+épinglée. Littérature de neuroévolution non-épisodique (Soros & Stanley 2016 ;
+arXiv:2302.09334). Nouveau `agent.reproduction_min_ticks` (0 = legacy) : un
+agent doit tenir un crédit ≥ seuil N ticks consécutifs → **un** enfant → reset
+réfractaire. `config/lever_min_criterion.yaml` (min_ticks 1000, max_size 500).
+189 tests verts. **Enseignement partiel** : un plafond relevé à 500 s'ÉPINGLE
+à 500 (plus dense, contraire à l'anti-surpeuplement) sauf sous gating fort —
+seul min_ticks ≥ ~1000 fait vraiment flotter la pop (~422). Forager% à 15k
+neutre pour 300/600 (58-59 % ≈ défaut) ; 1000 non mesuré (session coupée).
+Reprise = campagne 30k sur `lever_min_criterion.yaml`. `default.yaml` garde le
+paramètre absent (= 0). Commit `0700645`.
+
 ## 7. Historique des commits clés
 
 | Commit | Objet |
