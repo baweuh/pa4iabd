@@ -1,0 +1,124 @@
+# Lever test (2026-07-10): combines two DIFFERENT density mechanisms Robin
+# asked to test together, each targeting a different half of the overcrowding
+# symptom apple_capture_probe measures (cf. [[apple-density-signal]]):
+#   - world ×√2 (lever_bigmap, already isolated-tested): reduces STATIC density
+#     — how many agents already sit adjacent to a spawn point at any instant
+#     (the "24% adjacent, zero real travel" captures). Alone: net-negative at
+#     the evolutionary level (mean foragers 62->57 over 6 seeds/15k) despite a
+#     clean direct-symptom improvement — see PLAN.md / docs/SYNTHESE.md.
+#   - agent.max_speed halved: reduces SWEEP rate — how much new ground an
+#     agent covers per tick, hence how often a random walk collides with a
+#     freshly-spawned apple regardless of steering (the "30% undirected"
+#     captures). Not yet tested alone or combined.
+# Explicitly NOT touching population.max_size: poc2.2 ÉTAPES 7-10 already
+# established empirically that a SMALLER population reopens founder drift
+# (huge inter-seed variance, one seed stuck ~14%) that bigger population was
+# what fixed — population size is one of the two pillars of the only known
+# robust+stable regime (apple_repro_bigpop), not a free knob to shrink back.
+#
+# Default simulation configuration.
+# Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
+# sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
+# NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
+# adding inputs itself destabilises the fully-connected initial genome. The
+# 49-input legacy layout is the only one that reproduces robust 3-seed foraging
+# (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
+# Energy is expressed in apple-equivalent units (invariant n°2).
+
+world:
+  width: 3200          # pixels (2263 * sqrt(2), rounded) — same as lever_bigmap
+  height: 1800          # pixels (1273 * sqrt(2), rounded)
+
+penalty_zone:
+  width: 141           # thickness from the wall, in pixels
+  max_drain: 0.003     # energy drained per tick at the wall (softened: was 0.005)
+
+agent:
+  radius: 11.31
+  max_speed: 2.122      # halved vs default.yaml's 4.243 — less ground swept per tick
+  initial_energy: 1.0
+  max_energy: 2.0
+  energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
+  max_age: 5000        # ticks
+  reproduction_threshold: 1.1     # ~1 apple from start → birth; high-r bootstrap (was 1.3)
+  reproduction_cost: 0.35         # more offspring per apple keeps the pop viable (was 0.6)
+  end_of_life_ticks: 500
+  max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
+  move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
+  apples_per_offspring: 3.0      # >0 = fecundity from cumulative apples (structural)
+
+sensors:
+  num_rays: 16
+  max_distance: 283    # pixels
+  fov: 360             # degrees
+  split_distance: false   # legacy layout: 1 combined nearest-object distance/ray
+  proprioception: false   # legacy layout: no actual_speed input
+  apples_in_view: false   # legacy layout: no apples_in_view input
+
+network:
+  num_inputs: 49        # 3*num_rays + 1 : dist, apple_flag, wall_flag (×16) + energy
+  num_outputs: 2         # vx_brut, vy_brut (normalised post-output)
+  activation: "tanh"
+
+apple:
+  count: 160            # denser food → random walkers stumble on it sooner (was 50)
+  radius: 7.07
+  energy: 0.5
+  respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
+
+genome:
+  weight_init_range: 1.0
+  weight_mutation_rate: 0.15
+  weight_perturbation: 0.05
+  add_node_rate: 0.03
+  add_connection_rate: 0.05
+  remove_node_rate: 0.01
+  remove_connection_rate: 0.02
+  weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
+  crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
+
+speciation:
+  # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
+  # Used to count species + measure genetic diversity in the metrics CSV, and
+  # (only when fitness_sharing: true) to divide reproduction priority by
+  # species size. fitness_sharing defaults to false: observability only, same
+  # as before — not yet promoted (needs a validated 3-seed campaign, see
+  # config/lever_fitness_sharing.yaml).
+  c_excess: 1.0
+  c_disjoint: 1.0
+  c_weight: 0.4
+  compatibility_threshold: 3.0   # genomes closer than this share a species
+  fitness_sharing: false
+
+# Additive behavioural-novelty bonus on reproduction priority (novelty search,
+# Lehman & Stanley 2011). PROMOTED to default in poc2.4: the first lever to lift
+# every seed without regressing any — validated 6-seed campaign (15k), mean
+# foragers 52% -> 62% (+10), seeds the baseline nearly fails (1:9->27, 99:6->25)
+# helped most. Additive (never penalises), unlike the falsified reducer levers.
+# weight=1.0 is the swept optimum (0.5-1.0 plateau; 2.0 over-dilutes foraging).
+# recompute_interval=10 amortises the O(pop^2) scoring back to baseline speed
+# with no loss of gain. See docs/RESULTS-novelty.md and config/lever_novelty.yaml.
+novelty:
+  enabled: true
+  weight: 1.0
+  neighbors: 15
+  recompute_interval: 10
+
+population:
+  initial_size: 200        # large initial pool → more random walkers find food naturally
+  max_size: 400            # accommodate growth from successful hunters
+
+simulation:
+  ticks_per_second: 60
+  max_ticks: 0         # 0 = run forever
+  seed: 42
+
+logging:
+  csv_path: "logs/metrics.csv"
+  log_interval_ticks: 100
+  best_genome_path: "logs/best_genome.json"
+
+render:
+  fps: 60
+  window_width: 3200
+  window_height: 1800
