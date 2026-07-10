@@ -61,6 +61,21 @@ class AgentConfig:
     # 0.0 disables it -> legacy energy-threshold reproduction. When > 0, fecundity
     # scales with CUMULATIVE apples eaten (competence), not instantaneous energy.
     apples_per_offspring: float
+    # Minimal-criterion reproduction (Soros & Stanley 2016; non-episodic
+    # neuroevolution, e.g. arXiv:2302.09334). Only meaningful on the foraging
+    # path (apples_per_offspring > 0). An agent may reproduce only once it has
+    # HELD reproduction credit >= apples_per_offspring for this many CONSECUTIVE
+    # ticks — proof of durably sustained foraging competence, not an
+    # instantaneous spike. When it fires the agent produces exactly ONE
+    # offspring and its streak resets (a natural refractory period, so
+    # reproduction is no longer a per-tick refill of whatever just died). 0 =
+    # legacy behaviour (no sustain requirement, greedy slot-filling), so every
+    # existing config is byte-for-byte unchanged. Meant to be paired with a
+    # raised population.max_size so the population floats in a band below the
+    # cap instead of being pinned at it. Never promoted without a validated
+    # 6-seed campaign (extinction risk if too strict: births may stop matching
+    # old-age deaths).
+    reproduction_min_ticks: int = 0
 
     def __post_init__(self) -> None:
         _require_positive(
@@ -78,6 +93,11 @@ class AgentConfig:
         _require_non_negative(
             self, "energy_drain_per_tick", "move_cost", "apples_per_offspring"
         )
+        if self.reproduction_min_ticks < 0:
+            raise ConfigError(
+                "agent.reproduction_min_ticks must be >= 0, got "
+                f"{self.reproduction_min_ticks}"
+            )
 
 
 @dataclass(frozen=True)

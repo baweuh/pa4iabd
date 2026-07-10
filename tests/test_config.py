@@ -80,6 +80,23 @@ def test_local_validation_rate(raw: dict) -> None:
         SimConfig.from_dict(raw)
 
 
+def test_reproduction_min_ticks_defaults_zero_when_omitted(raw: dict) -> None:
+    # Backward-compatible addition: absent from every pre-existing config -> 0.
+    raw["agent"].pop("reproduction_min_ticks", None)
+    assert SimConfig.from_dict(raw).agent.reproduction_min_ticks == 0
+
+
+def test_reproduction_min_ticks_parsed_when_present(raw: dict) -> None:
+    raw["agent"]["reproduction_min_ticks"] = 60
+    assert SimConfig.from_dict(raw).agent.reproduction_min_ticks == 60
+
+
+def test_reproduction_min_ticks_rejects_negative(raw: dict) -> None:
+    raw["agent"]["reproduction_min_ticks"] = -1
+    with pytest.raises(ConfigError, match="reproduction_min_ticks must be >= 0"):
+        SimConfig.from_dict(raw)
+
+
 def test_apple_respawn_delay_loaded(raw: dict) -> None:
     cfg = SimConfig.from_dict(raw)
     assert cfg.apple.respawn_delay == 150

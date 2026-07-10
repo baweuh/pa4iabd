@@ -360,6 +360,76 @@ def test_reproduction_by_foraging_scales_with_apples(tmp_path):
     assert sim._repro_credit[rich] == 1.0  # spent 2×2 credit, 1.0 remains
 
 
+def _foraging_sim(tmp_path, min_ticks, per_child=2.0):
+    """Single-agent foraging-reproduction sim with the minimal-criterion gate."""
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "apples_per_offspring": per_child,
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_cost": 0.1,
+            "reproduction_min_ticks": min_ticks,
+        },
+        population={"initial_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()  # no eating; credit is set by hand
+    sim.population[0].energy = cfg.agent.max_energy
+    return sim
+
+
+def test_min_ticks_zero_is_legacy_greedy(tmp_path):
+    """min_ticks=0 (default): a well-fed forager still empties its credit in one tick."""
+    sim = _foraging_sim(tmp_path, min_ticks=0)
+    agent = sim.population[0]
+    sim._repro_credit[agent] = 6.0  # 3 children worth at per_child=2
+    sim.tick()
+    assert sim.total_reproductions == 3  # greedy: all credit spent at once
+    assert sim._repro_credit[agent] == pytest.approx(0.0)
+
+
+def test_min_ticks_gate_blocks_until_sustained(tmp_path):
+    """With min_ticks>0 an agent must HOLD credit for that many ticks before a birth."""
+    sim = _foraging_sim(tmp_path, min_ticks=3)
+    agent = sim.population[0]
+    sim._repro_credit[agent] = 4.0  # enough credit, but streak starts at 0
+
+    sim.tick()  # streak 1
+    sim.tick()  # streak 2
+    assert sim.total_reproductions == 0  # not sustained long enough yet
+
+    sim.tick()  # streak 3 -> qualifies
+    assert sim.total_reproductions == 1
+
+
+def test_min_ticks_one_child_per_tick_then_refractory(tmp_path):
+    """A qualifying agent produces exactly ONE child and its streak resets."""
+    sim = _foraging_sim(tmp_path, min_ticks=2)
+    agent = sim.population[0]
+    sim._repro_credit[agent] = 100.0  # plenty — legacy path would dump ~50 children
+    sim._credit_streak[agent] = 1  # one tick short of the gate
+
+    sim.tick()  # streak -> 2, qualifies: exactly one birth, streak resets
+    assert sim.total_reproductions == 1
+    assert sim._repro_credit[agent] == pytest.approx(98.0)  # spent one per_child
+    assert sim._credit_streak[agent] == 0  # refractory period begins
+
+
+def test_credit_streak_resets_when_credit_drops(tmp_path):
+    """The streak only counts consecutive ticks at/above threshold; a dip resets it."""
+    sim = _foraging_sim(tmp_path, min_ticks=5)
+    agent = sim.population[0]
+    sim._repro_credit[agent] = 4.0
+    sim.tick()  # streak 1
+    sim.tick()  # streak 2
+    assert sim._credit_streak[agent] == 2
+
+    sim._repro_credit[agent] = 0.5  # below per_child=2 now
+    sim.tick()
+    assert sim._credit_streak[agent] == 0  # reset, must re-accumulate and re-sustain
+
+
 def test_apples_per_offspring_zero_keeps_legacy_energy_path(tmp_path):
     # Default 0.0 must preserve the energy-threshold reproduction (regression guard).
     cfg = build_config(

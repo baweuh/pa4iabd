@@ -94,6 +94,11 @@ class Simulation:
         # Only used when agent.apples_per_offspring > 0 (structural foraging-coupled
         # fecundity); mirrors the lifecycle of _apples_eaten.
         self._repro_credit: dict[Agent, float] = {}
+        # Consecutive ticks each agent has held credit >= apples_per_offspring, for
+        # the minimal-criterion reproduction gate (agent.reproduction_min_ticks).
+        # Resets to 0 whenever credit drops below the threshold or after a birth.
+        # Only tracked when the gate is active; mirrors _repro_credit's lifecycle.
+        self._credit_streak: dict[Agent, int] = {}
         # Timestamp shared by all files produced by this run (YYYY-MM-DD_HHMMSS).
         # One folder per run under the configured log directory.
         self._run_id: str = datetime.now().strftime("%Y-%m-%d_%H%M%S")
@@ -106,6 +111,7 @@ class Simulation:
         for agent in self.population:
             self._apples_eaten[agent] = 0
             self._repro_credit[agent] = 0.0
+            self._credit_streak[agent] = 0
 
         self._csv_file: TextIO | None = None
         self._csv_writer = None
@@ -207,6 +213,7 @@ class Simulation:
         for agent in dead:
             del self._apples_eaten[agent]
             del self._repro_credit[agent]
+            del self._credit_streak[agent]
         self.population = [a for a in self.population if a.alive] + children
 
         # Stage 5 — record check + best-genome dump.
@@ -270,15 +277,41 @@ class Simulation:
         parent still pays ``reproduction_cost`` energy per child (a birth is not
         free) and stops once out of energy, so a starving forager cannot cash in
         credit it can't fuel.
+
+        ``agent.reproduction_min_ticks`` (0 = off, legacy) adds a minimal-criterion
+        gate: an agent must have HELD credit >= ``per_child`` for that many
+        consecutive ticks before it may reproduce, and then produces exactly ONE
+        child (its streak resets — a refractory period). The credit streak is
+        refreshed here every reproduction tick for all survivors. See
+        :meth:`_refresh_credit_streaks`.
         """
+        min_ticks = self._config.agent.reproduction_min_ticks
+        if min_ticks > 0:
+            self._refresh_credit_streaks(survivors, per_child)
+
         children: list[Agent] = []
         priority = self._priority_fn(survivors, lambda a: self._repro_credit[a])
         eligible = sorted(
-            (a for a in survivors if self._repro_credit[a] >= per_child),
+            (
+                a
+                for a in survivors
+                if self._repro_credit[a] >= per_child
+                and self._credit_streak[a] >= min_ticks
+            ),
             key=priority,
             reverse=True,
         )
         for agent in eligible:
+            if len(children) >= slots:
+                break
+            if min_ticks > 0:
+                # Minimal-criterion path: one child per qualifying agent per tick,
+                # then the streak resets (refractory period, not a per-tick refill).
+                if agent.energy > 0.0:
+                    self._repro_credit[agent] -= per_child
+                    self._credit_streak[agent] = 0
+                    children.append(self._birth(agent, survivors))
+                continue
             while (
                 self._repro_credit[agent] >= per_child
                 and agent.energy > 0.0
@@ -286,9 +319,20 @@ class Simulation:
             ):
                 self._repro_credit[agent] -= per_child
                 children.append(self._birth(agent, survivors))
-            if len(children) >= slots:
-                break
         return children
+
+    def _refresh_credit_streaks(self, survivors: list[Agent], per_child: float) -> None:
+        """Advance each survivor's sustained-credit streak by one tick.
+
+        The streak counts consecutive reproduction ticks with credit at or above
+        ``per_child``; it resets to 0 the moment credit falls below that. Backs the
+        minimal-criterion gate in :meth:`_reproduce_by_foraging`.
+        """
+        for agent in survivors:
+            if self._repro_credit[agent] >= per_child:
+                self._credit_streak[agent] += 1
+            else:
+                self._credit_streak[agent] = 0
 
     def _priority_fn(
         self, survivors: list[Agent], raw: Callable[[Agent], float]
@@ -401,6 +445,7 @@ class Simulation:
         child = parent.reproduce(self._pick_mate(parent, pool))
         self._apples_eaten[child] = 0
         self._repro_credit[child] = 0.0
+        self._credit_streak[child] = 0
         self.total_reproductions += 1
         return child
 
@@ -459,6 +504,7 @@ class Simulation:
         self.population.append(elite)
         self._apples_eaten[elite] = 0
         self._repro_credit[elite] = 0.0
+        self._credit_streak[elite] = 0
 
     def _run_dir(self) -> Path:
         """Return (and create) the per-run log folder: logs/<run_id>/."""
