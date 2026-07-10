@@ -77,6 +77,36 @@ additivité, optionnalité, gate du recalcul).
 
 ## Suites possibles
 
-- **Archive de nouveauté** : le novelty search canonique garde un archive des
-  comportements passés, pas seulement la population courante — plus puissant.
 - Les seeds durs (1, 99) restent bas en absolu (20–27 %) : aidés, pas « résolus ».
+
+## Piste testée — archive de nouveauté : FALSIFIÉE
+
+Le novelty search canonique (Lehman & Stanley 2011) garde une archive des
+comportements passés, pas seulement la population courante. Hypothèse : sur les
+seeds durs (1, 99), une fois la population vivante convergée il n'y a plus rien
+de novateur pour s'en écarter — une archive persistante élargirait le
+voisinage. Câblé dans `novelty.archive_enabled` (`src/novelty.py::
+population_novelty`, injection aléatoire p=0,01 par agent scoré, FIFO cap 500,
+`config/lever_novelty_archive.yaml`), isolé à **une seule** différence vs
+`default.yaml`.
+
+Campagne 6 seeds/15k, archive vs défaut (novelty sans archive) :
+
+| seed | 42 | 7 | 123 | 1 | 5 | 99 | **moy** |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| défaut | 86 | 91 | 55 | 27 | 87 | 25 | **62** |
+| archive | 75 | 73 | 42 | 32 | 89 | 18 | **55** |
+| Δ | −11 | −18 | −13 | +5 | +2 | −7 | **−7** |
+
+**Régresse 4/6 seeds**, et surtout régresse le seed qu'elle visait le plus
+(99, le pire en absolu : 25→18). Les deux légers gains (1, 5) ne compensent
+pas. Diagnostic : élargir le voisinage avec des comportements obsolètes dilue
+le signal de nouveauté vis-à-vis de la pression de sélection **courante** —
+même symptôme « moyennant » que les 4 mécanismes réducteurs déjà falsifiés
+(crossover, capteur 67, génome sparse, fitness sharing), malgré une
+construction additive en apparence (la bonus reste ≥ 0 par construction, mais
+le signal qu'il ajoute est bruité par du passé non pertinent). 5ᵉ mécanisme
+réducteur falsifié sur ce projet — le 1ᵉʳ à se déguiser en levier additif.
+
+`novelty.archive_enabled` reste `false` par défaut ; mécanisme gardé câblé et
+testé (`tests/test_novelty.py`) comme référence, non promu.

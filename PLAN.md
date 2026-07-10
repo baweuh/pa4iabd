@@ -159,6 +159,16 @@
         recompute_interval:10}` — meilleur défaut jamais atteint (moy 62 % vs 52 %).
         Section YAML optionnelle → configs antérieures inchangées. 168 tests verts,
         pylint 10/10, app réelle vérifiée end-to-end.
-- [ ] ⬜ **Piste ouverte** : archive de nouveauté (comportements passés, pas
-        seulement la pop courante) — pourrait aider les seeds durs (1, 99) encore
-        bas en absolu (20-27 %).
+- [x] **Piste archive de nouveauté — FALSIFIÉE** (`novelty.archive_enabled`,
+        `config/lever_novelty_archive.yaml`, injection aléatoire p=0,01, Lehman &
+        Stanley 2011) : campagne 6 seeds/15k, moy **62 %→55 % (−7)**. Régresse
+        4/6 seeds (42 : 86→75 ; 7 : 91→73 ; 123 : 55→42 ; 99 : 25→18), n'aide
+        qu'à la marge 2/6 (1 : 27→32 ; 5 : 87→89) — et PAS le seed qu'elle
+        visait le plus (99, le pire en absolu, régresse). Diagnostic : élargir
+        le voisinage avec des comportements obsolètes dilue le signal de
+        nouveauté vis-à-vis de la pression de sélection courante — même
+        symptôme « moyennant » que crossover/capteur 67/sparse/fitness sharing,
+        malgré une construction additive. **5ᵉ mécanisme réducteur falsifié**,
+        1ᵉʳ qui déguise un effet réducteur sous une forme additive. Mécanisme
+        gardé câblé (`archive_enabled: false` par défaut), non promu. 174 tests
+        verts, black clean, pylint stable.
