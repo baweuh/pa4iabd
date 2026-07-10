@@ -167,13 +167,26 @@ class Agent:
     # Decision and movement
     # ------------------------------------------------------------------ #
     def activate(self) -> tuple[float, float]:
-        """Run the cached network; update heading and return world-frame (vx, vy).
+        """Sense, run the cached network, and return world-frame (vx, vy).
+
+        Convenience wrapper around ``decide(self.sense())`` — kept so single-agent
+        callers (tests, tools) need not know about the batched perception path.
+        The batched tick in ``simulation.py`` computes every agent's senses in one
+        NumPy pass (see ``batch_sense``) and calls ``decide`` directly.
+        """
+        return self.decide(self.sense())
+
+    def decide(self, senses: list[float]) -> tuple[float, float]:
+        """Run the cached network on ``senses``; update heading, return (vx, vy).
 
         output[0] (tanh ∈ (-1,1)) × max_speed  = signed forward/backward speed.
         output[1] (tanh ∈ (-1,1)) × max_turn_rate = heading delta (rad/tick).
+
+        Stores ``senses`` in ``last_senses`` (read by the renderer, invariant n°7)
+        so displayed rays are exactly the rays the agent acted on.
         """
-        self.last_senses = self.sense()
-        raw = self.network.activate(self.last_senses)
+        self.last_senses = senses
+        raw = self.network.activate(senses)
         # Output nodes are linear; apply tanh explicitly to bound speed and turn.
         speed = math.tanh(raw[0]) * self._config.agent.max_speed
         self._last_speed = abs(speed)
@@ -196,6 +209,15 @@ class Agent:
         )
         self.x = new_x
         self.y = new_y
+
+    @property
+    def last_actual_speed(self) -> float:
+        """Normalised actual displacement from the previous tick (proprioception).
+
+        Public read accessor so ``batch_sense`` can gather it across the whole
+        population without reaching into a protected attribute.
+        """
+        return self._last_actual_speed
 
     # ------------------------------------------------------------------ #
     # Energy (per TICK — invariant n°2)
@@ -346,3 +368,101 @@ def _ray_circles_vec(
         np.where((disc >= 0.0) & (far > 0.0), far, np.inf),
     )
     return np.min(hit, axis=1)  # (R,) nearest circle per ray
+
+
+def batch_sense(
+    agents: "list[Agent]", env: Environment, config: SimConfig
+) -> list[list[float]]:
+    """Perceive the WHOLE population in one NumPy pass — one row per agent.
+
+    Bit-identical to calling ``Agent.sense()`` on each agent against the same
+    frozen world (proven by ``tests/test_batch_sense.py``), but casts every
+    agent's rays in a single ``(P × rays × apples)`` broadcast instead of P
+    Python-level calls. Perception is 57% of the tick and its dominant cost
+    (poc2.4 perf chantier): this is the batched replacement.
+
+    The world is read ONCE here (positions, headings, live apples at tick start),
+    so every agent perceives the same tick-start snapshot — see the tick's
+    "freeze then perceive" contract in ``simulation.py``. Agents never sense one
+    another (only apples and walls), so batching changes nothing except that an
+    agent may now perceive an apple a lower-index agent eats the same tick.
+    """
+    sensors = config.sensors
+    max_dist = sensors.max_distance
+    num_rays = sensors.num_rays
+    count = len(agents)
+    if count == 0:
+        return []
+
+    px = np.fromiter((a.x for a in agents), np.float64, count)
+    py = np.fromiter((a.y for a in agents), np.float64, count)
+    heading = np.fromiter((a.heading for a in agents), np.float64, count)
+
+    step = math.radians(sensors.fov) / num_rays
+    ray_offsets = step * np.arange(num_rays)  # (R,) — same as ray_angles()
+    angles = heading[:, np.newaxis] + ray_offsets[np.newaxis, :]  # (P, R)
+    dx = np.cos(angles)
+    dy = np.sin(angles)
+
+    # --- walls: vectorised over (P, R), same formula as _ray_walls_vec ---
+    width, height = config.world.width, config.world.height
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tx = np.where(
+            dx > 0,
+            (width - px[:, np.newaxis]) / dx,
+            np.where(dx < 0, (0.0 - px[:, np.newaxis]) / dx, np.inf),
+        )
+        ty = np.where(
+            dy > 0,
+            (height - py[:, np.newaxis]) / dy,
+            np.where(dy < 0, (0.0 - py[:, np.newaxis]) / dy, np.inf),
+        )
+    tx = np.where(tx > 0.0, tx, np.inf)
+    ty = np.where(ty > 0.0, ty, np.inf)
+    wall_dist = np.minimum(np.minimum(tx, ty), max_dist)  # (P, R)
+
+    # --- apples: vectorised over (P, R, A), same formula as _ray_circles_vec ---
+    cx, cy = env.live_apple_coords()
+    if cx.size:
+        radius = config.apple.radius
+        fx = px[:, np.newaxis, np.newaxis] - cx[np.newaxis, np.newaxis, :]  # (P,1,A)
+        fy = py[:, np.newaxis, np.newaxis] - cy[np.newaxis, np.newaxis, :]
+        b = 2.0 * (fx * dx[:, :, np.newaxis] + fy * dy[:, :, np.newaxis])  # (P,R,A)
+        disc = b * b - 4.0 * (fx * fx + fy * fy - radius * radius)
+        sqrt_disc = np.sqrt(np.where(disc >= 0.0, disc, 0.0))
+        near, far = (-b - sqrt_disc) / 2.0, (-b + sqrt_disc) / 2.0
+        hit = np.where(
+            (disc >= 0.0) & (near > 0.0),
+            near,
+            np.where((disc >= 0.0) & (far > 0.0), far, np.inf),
+        )
+        apple_dist = np.minimum(np.min(hit, axis=2), max_dist)  # (P, R)
+    else:
+        apple_dist = np.full((count, num_rays), max_dist)
+
+    # --- assemble the configured layout, column order matching sense() ---
+    apple_flag = (apple_dist < max_dist).astype(np.float64)
+    wall_flag = (wall_dist < max_dist).astype(np.float64)
+    max_energy = config.agent.max_energy
+    energy = np.clip(
+        np.fromiter((a.energy for a in agents), np.float64, count) / max_energy,
+        0.0,
+        1.0,
+    )[:, np.newaxis]
+
+    if sensors.split_distance:
+        blocks = [apple_dist / max_dist, wall_dist / max_dist, apple_flag, wall_flag]
+    else:
+        combined = np.minimum(apple_dist, wall_dist) / max_dist
+        blocks = [combined, apple_flag, wall_flag]
+    blocks.append(energy)
+    if sensors.proprioception:
+        blocks.append(
+            np.fromiter((a.last_actual_speed for a in agents), np.float64, count)[
+                :, np.newaxis
+            ]
+        )
+    if sensors.apples_in_view:
+        blocks.append(apple_flag.mean(axis=1, keepdims=True))
+
+    return np.concatenate(blocks, axis=1).tolist()

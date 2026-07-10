@@ -18,4 +18,5 @@ disable = [
     "too-few-public-methods",
     "too-many-arguments",
     "too-many-positional-arguments",
+    "too-many-locals",  # vectorised numeric kernels (batch_sense) legitimately exceed 15
 ]

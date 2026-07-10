@@ -34,7 +34,7 @@ from pathlib import Path
 from random import Random
 from typing import Callable, TextIO
 
-from src.agent import Agent
+from src.agent import Agent, batch_sense
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import TRACKER, Genome
@@ -151,9 +151,16 @@ class Simulation:
     def tick(self) -> None:
         """Advance the world by exactly one tick (staged pipeline)."""
         # Stage 1 — perception, action, eating.
-        for agent in self.population:
+        # "Freeze then perceive": the whole population's senses are computed in a
+        # single NumPy pass against the tick-start world (batch_sense), then each
+        # agent acts and eats in index order. Agents never sense one another, so
+        # the only behavioural delta vs a per-agent perceive-then-eat loop is that
+        # an agent may perceive an apple a lower-index agent eats the same tick.
+        # Perception is 57% of the tick; batching it is the poc2.4 perf win.
+        senses = batch_sense(self.population, self.env, self._config)
+        for agent, agent_senses in zip(self.population, senses):
             agent.age += 1
-            vx, vy = agent.activate()
+            vx, vy = agent.decide(agent_senses)
             agent.move(vx, vy)
             eaten = agent.eat()
             self._apples_eaten[agent] += eaten

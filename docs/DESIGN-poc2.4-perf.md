@@ -58,7 +58,7 @@ Le facteur monte avec le nombre de seeds jusqu'à la limite cœurs (12 dispo).
 
 ---
 
-## Levier 2 — Tick vectorisé sur la population  ⚙️ prototypé (spike), à implémenter
+## Levier 2 — Tick vectorisé sur la population  ✅ implémenté + validé
 
 ### Le verrou sémantique actuel
 Aujourd'hui l'étape 1 du tick (`simulation.py:154`) entrelace perception ET
@@ -84,16 +84,20 @@ déjà plus). C'est un delta minime — et sans doute **plus correct** (simultan
 au sein d'un tick), il supprime un artefact d'ordre de liste. La résolution de
 la capture, elle, ne change pas → pas de problème de double-mange.
 
-### Chiffres mesurés (spike `spike_batch_perception.py`)
-Sur un snapshot évolué (pop 400, 16 rayons) :
-- **Équivalence bit-à-bit** avec `sense()` par agent : `max |Δ| = 0,00e+00`.
-- Perception : **15,2 ms → 1,6 ms par tick = ×9,8**.
+### Chiffres mesurés
+**Perception isolée** (spike `spike_batch_perception.py`, pop 400, 16 rayons) :
+équivalence **bit-à-bit** avec `sense()`, **15,2 ms → 1,6 ms = ×9,8**.
 
-Estimation Amdahl sur le tick complet (perception ×9,8, forward inchangé) :
-57 % → 5,8 %, reste 43 % → tick à ~49 % de l'original ≈ **×2,0**. En batchant
-aussi `eat()` (phase D vectorisée, 12 %→~2,4 %) : **~×2,5**, soit **58 → ~145 ticks/s**.
-Le forward pass hétérogène (23 %) devient alors le nouveau goulot — c'est le
-**plafond honnête** de la vectorisation sans toucher à la topologie NEAT.
+**End-to-end après implémentation** (`config/default.yaml`, seed 42, 3000 ticks) :
+**58,4 → 99,7 ticks/s = ×1,71**. Un peu sous l'estimation Amdahl (×2,0) à cause du
+gather/`tolist` ; le profil confirme le nouveau régime : `decide()`/forward NEAT
+**45 %** (le plafond), `batch_sense` **31 %** (appelé 1×/tick au lieu de P×),
+`eat()` **15 %**. Le forward pass hétérogène est désormais le goulot — plafond
+honnête de la vectorisation sans toucher à la topologie NEAT.
+
+`eat()` (15 %) reste batchable mais **volontairement laissé de côté** : gain
+marginal (~×1,2) pour un vrai changement sémantique (résolution simultanée des
+conflits de capture), alors que le forward pass domine maintenant. Non rentable.
 
 ### Invariants — à préserver explicitement
 - **n°2** énergie/tick, **n°5** sorties égocentriques, **n°4** tri topo caché :
@@ -110,28 +114,45 @@ garder les objets `Agent`, ajouter un chemin `Population.batch_sense()` qui
 Le spike **inclut déjà** ce gather/scatter et tient le ×9,8 → surcoût acceptable.
 Phases C/D vectorisées et refonte SoA = étapes ultérieures optionnelles.
 
-### Risque principal — validation obligatoire
-Nos verdicts sont **sensibles au régime**. Le delta « perception sur snapshot
-figé » doit être validé : rejouer la campagne verdict 3 seeds (via le levier 1 !)
-et confirmer que le % de fourrageurs par seed reste **dans le bruit** vs baseline.
-Si les chiffres bougent, c'est un **résultat à caractériser**, pas forcément une
-régression — mais ça doit être tranché avant de promouvoir le nouveau tick.
+### Validation comportementale — PASSÉE
+Campagne 3 seeds × 12 000 ticks, **même code ancien vs nouveau** (via le levier 1),
+`config/default.yaml`, % fourrageurs r>0,1 :
 
-### Statut : spike validé (équivalence + gain). Implémentation = prochain pas.
+| Seed | Ancien (par agent) | Nouveau (batché) | Δ |
+|------|:---:|:---:|:---:|
+| 42   | 89 % | 83 % | −6 |
+| 7    | 69 % | 68 % | −1 |
+| 123  | 40 % | 44 % | +4 |
+| moy  | 66 % | 65 % | −1 |
+
+Dans le bruit run-à-run (les audits voyaient déjà seed 123 osciller 42–56 %).
+**Aucun seed ne s'effondre**, le fourrage dirigé robuste sur les 3 seeds survit,
+le plus faible s'améliore même. Rien à voir avec les mécanismes réducteurs
+(crossover : −28 sur un seed). Wall-clock de la campagne : **261,6 s → 153,7 s
+= ×1,70**, confirmant que L2 compose avec L1 dans le runner parallèle.
+
+### Statut : **implémenté + validé**. `src/agent.py::batch_sense`, tick « geler
+puis percevoir » dans `simulation.py`, 4 tests d'équivalence (`tests/test_batch_sense.py`).
 
 ---
 
-## Combiné & séquencement
+## Combiné & bilan  ✅ les deux leviers livrés
 
-Les deux leviers **se composent** : L1 parallélise les seeds, L2 accélère chaque
-tick. Campagne 3 seeds 30k : ~26 min → (L1 ×2,64) ~10 min → (+L2 ×2,5) **~4 min**,
-soit **~×6** sur la boucle de recherche (léger abattement possible : contention
-mémoire NumPy sous 3 process — à re-mesurer combiné).
+Les deux leviers **se composent** et sont mesurés ensemble sur la campagne de
+validation (3 seeds × 12k, `default.yaml`) :
 
-**Ordre recommandé :**
-1. **L1 déjà livré** — s'en servir tout de suite pour toutes les campagnes.
-2. **L2 en 2 temps** : (a) geler+batcher la perception + re-scatter `last_senses`,
-   valider l'équivalence par run puis la campagne verdict 3 seeds (avec L1) ;
-   (b) une fois validé, vectoriser `eat()`/`move()` pour le reste du gain.
-3. Le forward pass hétérogène reste le plafond — hors périmètre (impliquerait de
-   renoncer à l'évolution structurelle NEAT, cf. discussion GPU).
+| Régime | Wall-clock | Gain vs séquentiel ancien |
+|---|---:|---:|
+| Ancien, séquentiel (estim. 3×12k/58 t/s) | ~10,3 min | ×1 |
+| Ancien + L1 (seeds parallèles) | 4,4 min | ×2,4 |
+| Nouveau + L1 + L2 (batché + parallèle) | **2,6 min** | **×4,0** |
+
+Soit **~×4 mesuré** sur la boucle de recherche (l'estimation ×6 supposait L2 ×2,5 ;
+le réel est ×1,71 car le forward NEAT domine plus tôt que prévu — honnête et
+attendu). Extrapolé à une campagne 30k : ~26 min → **~6–7 min**.
+
+**Ce qui reste hors périmètre** (renoncerait à l'esprit NEAT du projet) :
+- `eat()`/`move()` vectorisés : gain marginal, non rentable (voir Levier 2).
+- Le **forward pass hétérogène** (45 % du tick) est le plafond dur — le batcher
+  imposerait une topologie fixe, donc l'abandon de l'évolution structurelle
+  (cf. discussion GPU). C'est la limite de fond, assumée.
