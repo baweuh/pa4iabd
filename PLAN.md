@@ -202,14 +202,24 @@
         innovations) est bon marché). **318→39 ms à pop=400 (~8x)**.
         Équivalence numérique (pas bit-exacte, ordre de sommation flottant)
         vérifiée contre une référence indépendante. 182 tests verts.
-- [ ] 🔄 **Bug densité agents/pommes — en cours de validation** (signalé par
-        Robin en jeu, confirme [[apple-density-signal]] du 2026-07-09) :
-        `tools/apple_capture_probe` reconfirme le surpeuplement avec novelty
-        actif (lifetime médiane pomme 14 ticks/0,23s, 20/160 pommes vivantes en
-        moyenne, 54 % des captures non clairement dirigées). Rafraîchi
-        `config/lever_bigmap.yaml` (monde ×√2, 3200×1800, isolé au SEUL
-        changement vs `default.yaml` actuel — la version 2026-07-09 était
-        périmée, ne portait pas encore `novelty`). Sonde direct : lifetime
-        médiane 14→29 ticks, captures « gratuites » 24 %→12 %, dirigées
-        46 %→56 %. Campagne 6 seeds/15k lancée pour valider l'impact évolutif
-        avant décision de promotion.
+- [x] **Bug densité agents/pommes — symptôme confirmé, correctif « carte
+        agrandie » NON PROMU** (signalé par Robin en jeu, confirme
+        [[apple-density-signal]] du 2026-07-09). `tools/apple_capture_probe`
+        reconfirme le surpeuplement avec novelty actif (lifetime médiane pomme
+        14 ticks/0,23s, 20/160 pommes vivantes en moyenne, 54 % des captures
+        non clairement dirigées). `config/lever_bigmap.yaml` rafraîchi (monde
+        ×√2, 3200×1800, isolé au SEUL changement vs `default.yaml` actuel) :
+        la sonde directe confirme un gain net sur le symptôme lui-même
+        (lifetime médiane 14→29 ticks, captures « gratuites » 24 %→12 %,
+        dirigées 46 %→56 %) — **mais** la campagne 6 seeds/15k au niveau
+        évolutif est mitigée : moy foragers **62 %→57 % (−5)**, 3 seeds
+        montent (42:+9, 1:+10, 5:≈stable), 3 régressent (7:−23, 123:−11,
+        **99:−11, le pire du lot, celui censé être le plus aidé**). Hypothèse
+        mécanistique : `sensors.max_distance` (283 px) n'a **pas** grandi avec
+        le monde (×1,41) — les pommes sont statistiquement plus souvent hors
+        de portée du raycast, donc moins de signal sensoriel exploitable pour
+        apprendre à diriger, ce qui peut annuler le bénéfice de la densité
+        réduite. Symptôme réel et mesuré, mais ce correctif précis **non
+        promu en l'état** (mean négative, seed le plus faible aggravé) — piste
+        de suite possible : agrandir `max_distance` en même temps que le
+        monde (pas encore testé). Décision de suite à prendre avec Robin.
