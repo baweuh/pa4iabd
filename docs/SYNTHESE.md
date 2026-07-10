@@ -469,6 +469,25 @@ end-to-end ; combiné **×4,0**. Plafond restant = le forward pass NEAT hétéro
 dans `_priority_fn`. Promu en défaut (`weight 1.0`, `recompute_interval 10`).
 168 tests verts, pylint 10/10.
 
+**Archive de nouveauté — falsifiée** : suite tentée du levier précédent
+(`novelty.archive_enabled`, pool persistant de comportements passés, injection
+aléatoire p=0,01, Lehman & Stanley 2011). Campagne 6 seeds/15k, moy **62 %→55 %
+(−7)**, régresse 4/6 seeds dont celui visé en priorité (99). Élargir le
+voisinage avec du comportement obsolète dilue le signal de nouveauté vis-à-vis
+de la sélection courante — **5ᵉ réducteur falsifié**, 1ᵉʳ déguisé en additif.
+`archive_enabled` reste `false`. Voir `docs/RESULTS-novelty.md`.
+
+**Nœud de biais NEAT — falsifiée, pire régression du projet** : point #5 de la
+feuille de route, source constante 1.0 câblée à chaque sortie à la genèse
+(`genome.bias_enabled`, `config/lever_bias.yaml`). Campagne 6 seeds/15k, moy
+**62 %→28 % (−34)** : effondrement des seeds forts (42 : 86→13 ; 7 : 91→13 ;
+5 : 87→30), léger mieux sur 2 seeds faibles (1, 99). Le biais injecte un
+décalage constant et non situationnel dans les 2 sorties dès la naissance,
+noyant le signal réactif piloté par les rayons — même famille que le volet 5/6
+poc2.3 (ajouter une source au génome fondateur élargit la surface de mutation
+initiale et casse la robustesse), en pire ici car permanent plutôt que
+situationnel. `bias_enabled` reste `false`. 181 tests verts, pylint 10/10.
+
 ## 7. Historique des commits clés
 
 | Commit | Objet |
@@ -488,3 +507,5 @@ dans `_priority_fn`. Promu en défaut (`weight 1.0`, `recompute_interval 10`).
 | `900bcb2` | poc2.4 perf L2 : perception batchée NumPy, tick « geler puis percevoir » (×1,71) |
 | `6b18bc1` | poc2.4 : bonus de nouveauté additif — 1er levier NON falsifié (+10 sur 6 seeds) |
 | `eaf6e72` | poc2.4 : nouveauté promue en défaut + recalcul périodique (sweep weight=1.0) |
+| `282d3aa` | poc2.4 : archive de nouveauté câblée puis falsifiée (moy 62→55) |
+| `6ef2938` | poc2.4 : nœud de biais NEAT câblé puis falsifiée (moy 62→28, pire régression) |

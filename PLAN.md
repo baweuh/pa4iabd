@@ -172,3 +172,19 @@
         1ᵉʳ qui déguise un effet réducteur sous une forme additive. Mécanisme
         gardé câblé (`archive_enabled: false` par défaut), non promu. 174 tests
         verts, black clean, pylint stable.
+- [x] **Piste nœud de biais NEAT — FALSIFIÉE, pire régression du projet**
+        (`genome.bias_enabled`, `config/lever_bias.yaml`, source constante 1.0
+        câblée à chaque sortie à la genèse comme un input) : campagne 6
+        seeds/15k, moy **62 %→28 % (−34)**. Effondrement sur les seeds forts
+        (42 : 86→13 ; 7 : 91→13 ; 5 : 87→30), léger mieux sur 2 seeds faibles
+        (1 : 27→30 ; 99 : 25→41). Diagnostic : le biais injecte un terme
+        constant fort et non situationnel directement dans les 2 sorties dès
+        la naissance (poids initiaux tirés dans ±`weight_init_range`, jamais
+        annulé par une moyenne d'entrées sensorielles) — ça noie le signal
+        réactif (virage/vitesse piloté par les rayons) sous un décalage
+        systématique, symptôme proche du volet 5/6 poc2.3 (ajouter une source
+        au génome fondateur élargit la surface de mutation initiale et casse
+        la robustesse), en pire ici car le signal ajouté est **permanent, pas
+        situationnel**. `bias_enabled` reste `false`. Mécanisme gardé câblé +
+        testé comme référence (add_connection corrige au passage un bug latent
+        de repli sens-inverse). 181 tests verts, black clean, pylint 10/10.
