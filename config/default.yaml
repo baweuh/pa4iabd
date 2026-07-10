@@ -72,6 +72,20 @@ speciation:
   compatibility_threshold: 3.0   # genomes closer than this share a species
   fitness_sharing: false
 
+# Additive behavioural-novelty bonus on reproduction priority (novelty search,
+# Lehman & Stanley 2011). PROMOTED to default in poc2.4: the first lever to lift
+# every seed without regressing any — validated 6-seed campaign (15k), mean
+# foragers 52% -> 62% (+10), seeds the baseline nearly fails (1:9->27, 99:6->25)
+# helped most. Additive (never penalises), unlike the falsified reducer levers.
+# weight=1.0 is the swept optimum (0.5-1.0 plateau; 2.0 over-dilutes foraging).
+# recompute_interval=10 amortises the O(pop^2) scoring back to baseline speed
+# with no loss of gain. See docs/RESULTS-novelty.md and config/lever_novelty.yaml.
+novelty:
+  enabled: true
+  weight: 1.0
+  neighbors: 15
+  recompute_interval: 10
+
 population:
   initial_size: 200        # large initial pool → more random walkers find food naturally
   max_size: 400            # accommodate growth from successful hunters

@@ -80,6 +80,9 @@ class Simulation:
         self.tick_count: int = 0
         self.total_reproductions: int = 0
         self.record_apples: int = 0
+        # Tick of the last O(pop²) novelty rescoring (-1 = never). Gates the
+        # periodic recompute in _add_novelty_bonus (novelty.recompute_interval).
+        self._last_novelty_tick: int = -1
         # Lifetime apples eaten, per living agent (drives record + best genome).
         self._apples_eaten: dict[Agent, int] = {}
         # Unspent reproduction credit (apples eaten minus apples spent on offspring).
@@ -328,19 +331,43 @@ class Simulation:
         novel agent gets up to ``weight × mean(base value)`` extra priority, the
         least novel gets nothing (min-max normalised novelty ∈ [0, 1]). Scale-free
         — the bonus tracks whatever fitness scale (energy or foraging credit) is
-        in play. Descriptors are cached per agent, so this costs one NumPy
-        pairwise-distance pass over the survivors' behaviours per reproduction.
+        in play.
+
+        The expensive part — the O(pop²) pairwise-distance scoring — runs only
+        every ``recompute_interval`` ticks (:meth:`_refresh_novelty_scores`);
+        applying the cached scores here is O(pop). With ``recompute_interval == 1``
+        this is exact (rescored every reproduction tick).
         """
         cfg = self._config.novelty
-        descriptors = np.array([agent.behavior_descriptor for agent in survivors])
-        novelty = population_novelty(descriptors, cfg.neighbors)
-        low, high = float(novelty.min()), float(novelty.max())
+        if (
+            self._last_novelty_tick < 0
+            or self.tick_count - self._last_novelty_tick >= cfg.recompute_interval
+        ):
+            self._refresh_novelty_scores(survivors)
+
+        scores = np.fromiter(
+            (agent.novelty_score for agent in survivors), np.float64, len(survivors)
+        )
+        low, high = float(scores.min()), float(scores.max())
         span = high - low
         mean_base = sum(values.values()) / len(values)
         scale = cfg.weight * mean_base
         for i, agent in enumerate(survivors):
-            normalised = (novelty[i] - low) / span if span > 1e-12 else 0.0
+            normalised = (scores[i] - low) / span if span > 1e-12 else 0.0
             values[agent] += scale * normalised
+
+    def _refresh_novelty_scores(self, survivors: list[Agent]) -> None:
+        """Rescore every survivor's raw novelty (mean k-NN behavioural distance).
+
+        The O(pop²) pass; cached on each agent (``novelty_score``) and reused by
+        :meth:`_add_novelty_bonus` until the next refresh. Newborns keep 0.0 until
+        rescored — a negligible, few-tick omission of their bonus.
+        """
+        descriptors = np.array([agent.behavior_descriptor for agent in survivors])
+        novelty = population_novelty(descriptors, self._config.novelty.neighbors)
+        for agent, score in zip(survivors, novelty):
+            agent.novelty_score = float(score)
+        self._last_novelty_tick = self.tick_count
 
     def _birth(self, parent: Agent, pool: list[Agent]) -> Agent:
         """Spawn one child from ``parent``, register its bookkeeping, count it.

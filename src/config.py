@@ -224,11 +224,21 @@ class NoveltyConfig:
     enabled: bool = False
     weight: float = 0.0  # bonus scale, in units of mean raw fitness
     neighbors: int = 15  # k for the k-nearest-behaviours novelty
+    # Recompute the O(pop²) novelty scores every N reproduction ticks, reusing the
+    # cached scores in between (behaviour drifts slowly — a few births/deaths per
+    # tick out of hundreds). 1 = exact (recompute every tick); larger amortises the
+    # cost with a negligible approximation. Applying the bonus stays per-tick.
+    recompute_interval: int = 1
 
     def __post_init__(self) -> None:
         _require_non_negative(self, "weight")
         if self.neighbors < 1:
             raise ConfigError(f"novelty.neighbors must be >= 1, got {self.neighbors}")
+        if self.recompute_interval < 1:
+            raise ConfigError(
+                "novelty.recompute_interval must be >= 1, got "
+                f"{self.recompute_interval}"
+            )
 
 
 @dataclass(frozen=True)

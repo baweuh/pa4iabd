@@ -72,8 +72,16 @@ def test_novelty_edge_cases() -> None:
 # Config
 # --------------------------------------------------------------------------- #
 def test_novelty_section_optional() -> None:
-    """Absent section -> disabled; the lever config -> enabled."""
-    assert SimConfig.from_yaml("config/default.yaml").novelty == NoveltyConfig()
+    """Omitting the section -> disabled; present -> parsed as written."""
+    import copy
+
+    import yaml
+
+    raw = yaml.safe_load(open("config/default.yaml", encoding="utf-8"))
+    raw = copy.deepcopy(raw)
+    raw.pop("novelty", None)  # a pre-novelty config has no such section
+    assert SimConfig.from_dict(raw).novelty == NoveltyConfig()  # -> disabled
+
     lever = SimConfig.from_yaml("config/lever_novelty.yaml").novelty
     assert lever.enabled and lever.weight > 0.0
 
@@ -83,7 +91,11 @@ def test_novelty_section_optional() -> None:
 # --------------------------------------------------------------------------- #
 def test_priority_off_returns_raw_unchanged() -> None:
     """Both modifiers off -> the exact raw callable, zero-cost legacy path."""
-    sim = _sim("config/default.yaml")
+    from dataclasses import replace
+
+    cfg = SimConfig.from_yaml("config/default.yaml")
+    cfg = replace(cfg, novelty=NoveltyConfig())  # novelty off (default has it on)
+    sim = Simulation(cfg, Random(42))
     raw = lambda a: a.energy  # noqa: E731
     assert sim._priority_fn(sim.population, raw) is raw
 
@@ -103,3 +115,32 @@ def test_priority_novelty_adds_bonus_favouring_novel_agent() -> None:
     assert scores[most_novel] == max(scores.values())
     # Additive: every agent's priority is >= its base (never penalised).
     assert all(v >= 1.0 for v in scores.values())
+
+
+def test_priority_call_populates_novelty_scores() -> None:
+    """A priority call refreshes the per-agent cached novelty scores."""
+    sim = _sim("config/lever_novelty.yaml")
+    assert all(a.novelty_score == 0.0 for a in sim.population)  # before
+    sim._priority_fn(sim.population, lambda a: 1.0)
+    assert any(a.novelty_score > 0.0 for a in sim.population)  # after refresh
+
+
+def test_recompute_interval_gates_rescoring() -> None:
+    """With interval>1, novelty is rescored once then reused until interval passes."""
+    from dataclasses import replace
+
+    sim = _sim("config/lever_novelty.yaml")
+    sim._config = replace(
+        sim._config, novelty=replace(sim._config.novelty, recompute_interval=50)
+    )
+    raw = lambda a: 1.0  # noqa: E731
+
+    sim._priority_fn(sim.population, raw)  # first call: refreshes
+    first_tick = sim._last_novelty_tick
+    assert first_tick == sim.tick_count
+    scores_before = [a.novelty_score for a in sim.population]
+
+    sim.tick_count += 10  # advance, but < interval
+    sim._priority_fn(sim.population, raw)  # must NOT re-refresh
+    assert sim._last_novelty_tick == first_tick
+    assert [a.novelty_score for a in sim.population] == scores_before

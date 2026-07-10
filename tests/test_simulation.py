@@ -410,6 +410,7 @@ def test_fitness_sharing_off_keeps_raw_priority(tmp_path):
             "apples_per_offspring": 0.0,
         },
         population={"initial_size": 3, "max_size": 4},
+        novelty={"enabled": False},  # isolate raw priority (novelty is on by default)
     )
     sim = Simulation(cfg, random.Random(9))
     sim.env.apples.clear()
@@ -437,6 +438,9 @@ def test_fitness_sharing_on_lets_small_species_outrank_larger_one(tmp_path):
         },
         population={"initial_size": 3, "max_size": 4},
         speciation={"fitness_sharing": True},
+        novelty={
+            "enabled": False
+        },  # isolate fitness sharing (novelty is on by default)
     )
     sim = Simulation(cfg, random.Random(9))
     sim.env.apples.clear()

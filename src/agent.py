@@ -93,6 +93,10 @@ class Agent:
         # Behavioural-novelty descriptor (turn-response profile). Deterministic
         # from the network → computed once, lazily, and cached for life.
         self._behavior_descriptor: list[float] | None = None
+        # Raw novelty score (mean distance to nearest behaviours), refreshed by
+        # Simulation every novelty.recompute_interval ticks; 0.0 until first
+        # refresh. Population-derived, not intrinsic — hence a plain slot.
+        self.novelty_score: float = 0.0
 
     # ------------------------------------------------------------------ #
     # Perception
