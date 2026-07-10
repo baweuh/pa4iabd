@@ -11,6 +11,7 @@ import pytest
 
 from src.config import SimConfig
 from src.genome import (
+    BIAS,
     HIDDEN,
     INPUT,
     OUTPUT,
@@ -105,6 +106,50 @@ def test_sparse_initial_connectivity_never_leaves_an_output_silent(config, track
     output_ids = {n.node_id for n in g.nodes if n.node_type == OUTPUT}
     wired_outputs = {c.out_node for c in g.connections}
     assert wired_outputs == output_ids
+
+
+def test_bias_disabled_by_default_no_bias_node(config, tracker):
+    rng = Random(1)
+    g = Genome.new_fully_connected(config, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    assert not any(n.node_type == BIAS for n in g.nodes)
+    assert len(g.connections) == NUM_INPUTS * NUM_OUTPUTS
+
+
+def test_bias_enabled_adds_bias_node_wired_to_every_output(config, tracker):
+    with_bias = dataclasses.replace(config, bias_enabled=True)
+    rng = Random(1)
+    g = Genome.new_fully_connected(with_bias, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    bias_nodes = [n for n in g.nodes if n.node_type == BIAS]
+    assert len(bias_nodes) == 1
+    bias_id = bias_nodes[0].node_id
+    assert bias_id == NUM_INPUTS + NUM_OUTPUTS  # id right after the outputs
+    # connectivity=1.0 (default) -> bias wired to every output, like an input.
+    assert len(g.connections) == (NUM_INPUTS + 1) * NUM_OUTPUTS
+    output_ids = {n.node_id for n in g.nodes if n.node_type == OUTPUT}
+    bias_targets = {c.out_node for c in g.connections if c.in_node == bias_id}
+    assert bias_targets == output_ids
+    assert not _has_cycle(g)
+
+
+def test_add_connection_never_targets_bias(config, tracker):
+    """Mutation must never wire an edge INTO the bias node (it's a constant)."""
+    with_bias = dataclasses.replace(config, bias_enabled=True)
+    rng = Random(1)
+    g = Genome.new_fully_connected(with_bias, 3, 2, rng, tracker)
+    bias_id = next(n.node_id for n in g.nodes if n.node_type == BIAS)
+    for _ in range(200):
+        g.add_connection(with_bias, rng, tracker)
+        g.add_node(with_bias, rng, tracker)
+    assert all(c.out_node != bias_id for c in g.connections)
+
+
+def test_remove_node_never_removes_bias(config, tracker):
+    with_bias = dataclasses.replace(config, bias_enabled=True)
+    rng = Random(1)
+    g = Genome.new_fully_connected(with_bias, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    for _ in range(50):
+        g.remove_node(rng)
+    assert any(n.node_type == BIAS for n in g.nodes)
 
 
 def test_node_ids_are_unique(config, tracker):
@@ -301,6 +346,13 @@ def test_crossover_keeps_all_io_nodes(config):
     outputs = [n for n in child.nodes if n.node_type == OUTPUT]
     assert len(inputs) == NUM_INPUTS
     assert len(outputs) == NUM_OUTPUTS
+
+
+def test_crossover_keeps_bias_node(config):
+    with_bias = dataclasses.replace(config, bias_enabled=True)
+    a, b = _diverged_pair(with_bias)
+    child = Genome.crossover(a, b, Random(1))
+    assert sum(1 for n in child.nodes if n.node_type == BIAS) == 1
 
 
 def test_crossover_inherits_only_parent_genes(config):

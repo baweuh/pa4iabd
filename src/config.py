@@ -159,6 +159,14 @@ class GenomeConfig:
     # layout need not mean a large mutation surface at birth (audit poc2.3
     # volet 5: initial connectivity, not input count, drove instability).
     initial_connectivity: float = 1.0
+    # Canonical NEAT bias node: an extra founder source, always-on (value 1.0,
+    # never fed from sensors), wired to outputs exactly like an input at
+    # genesis and mutable like any other connection. Lets a node's response
+    # curve shift independently of its inputs (e.g. steer by default even with
+    # every ray silent) instead of always passing through the origin. False
+    # (default) = legacy behaviour, no bias node exists anywhere in the
+    # project (never promoted to default.yaml without a validated campaign).
+    bias_enabled: bool = False
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_init_range", "weight_perturbation")

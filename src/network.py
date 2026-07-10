@@ -14,7 +14,7 @@ import math
 from typing import Callable, Sequence
 
 from src.config import NetworkConfig
-from src.genome import INPUT, OUTPUT, Genome
+from src.genome import BIAS, INPUT, OUTPUT, Genome
 
 _ACTIVATIONS: dict[str, Callable[[float], float]] = {
     "tanh": math.tanh,
@@ -47,6 +47,9 @@ class NeuralNetwork:
         self.output_ids: list[int] = sorted(
             n.node_id for n in genome.nodes if n.node_type == OUTPUT
         )
+        self._bias_ids: list[int] = [
+            n.node_id for n in genome.nodes if n.node_type == BIAS
+        ]
 
         # Build adjacency: node_id → [(src_id, weight), ...]  (enabled only)
         incoming: dict[int, list[tuple[int, float]]] = {
@@ -94,10 +97,12 @@ class NeuralNetwork:
         values: dict[int, float] = {}
         for pos, nid in enumerate(self.input_ids):
             values[nid] = float(inputs[pos])
+        for nid in self._bias_ids:
+            values[nid] = 1.0  # always-on, never read from the sensor vector
 
         for nid in self._eval_order:
             ntype = self._node_type[nid]
-            if ntype == INPUT:
+            if ntype in (INPUT, BIAS):
                 continue  # already set above
             total = sum(w * values[src] for src, w in self._incoming[nid])
             if ntype == OUTPUT:

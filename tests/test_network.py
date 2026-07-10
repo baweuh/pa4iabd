@@ -15,6 +15,7 @@ from src.genome import (
     Genome,
     InnovationTracker,
     NodeGene,
+    BIAS,
     INPUT,
     HIDDEN,
     OUTPUT,
@@ -184,6 +185,38 @@ def test_eval_order_cached(cfg):
     order_before = nn._eval_order
     nn.activate([1.0, 0.5])
     assert nn._eval_order is order_before  # same object, never replaced
+
+
+# --------------------------------------------------------------------------- #
+# Bias node
+# --------------------------------------------------------------------------- #
+def test_bias_activates_with_zero_inputs(cfg):
+    """A bias-only output (no sensory input wired) still fires from the constant."""
+    nodes = [
+        NodeGene(0, INPUT),
+        NodeGene(1, OUTPUT),
+        NodeGene(2, OUTPUT),
+        NodeGene(3, BIAS),
+    ]
+    conns = [ConnectionGene(3, 1, weight=3.0, enabled=True, innovation=0)]
+    nn = NeuralNetwork(Genome(nodes, conns), cfg.network)
+    vx, vy = nn.activate([0.0])
+    assert vx == pytest.approx(3.0)  # 1.0 (bias) * 3.0, input never touched
+    assert vy == pytest.approx(0.0)  # unwired output, no bias connection
+
+
+def test_bias_not_counted_as_sensory_input(cfg):
+    """Bias doesn't grow input_ids — the sensor vector length is unaffected."""
+    nodes = [
+        NodeGene(0, INPUT),
+        NodeGene(1, OUTPUT),
+        NodeGene(2, OUTPUT),
+        NodeGene(3, BIAS),
+    ]
+    conns = [ConnectionGene(3, 1, weight=1.0, enabled=True, innovation=0)]
+    nn = NeuralNetwork(Genome(nodes, conns), cfg.network)
+    assert nn.input_ids == [0]
+    nn.activate([0.0])  # would raise ValueError if bias were expected here too
 
 
 # --------------------------------------------------------------------------- #

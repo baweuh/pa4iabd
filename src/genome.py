@@ -23,6 +23,7 @@ from src.config import GenomeConfig
 INPUT = "input"
 HIDDEN = "hidden"
 OUTPUT = "output"
+BIAS = "bias"  # always-on founder source (value 1.0); never a mutation target
 
 
 @dataclass
@@ -109,61 +110,72 @@ class Genome:
         rng: Random,
         tracker: InnovationTracker = TRACKER,
     ) -> "Genome":
-        """Create a founder genome wiring inputs to outputs.
+        """Create a founder genome wiring inputs (+ optional bias) to outputs.
 
-        Input ids are ``0..num_inputs-1``; output ids follow them. Hidden node
-        ids (allocated later by :meth:`add_node`) start above the reserved
-        input/output range.
+        Input ids are ``0..num_inputs-1``; output ids follow them; the bias
+        node (if ``config.bias_enabled``) takes the single id right after the
+        outputs. Hidden node ids (allocated later by :meth:`add_node`) start
+        above this reserved range.
 
         ``config.genome.initial_connectivity`` (default 1.0) controls how much
-        of the full input×output bipartite graph is wired at genesis: 1.0 wires
-        every input to every output (legacy, exact original behaviour); lower
-        values wire each output to a random sparse subset of inputs (at least
-        one, so no output stays permanently silent).
+        of the full source×output bipartite graph is wired at genesis (sources
+        = inputs, plus the bias node when enabled): 1.0 wires every source to
+        every output (legacy, exact original behaviour when bias is off);
+        lower values wire each output to a random sparse subset of sources (at
+        least one, so no output stays permanently silent).
         """
-        tracker.bump_node_floor(num_inputs + num_outputs)
+        has_bias = config.bias_enabled
+        bias_id = num_inputs + num_outputs
+        tracker.bump_node_floor(bias_id + (1 if has_bias else 0))
         nodes = [NodeGene(i, INPUT) for i in range(num_inputs)]
         nodes += [NodeGene(num_inputs + j, OUTPUT) for j in range(num_outputs)]
+        if has_bias:
+            nodes.append(NodeGene(bias_id, BIAS))
         output_ids = range(num_inputs, num_inputs + num_outputs)
-        # Precompute each output's wired-input set *before* the weight-drawing
-        # loop below, so the connectivity==1.0 path draws RNG in exactly the
-        # original (i outer, j inner) order — byte-for-byte backward compatible.
+        num_sources = num_inputs + (1 if has_bias else 0)
+        # Precompute each output's wired-source set *before* the weight-drawing
+        # loop below, so the connectivity==1.0, bias-off path draws RNG in
+        # exactly the original (i outer, j inner) order — byte-for-byte
+        # backward compatible.
         wired: dict[int, frozenset[int]] = {
             j: frozenset(
-                cls._founder_inputs_for(num_inputs, config.initial_connectivity, rng)
+                cls._founder_inputs_for(num_sources, config.initial_connectivity, rng)
             )
             for j in output_ids
         }
         connections: list[ConnectionGene] = []
-        for i in range(num_inputs):
+        for i in range(num_sources):
+            src_id = i if i < num_inputs else bias_id
             for j in output_ids:
                 if i not in wired[j]:
                     continue
                 connections.append(
                     ConnectionGene(
-                        in_node=i,
+                        in_node=src_id,
                         out_node=j,
                         weight=_random_weight(config, rng),
                         enabled=True,
-                        innovation=tracker.innovation_for(i, j),
+                        innovation=tracker.innovation_for(src_id, j),
                     )
                 )
         return cls(nodes, connections)
 
     @staticmethod
     def _founder_inputs_for(
-        num_inputs: int, connectivity: float, rng: Random
+        num_sources: int, connectivity: float, rng: Random
     ) -> list[int]:
-        """Input ids wired to one founder output, per ``initial_connectivity``.
+        """Source indices wired to one founder output, per ``initial_connectivity``.
 
-        ``connectivity == 1.0`` returns every input, consuming **no** RNG state
-        (legacy path, preserves the original deterministic weight-draw order).
-        Lower values sample a random subset (at least 1, at most ``num_inputs``).
+        ``num_sources`` counts inputs plus the bias node when enabled (indices
+        are later remapped to real node ids by the caller). ``connectivity ==
+        1.0`` returns every source, consuming **no** RNG state (legacy path,
+        preserves the original deterministic weight-draw order). Lower values
+        sample a random subset (at least 1, at most ``num_sources``).
         """
         if connectivity >= 1.0:
-            return list(range(num_inputs))
-        k = max(1, round(connectivity * num_inputs))
-        return rng.sample(range(num_inputs), k)
+            return list(range(num_sources))
+        k = max(1, round(connectivity * num_sources))
+        return rng.sample(range(num_sources), k)
 
     @staticmethod
     def crossover(fitter: "Genome", other: "Genome", rng: Random) -> "Genome":
@@ -335,12 +347,14 @@ class Genome:
     ) -> bool:
         """Add one feedforward connection between two unconnected nodes.
 
-        Picks a source (input/hidden) and target (hidden/output). If the chosen
-        direction would create a cycle, tries the reverse direction; if both
-        are invalid, abandons the mutation (CLAUDE.md invariant n°3).
+        Picks a source (input/bias/hidden) and target (hidden/output). If the
+        chosen direction would create a cycle, tries the reverse direction; if
+        both are invalid, abandons the mutation (CLAUDE.md invariant n°3). The
+        bias node is a source only — it never receives an incoming connection
+        (it isn't computed from anything, it's a constant).
         """
         sources = [n for n in self.nodes if n.node_type != OUTPUT]
-        targets = [n for n in self.nodes if n.node_type != INPUT]
+        targets = [n for n in self.nodes if n.node_type not in (INPUT, BIAS)]
         if not sources or not targets:
             return False
 
@@ -349,7 +363,13 @@ class Genome:
         if src.node_id == dst.node_id:
             return False
 
+        # dst is never input/bias by construction (targets excludes both), but
+        # the reversed fallback direction below puts src second — guard it too,
+        # so a bias/input node never ends up on the receiving end of an edge.
+        node_type = {n.node_id: n.node_type for n in self.nodes}
         for a, b in ((src.node_id, dst.node_id), (dst.node_id, src.node_id)):
+            if node_type[b] in (INPUT, BIAS):
+                continue
             if not self._is_valid_edge(a, b):
                 continue
             if self._creates_cycle(a, b):
