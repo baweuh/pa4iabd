@@ -9,6 +9,7 @@ distinguishes it from the falsified reducer mechanisms.
 
 from __future__ import annotations
 
+from collections import deque
 from random import Random
 
 import numpy as np
@@ -68,6 +69,37 @@ def test_novelty_edge_cases() -> None:
     assert list(population_novelty(np.zeros((1, 3)), 5)) == [0.0]
 
 
+def test_novelty_archive_widens_neighbourhood() -> None:
+    """A tight cluster looks less novel once an archive of outliers exists.
+
+    ``neighbors=4`` exceeds the cluster's 3 other members, so without an
+    archive ``k`` caps at 3 (all in-cluster). With the archive, the pool grows
+    and ``k`` reaches 4 — forcing in one distant archive point, which raises
+    the mean distance.
+    """
+    cluster = np.array([[0.0, 0.0], [0.01, 0.0], [0.0, 0.01], [0.01, 0.01]])
+    without_archive = population_novelty(cluster, neighbors=4)
+
+    archive = np.array([[5.0, 5.0], [5.0, -5.0], [-5.0, 5.0], [-5.0, -5.0]])
+    with_archive = population_novelty(cluster, neighbors=4, archive=archive)
+    assert np.all(with_archive > without_archive)
+
+
+def test_novelty_archive_never_scored_itself() -> None:
+    """Archive shape matches the scored population, not descriptors+archive."""
+    descriptors = np.zeros((3, 2))
+    archive = np.array([[9.0, 9.0]])
+    novelty = population_novelty(descriptors, neighbors=5, archive=archive)
+    assert novelty.shape == (3,)
+
+
+def test_novelty_archive_lone_agent_not_zero() -> None:
+    """A single survivor has 0 novelty vs an empty pool but not vs an archive."""
+    descriptor = np.zeros((1, 2))
+    archive = np.array([[3.0, 3.0]])
+    assert population_novelty(descriptor, neighbors=5, archive=archive)[0] > 0.0
+
+
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
@@ -84,6 +116,9 @@ def test_novelty_section_optional() -> None:
 
     lever = SimConfig.from_yaml("config/lever_novelty.yaml").novelty
     assert lever.enabled and lever.weight > 0.0
+
+    archive_lever = SimConfig.from_yaml("config/lever_novelty_archive.yaml").novelty
+    assert archive_lever.archive_enabled and not lever.archive_enabled
 
 
 # --------------------------------------------------------------------------- #
@@ -123,6 +158,60 @@ def test_priority_call_populates_novelty_scores() -> None:
     assert all(a.novelty_score == 0.0 for a in sim.population)  # before
     sim._priority_fn(sim.population, lambda a: 1.0)
     assert any(a.novelty_score > 0.0 for a in sim.population)  # after refresh
+
+
+def test_archive_off_never_populates() -> None:
+    """archive_enabled=False (default) -> archive stays empty however many refreshes."""
+    sim = _sim("config/lever_novelty.yaml")  # archive off
+    for _ in range(5):
+        sim._priority_fn(sim.population, lambda a: 1.0)  # noqa: B023
+        sim.tick_count += sim._config.novelty.recompute_interval
+    assert len(sim._novelty_archive) == 0
+
+
+def test_archive_on_accumulates_and_is_capped() -> None:
+    """archive_enabled=True with prob=1.0 -> every scored agent archived, FIFO-capped."""
+    from dataclasses import replace
+
+    sim = _sim("config/lever_novelty_archive.yaml")
+    sim._config = replace(
+        sim._config,
+        novelty=replace(sim._config.novelty, archive_prob=1.0, archive_max_size=10),
+    )
+    sim._novelty_archive = deque(sim._novelty_archive, maxlen=10)
+    sim._priority_fn(sim.population, lambda a: 1.0)
+    assert len(sim._novelty_archive) == 10  # capped, not len(population)
+
+
+def test_archive_feeds_back_into_scoring() -> None:
+    """A pre-seeded archive changes novelty scores vs the same run without one.
+
+    ``neighbors`` is pushed past the population size so ``k`` always covers
+    every other point in the pool — with the archive that pool has one extra
+    member, so the mean-distance denominator (and near-certainly the sum)
+    differs from the archive-less run of the same seeded config.
+    """
+    from dataclasses import replace
+
+    def make_sim() -> Simulation:
+        sim = _sim("config/lever_novelty_archive.yaml")
+        big_k = len(sim.population) + 50
+        sim._config = replace(
+            sim._config, novelty=replace(sim._config.novelty, neighbors=big_k)
+        )
+        return sim
+
+    sim_plain = make_sim()
+    sim_plain._priority_fn(sim_plain.population, lambda a: 1.0)
+    plain_scores = [a.novelty_score for a in sim_plain.population]
+
+    sim_archived = make_sim()
+    outlier = -np.ones(sim_archived._config.sensors.num_rays) * 10.0
+    sim_archived._novelty_archive.append(outlier)
+    sim_archived._priority_fn(sim_archived.population, lambda a: 1.0)
+    archived_scores = [a.novelty_score for a in sim_archived.population]
+
+    assert archived_scores != plain_scores
 
 
 def test_recompute_interval_gates_rescoring() -> None:

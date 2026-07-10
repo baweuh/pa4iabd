@@ -28,7 +28,7 @@ Per-tick orchestration (staged pipeline):
 from __future__ import annotations
 
 import csv
-from collections import Counter
+from collections import Counter, deque
 from datetime import datetime
 from pathlib import Path
 from random import Random
@@ -83,6 +83,11 @@ class Simulation:
         # Tick of the last O(pop²) novelty rescoring (-1 = never). Gates the
         # periodic recompute in _add_novelty_bonus (novelty.recompute_interval).
         self._last_novelty_tick: int = -1
+        # Persistent pool of past behaviour descriptors (novelty.archive_enabled
+        # only; FIFO-capped at archive_max_size). See _refresh_novelty_scores.
+        self._novelty_archive: deque[np.ndarray] = deque(
+            maxlen=config.novelty.archive_max_size
+        )
         # Lifetime apples eaten, per living agent (drives record + best genome).
         self._apples_eaten: dict[Agent, int] = {}
         # Unspent reproduction credit (apples eaten minus apples spent on offspring).
@@ -362,11 +367,28 @@ class Simulation:
         The O(pop²) pass; cached on each agent (``novelty_score``) and reused by
         :meth:`_add_novelty_bonus` until the next refresh. Newborns keep 0.0 until
         rescored — a negligible, few-tick omission of their bonus.
+
+        With ``novelty.archive_enabled``, agents are also measured novel
+        against a persistent archive of past behaviours (:attr:`_novelty_archive`),
+        widening the neighbourhood beyond whatever the live population currently
+        offers. Each scored agent is then independently archived with
+        probability ``archive_prob`` (Lehman & Stanley 2011's random-injection
+        scheme) — the archive itself is never scored, only added to.
         """
+        cfg = self._config.novelty
         descriptors = np.array([agent.behavior_descriptor for agent in survivors])
-        novelty = population_novelty(descriptors, self._config.novelty.neighbors)
+        archive = (
+            np.array(self._novelty_archive)
+            if cfg.archive_enabled and self._novelty_archive
+            else None
+        )
+        novelty = population_novelty(descriptors, cfg.neighbors, archive)
         for agent, score in zip(survivors, novelty):
             agent.novelty_score = float(score)
+        if cfg.archive_enabled:
+            for descriptor in descriptors:
+                if self._rng.random() < cfg.archive_prob:
+                    self._novelty_archive.append(descriptor)
         self._last_novelty_tick = self.tick_count
 
     def _birth(self, parent: Agent, pool: list[Agent]) -> Agent:

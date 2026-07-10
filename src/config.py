@@ -219,6 +219,15 @@ class NoveltyConfig:
     sharing — were all falsified). Disabled by default; the whole section may be
     omitted from a config (then off), so every pre-existing config keeps working.
     Never promoted to default.yaml without a validated 3-seed campaign.
+
+    Optional archive (``archive_enabled``): a persistent pool of past
+    behaviours (extinct lineages, earlier generations) that agents are also
+    measured novel against, not just the current population. Each scored
+    survivor is added to it independently with probability ``archive_prob``
+    (Lehman & Stanley 2011's random-injection scheme); oldest entries are
+    evicted first past ``archive_max_size``. Meant to help seeds where the
+    live population converges and stops offering anything novel to steer
+    away from. Off by default; needs its own validated campaign.
     """
 
     enabled: bool = False
@@ -229,6 +238,9 @@ class NoveltyConfig:
     # tick out of hundreds). 1 = exact (recompute every tick); larger amortises the
     # cost with a negligible approximation. Applying the bonus stays per-tick.
     recompute_interval: int = 1
+    archive_enabled: bool = False  # persistent behaviour pool (see class docstring)
+    archive_prob: float = 0.01  # P(a scored agent is archived), per refresh
+    archive_max_size: int = 500  # FIFO cap on the archive
 
     def __post_init__(self) -> None:
         _require_non_negative(self, "weight")
@@ -238,6 +250,14 @@ class NoveltyConfig:
             raise ConfigError(
                 "novelty.recompute_interval must be >= 1, got "
                 f"{self.recompute_interval}"
+            )
+        if not 0.0 <= self.archive_prob <= 1.0:
+            raise ConfigError(
+                f"novelty.archive_prob must be in [0, 1], got {self.archive_prob}"
+            )
+        if self.archive_max_size < 1:
+            raise ConfigError(
+                "novelty.archive_max_size must be >= 1, got " f"{self.archive_max_size}"
             )
 
 

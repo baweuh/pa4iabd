@@ -62,19 +62,33 @@ def behavior_descriptor(net: NeuralNetwork, sensors: SensorConfig) -> list[float
     ]
 
 
-def population_novelty(descriptors: np.ndarray, neighbors: int) -> np.ndarray:
+def population_novelty(
+    descriptors: np.ndarray, neighbors: int, archive: np.ndarray | None = None
+) -> np.ndarray:
     """Mean distance to the ``neighbors`` nearest behaviours, per agent.
 
     ``descriptors`` is ``(P, D)``; returns ``(P,)``. Self is excluded. With fewer
     than ``neighbors`` others, averages over all of them. 0/1-agent populations
-    have novelty 0 everywhere.
+    have novelty 0 everywhere (unless ``archive`` gives them something to be
+    novel against).
+
+    ``archive`` (``(A, D)``, optional) is a pool of past behaviours — from
+    extinct lineages or earlier generations — that widens the neighbourhood
+    without being scored itself (Lehman & Stanley 2011). Novelty is measured
+    against ``descriptors ∪ archive``; the archive only adds candidates to be
+    novel against, it never displaces the current population.
     """
     count = descriptors.shape[0]
-    if count <= 1:
+    has_archive = archive is not None and archive.shape[0] > 0
+    if count <= 1 and not has_archive:
         return np.zeros(count)
-    diff = descriptors[:, None, :] - descriptors[None, :, :]  # (P, P, D)
-    dist = np.sqrt(np.sum(diff * diff, axis=2))  # (P, P)
-    np.fill_diagonal(dist, np.inf)  # never count the agent against itself
-    k = min(neighbors, count - 1)
+    pool = (
+        np.concatenate([descriptors, archive], axis=0) if has_archive else descriptors
+    )
+    diff = descriptors[:, None, :] - pool[None, :, :]  # (P, P+A, D)
+    dist = np.sqrt(np.sum(diff * diff, axis=2))  # (P, P+A)
+    self_idx = np.arange(count)
+    dist[self_idx, self_idx] = np.inf  # never count the agent against itself
+    k = min(neighbors, pool.shape[0] - 1)
     nearest = np.partition(dist, k - 1, axis=1)[:, :k]  # k smallest per row
     return nearest.mean(axis=1)
