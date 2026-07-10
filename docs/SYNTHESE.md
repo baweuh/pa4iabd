@@ -1,11 +1,11 @@
 # Synthèse du projet — ALife Neuroevolution
 
 > Vue d'ensemble transverse : de la fondation technique (Phases 1-8) à la branche
-> `poc2.3`. Pour le détail, voir `docs/Phase/*` (implémentation) et
-> `docs/Audits/AUDIT-poc2.2-v3.md` + `AUDIT-poc2.3.md` (investigations) +
-> `AUDIT-poc2.3-tuyauterie.md` (audit de connectivité fonctionnelle, 2026-07-09).
-> Rédigé le 2026-07-08, mis à jour le 2026-07-08 (volets 4-5 : crossover+bigpop
-> falsifié, capteur 49 promu en défaut).
+> `poc2.4`. Pour le détail, voir `docs/Phase/*` (implémentation), les audits
+> `docs/Audits/*`, et pour poc2.4 `docs/DESIGN-poc2.4-perf.md` (perf) +
+> `docs/RESULTS-novelty.md` (nouveauté).
+> Rédigé le 2026-07-08, mis à jour le 2026-07-10 (poc2.4 : perf ×4 de la boucle
+> de recherche, et bonus de nouveauté = 1er levier positif, promu en défaut).
 
 ---
 
@@ -22,6 +22,11 @@ Juil 7-8     poc2.3          Capteurs 67 + viz réseau, puis 4 relances/audits :
                              volet 1 (perception) 🟡 · volet 2 (mutation) ❌ ·
                              volet 3 (crossover) 🟡 · volet 4 (crossover+bigpop) ❌ ·
                              volet 5 (ablation capteur → 49 promu défaut) ✅
+   ↓
+Juil 10      poc2.4          Perf ×4 de la boucle de recherche (campagnes parallèles
+                             + perception batchée NumPy), puis reprise recherche :
+                             bonus de NOUVEAUTÉ ✅ = 1er levier positif (+10 sur
+                             6 seeds), promu en défaut (52 %→62 % fourrageurs)
 ```
 
 Fil rouge unique de tout le projet **évolutif** : *le fourrage dirigé est trop
@@ -231,14 +236,21 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
   le pire chiffre de toute la campagne). Le fully-connected agit comme filet de
   sécurité perceptif : le retirer laisse trop de capteurs débranchés trop
   longtemps. `initial_connectivity` reste à 1.0 dans le défaut.
-- 🔑 **Enseignement transverse (volets 4 + 6)** : dans ce régime, tout mécanisme qui
-  **réduit la richesse effective au démarrage** (crossover qui moyenne,
-  connectivité qui prive d'information) nuit plutôt qu'il n'aide — même quand la
-  théorie est solide. Seul un levier **additif** a marché dans tout le projet
-  (plus de population, plus de sélection directe via `apples_per_offspring`).
-- ⬜ **Piste ouverte** : seed 123 reste le maillon faible du trio (7-56 % selon le
-  run, contre 59-98 % pour 42 et 7) — la suite doit être additive (N seeds /
-  réglage de K / plus de population), pas une réduction de dimensionnalité.
+- ✅ **Bonus de nouveauté additif = 1er levier POSITIF (poc2.4), promu en défaut.**
+  Novelty search (Lehman & Stanley 2011) câblé comme **bonus additif** sur la
+  priorité de repro. Campagne 6 seeds/15k : moy **52 %→62 % (+10)**, **chaque seed
+  monte ou tient, aucun ne régresse** — l'inverse exact des réducteurs. Sweep de
+  `weight` → optimum franc à 1.0 ; `recompute_interval=10` efface le coût O(pop²)
+  au débit de base. `default.yaml` l'active (meilleur défaut jamais atteint).
+  Détails : `docs/RESULTS-novelty.md`.
+- 🔑 **Enseignement transverse confirmé** : dans ce régime, tout mécanisme
+  **réducteur** (crossover qui moyenne, capteur 67, sparse, fitness sharing —
+  4 falsifications) nuit ; seuls les leviers **additifs** marchent (population,
+  sélection directe `apples_per_offspring`, et désormais **bonus de nouveauté**).
+  La nouveauté est la 1ʳᵉ validation *positive* et prédictive de ce pattern.
+- ⬜ **Piste ouverte** : seed 123 et les seeds durs (1, 99) restent bas en absolu
+  (20-27 %) malgré la nouveauté — aidés, pas « résolus ». Suite additive possible :
+  **archive de nouveauté** (comportements passés, pas seulement la pop courante).
 - ⬜ **À rectifier — durée de vie des pommes trop courte (observé en jeu,
   2026-07-09, Robin)** : à population proche du plafond (`max_size: 400`) sur la
   carte 2263×1273 avec 160 pommes, les pommes semblent mangées quasi
@@ -443,6 +455,20 @@ côté du pattern transverse : seul l'ADDITIF (population, sélection directe)
 `fitness_sharing: false`. Mécanisme + `config/lever_fitness_sharing.yaml`
 conservés comme référence d'expérience. Ne pas re-tenter comme levier de perf.
 
+### poc2.4 — perf de simulation + nouveauté (2026-07-10)
+
+**Perf** (`docs/DESIGN-poc2.4-perf.md`) : deux leviers composables pour accélérer
+la boucle de recherche. (L1) `tools/campaign.py` lance les seeds en parallèle
+(×2,64). (L2) `batch_sense` calcule la perception de toute la population en une
+passe NumPy (tick « geler puis percevoir »), équivalence bit-à-bit, ×1,71
+end-to-end ; combiné **×4,0**. Plafond restant = le forward pass NEAT hétérogène
+(45 %), non batchable sans quitter NEAT.
+
+**Nouveauté** (`docs/RESULTS-novelty.md`) : **1er levier positif du projet**, voir
+§5. `src/novelty.py` + `NoveltyConfig` (section optionnelle), injection additive
+dans `_priority_fn`. Promu en défaut (`weight 1.0`, `recompute_interval 10`).
+168 tests verts, pylint 10/10.
+
 ## 7. Historique des commits clés
 
 | Commit | Objet |
@@ -458,3 +484,7 @@ conservés comme référence d'expérience. Ne pas re-tenter comme levier de per
 | `442256f` | poc2.3 : volet 6 — génome fondateur sparse, falsifié |
 | `928ccb7` | audit : suppression code mort (clamp_velocity, Agent.update, Environment.respawn) |
 | `9c56db2` | audit : retrait `population.min_size` (vestigial) |
+| `702bc17` | poc2.4 perf L1 : runner de campagne parallèle (seeds en process, ×2,64) |
+| `900bcb2` | poc2.4 perf L2 : perception batchée NumPy, tick « geler puis percevoir » (×1,71) |
+| `6b18bc1` | poc2.4 : bonus de nouveauté additif — 1er levier NON falsifié (+10 sur 6 seeds) |
+| `eaf6e72` | poc2.4 : nouveauté promue en défaut + recalcul périodique (sweep weight=1.0) |

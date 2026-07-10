@@ -133,3 +133,32 @@
         longtemps ; le fully-connected agissait comme filet de sécurité perceptif.
         `initial_connectivity` reste à 1.0 (implicite) dans `default.yaml`. 155 tests
         verts, black clean, pylint stable. Mécanisme + config gardés comme référence.
+
+## Branche poc2.4 — Perf de simulation + nouveauté (1er levier positif) ✅
+> Débit de simulation (pour la boucle de recherche) + reprise recherche.
+> Détails : `docs/DESIGN-poc2.4-perf.md`, `docs/RESULTS-novelty.md`.
+
+- [x] **Levier perf 1 — campagnes multi-seeds en parallèle** (`tools/campaign.py`,
+        `ProcessPoolExecutor`) : chaque seed = `Simulation` indépendante → **×2,64**
+        sur 3 seeds, résultats bit-identiques (déterminisme préservé). Zéro
+        changement de la simulation.
+- [x] **Levier perf 2 — perception batchée NumPy** (`src/agent.py::batch_sense`,
+        tick « geler puis percevoir ») : perception de toute la population en une
+        passe NumPy. Équivalence **bit-à-bit** avec `sense()` par agent (49 et 67),
+        **×1,71** end-to-end (58→100 ticks/s), combiné L1+L2 **×4,0**. Le forward
+        pass NEAT hétérogène devient le plafond (45 % du tick, non batchable).
+- [x] **Chantier recherche n°3 — bonus de nouveauté additif** (novelty search,
+        Lehman & Stanley 2011 ; `src/novelty.py`, `NoveltyConfig`) : **1er levier
+        NON falsifié du projet**. Campagne 6 seeds/15k : moy **52 %→62 % (+10)**,
+        chaque seed monte ou tient, aucun ne régresse (contraire des réducteurs).
+        Additif (ne pénalise jamais). Sweep de `weight` → optimum franc à **1.0**.
+- [x] **Optim perf nouveauté** — `novelty.recompute_interval` amortit le scoring
+        O(pop²) sur N ticks. Balayage 1/10/25 → moy 62/62/60, débit 71/113/122
+        ticks/s. **interval=10** = plein gain au débit de base.
+- [x] **PROMU en `default.yaml`** : `novelty {enabled:true, weight:1.0, neighbors:15,
+        recompute_interval:10}` — meilleur défaut jamais atteint (moy 62 % vs 52 %).
+        Section YAML optionnelle → configs antérieures inchangées. 168 tests verts,
+        pylint 10/10, app réelle vérifiée end-to-end.
+- [ ] ⬜ **Piste ouverte** : archive de nouveauté (comportements passés, pas
+        seulement la pop courante) — pourrait aider les seeds durs (1, 99) encore
+        bas en absolu (20-27 %).
