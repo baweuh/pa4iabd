@@ -150,3 +150,31 @@ def test_mean_pairwise_positive_when_divergent(spec, gcfg):
     tracker.bump_node_floor(NUM_INPUTS + NUM_OUTPUTS)
     mutant.add_node(gcfg, rng, tracker)
     assert mean_pairwise_distance([base, mutant], spec) > 0.0
+
+
+def test_mean_pairwise_matches_naive_definition(spec, gcfg):
+    """Regression guard: the NumPy-vectorised path vs the O(pop²) definition.
+
+    Independent reference — sums ``compatibility_distance`` over every pair
+    directly, not via the internal ``_profile``/``_distance`` the vectorised
+    version was derived from. Population mixes clones, weight mutation,
+    structural mutation (add_node/add_connection/remove_node) and one
+    connection-less genome, so both empty-vs-empty and empty-vs-populated
+    pairs are exercised.
+    """
+    tracker = InnovationTracker()
+    rng = Random(21)
+    base = Genome.new_fully_connected(gcfg, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    population = [base.clone() for _ in range(15)]
+    for genome in population:
+        genome.mutate(gcfg, rng, tracker)
+    population.append(Genome([n for n in base.nodes], []))  # connection-less
+
+    naive_total, naive_pairs = 0.0, 0
+    for i in range(len(population)):
+        for j in range(i + 1, len(population)):
+            naive_total += compatibility_distance(population[i], population[j], spec)
+            naive_pairs += 1
+    naive = naive_total / naive_pairs
+
+    assert mean_pairwise_distance(population, spec) == pytest.approx(naive)
