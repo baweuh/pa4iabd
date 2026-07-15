@@ -248,9 +248,13 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
   4 falsifications) nuit ; seuls les leviers **additifs** marchent (population,
   sélection directe `apples_per_offspring`, et désormais **bonus de nouveauté**).
   La nouveauté est la 1ʳᵉ validation *positive* et prédictive de ce pattern.
-- ⬜ **Piste ouverte** : seed 123 et les seeds durs (1, 99) restent bas en absolu
-  (20-27 %) malgré la nouveauté — aidés, pas « résolus ». Suite additive possible :
-  **archive de nouveauté** (comportements passés, pas seulement la pop courante).
+- ✅ **Piste résolue autrement (2026-07-15)** : ce qui suit datait d'avant
+  densité + K-sweep. Seed 123 n'est plus le plus faible (K=1.5 : 82% à 30k) —
+  c'est le sweep sur K, pas un ciblage spécifique, qui a réglé le problème.
+  Voir section 6 (K-sweep) et `docs/RESULTS-k-sweep.md`.
+- ⬜ **Piste ouverte (historique)** : seed 123 et les seeds durs (1, 99) restaient bas
+  en absolu (20-27 %) malgré la nouveauté — aidés, pas « résolus ». Suite additive
+  tentée : **archive de nouveauté** (comportements passés) — falsifiée (voir plus bas).
 - ⬜ **À rectifier — durée de vie des pommes trop courte (observé en jeu,
   2026-07-09, Robin)** : à population proche du plafond (`max_size: 400`) sur la
   carte 2263×1273 avec 160 pommes, les pommes semblent mangées quasi
@@ -550,6 +554,41 @@ profil de risque que les réducteurs à variance forte déjà écartés.
 (`--progress-interval`, `--quiet`). 202 tests verts, pylint 9.96/10. Voir
 `docs/FALSIFIED-truncation.md`.
 
+**K-sweep (`agent.apples_per_offspring`) — MEILLEUR RÉSULTAT NET DU PROJET,
+PROMU** (2026-07-15) : reprise du point ouvert poc2.2 étape 10 (« régler K »),
+motivée par le défaut post-densité qui n'était plus uniforme (seed 99 à 32%
+@30k). Sweep 15k/6 seeds K∈{1.5,2.0,2.5,3.0,3.5,4.0,5.0} : tendance nette, K
+bas > K haut. **Confirmation 30k** : moyenne **66%→79% (+13)**, 5/6 seeds
+montent (jusqu'à +24 sur seed 99), le 6e quasi stable (7 : 77→76, −1) —
+dépasse novelty (+10) et densité (+4), effet qui s'amplifie avec le temps.
+`default.yaml` : `apples_per_offspring` 3.0→1.5. Voir `docs/RESULTS-k-sweep.md`.
+
+**Modèle d'îles — FALSIFIÉ, réducteur net** (2026-07-15) : piste
+research-roadmap (alternative structurelle au crossover, falsifié).
+`population.num_islands` (défaut 1=legacy) partitionne la pop en N
+sous-populations quasi-isolées avec migration en anneau. Campagne 6
+seeds/30k vs le nouveau défaut (K=1.5) : moyenne **79%→68% (−11)**, **les 6
+seeds régressent sans exception** — 4 îles de 100 agents rouvrent la dérive
+fondatrice que poc2.2 avait corrigée en passant pop 200→400. Non promu,
+câblé + testé comme référence. Voir `docs/FALSIFIED-islands.md`.
+
+**Instrumentation étendue (diagnostics)** (2026-07-15, demande Robin) :
+observationnel pur, zéro risque sur la sim. Nouveau `src/diagnostics.py` —
+`steer_score`/`classify_capture`/`capture_lookback_ticks` migrés des outils
+`tools/steer_probe.py`/`tools/apple_capture_probe.py` (avec correction du
+bug de calibration connu : fenêtre dérivée de
+`sensors.max_distance/agent.max_speed`, plus de lookback fixe à 30 ticks),
+densité locale (échantillonnée aux captures) + globale, `effective_population_size`
+(N_e, Crow & Kimura, fenêtre glissante). CSV 13→26 colonnes. Vérifié en
+conditions réelles : N_e ~82-90 sur pop 400 — première mesure directe du
+diagnostic « sélection ≪ dérive » répété depuis poc2.2. 31 nouveaux tests.
+
+Bilan de session (2026-07-15) : 247 tests verts, black clean, pylint 10/10
+(`src/`). Chantier suivant (session à venir) : **encodage indirect type
+HyperNEAT** (research-roadmap #4, dernier recours) — CPPN + substrat
+géométrique exploitant la régularité de l'anneau de rayons, plus lourd et
+plus spéculatif que A/B/D, à cadrer avec Robin avant de s'y engager.
+
 ## 7. Historique des commits clés
 
 | Commit | Objet |
@@ -576,3 +615,5 @@ profil de risque que les réducteurs à variance forte déjà écartés.
 | `0700645` | poc2.4 : critère minimal de reproduction câblé (non promu) |
 | `70e7432` | poc2.4 : critère minimal falsifié — variance extrême, population épinglée |
 | `fd5c116` | poc2.4 : troncature de sélection adoucie — testée, falsifiée, pas de bug |
+| `6f634ab` | poc2.4 : K-sweep — apples_per_offspring 3.0→1.5, meilleur résultat net du projet |
+| `5c7c0ba` | poc2.4 : modèle d'îles (falsifié) + instrumentation étendue |
