@@ -50,7 +50,6 @@ from src.diagnostics import (
     global_density,
     local_agent_density,
     local_apple_density,
-    steer_score,
 )
 from src.novelty import population_novelty
 from src.genome import TRACKER, Genome
@@ -860,6 +859,15 @@ class Simulation:
 
     def _log_row(self) -> None:
         if self._csv_writer is None:
+            # No CSV attached, but the per-interval diagnostic accumulators
+            # must still be drained once per log interval, or a tick() loop
+            # with no open logger (tools/run_and_probe, an evaluation loop)
+            # grows the density-sample lists and the N_e birth-event window
+            # without bound — the latter also pinning dead parent Agents (and
+            # their genomes/networks) in memory. Determinism is untouched:
+            # nothing here consumes RNG.
+            self._prune_birth_events(self._config.diagnostics.ne_window_ticks)
+            self._reset_interval_accumulators()
             return
         generations = [a.generation for a in self.population]
         forage_rates = self._forage_rates()
@@ -899,7 +907,7 @@ class Simulation:
         cfg = self._config.diagnostics
         pop = self.population
 
-        steer_scores = [steer_score(a.network, self._config.sensors) for a in pop]
+        steer_scores = [a.steer_score for a in pop]
         forager_pct = (
             100.0 * sum(1 for s in steer_scores if s > cfg.forager_threshold) / len(pop)
             if pop
@@ -950,11 +958,20 @@ class Simulation:
             f"{n_e:.6f}",
         )
 
+        self._reset_interval_accumulators()
+        return row
+
+    def _reset_interval_accumulators(self) -> None:
+        """Clear the per-log-interval diagnostic accumulators (not the rolling
+        N_e window, which is pruned separately by :meth:`_prune_birth_events`).
+
+        Called once per log interval whether or not a CSV row is written (see
+        :meth:`_log_row`), so these never grow without bound.
+        """
         self._capture_counts = {ADJACENT: 0, DIRECTED: 0, UNDIRECTED: 0}
         self._local_agent_density_samples = []
         self._local_apple_density_samples = []
         self._apples_eaten_interval = 0
-        return row
 
     def _prune_birth_events(self, window_ticks: int) -> None:
         """Drop birth events older than the N_e rolling window."""

@@ -27,6 +27,7 @@ import numpy as np
 
 from src.apple import Apple
 from src.config import SimConfig
+from src.diagnostics import steer_score as _compute_steer_score
 from src.environment import Environment
 from src.genome import Genome
 from src.network import NeuralNetwork
@@ -101,6 +102,12 @@ class Agent:
         # Behavioural-novelty descriptor (turn-response profile). Deterministic
         # from the network → computed once, lazily, and cached for life.
         self._behavior_descriptor: list[float] | None = None
+        # Steering-response correlation (r apple-on-left ↔ turns-left).
+        # Deterministic from the frozen network → cached for life, like the
+        # descriptor above. The diagnostics CSV reads it over the whole
+        # population every log interval; recomputing num_rays activations per
+        # agent each time was a measurable per-log-tick hitch.
+        self._steer_score: float | None = None
         # Raw novelty score (mean distance to nearest behaviours), refreshed by
         # Simulation every novelty.recompute_interval ticks; 0.0 until first
         # refresh. Population-derived, not intrinsic — hence a plain slot.
@@ -247,6 +254,18 @@ class Agent:
                 self.network, self._config.sensors
             )
         return self._behavior_descriptor
+
+    @property
+    def steer_score(self) -> float:
+        """Cached steering-response correlation; computed once (see __init__).
+
+        Deterministic from the (frozen) network, memoised for life like
+        :attr:`behavior_descriptor`. Equal to
+        ``src.diagnostics.steer_score(self.network, config.sensors)``.
+        """
+        if self._steer_score is None:
+            self._steer_score = _compute_steer_score(self.network, self._config.sensors)
+        return self._steer_score
 
     # ------------------------------------------------------------------ #
     # Energy (per TICK — invariant n°2)

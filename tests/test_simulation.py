@@ -29,7 +29,9 @@ def build_config(tmp_path: Path, **overrides: dict) -> SimConfig:
     raw["logging"]["csv_path"] = str(tmp_path / "metrics.csv")
     raw["logging"]["best_genome_path"] = str(tmp_path / "best_genome.json")
     for section, values in overrides.items():
-        raw[section].update(values)
+        # setdefault so optional sections absent from default.yaml (e.g.
+        # diagnostics) can still be overridden.
+        raw.setdefault(section, {}).update(values)
     return SimConfig.from_dict(raw)
 
 
@@ -1019,3 +1021,45 @@ def test_ne_reflects_concentrated_vs_even_reproduction(tmp_path):
 
     assert concentrated < even
     assert even == pytest.approx(len(agents))
+
+
+def test_diagnostics_accumulators_bounded_without_csv(tmp_path):
+    # A tick() loop with NO open CSV logger must still drain the per-interval
+    # accumulators and prune the N_e window every log interval — otherwise the
+    # density-sample lists and _birth_events (which pins dead parent Agents)
+    # grow without bound. Guards the memory leak fixed 2026-07-15.
+    cfg = build_config(
+        tmp_path,
+        apple={"respawn_delay": 1},
+        logging={
+            "csv_path": str(tmp_path / "metrics.csv"),
+            "log_interval_ticks": 5,
+            "best_genome_path": str(tmp_path / "best_genome.json"),
+        },
+        diagnostics={"ne_window_ticks": 10},
+    )
+    sim = Simulation(cfg, random.Random(1))
+    # NOTE: no open_csv_logger() — this is the leak-prone path.
+    for _ in range(60):
+        sim.tick()
+
+    window = cfg.diagnostics.ne_window_ticks
+    assert all(sim.tick_count - t <= window for t, _ in sim._birth_events)
+    # Drained at the last log interval (tick 60, a multiple of 5); any samples
+    # since then are only from the ticks after it, never an ever-growing pile.
+    assert len(sim._local_agent_density_samples) < 60
+    assert len(sim._local_apple_density_samples) < 60
+
+
+def test_agent_steer_score_cached_equals_diagnostics_function(tmp_path):
+    from src.diagnostics import steer_score
+
+    cfg = build_config(tmp_path)
+    sim = Simulation(cfg, random.Random(1))
+    agent = sim.population[0]
+
+    assert agent._steer_score is None  # not computed yet
+    value = agent.steer_score
+    assert value == steer_score(agent.network, cfg.sensors)  # matches the function
+    assert agent._steer_score == value  # memoised
+    assert agent.steer_score is agent._steer_score  # second read hits the cache
