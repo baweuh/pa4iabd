@@ -324,6 +324,58 @@ class NoveltyConfig:
 
 
 @dataclass(frozen=True)
+class DiagnosticsConfig:
+    """Observational instrumentation — CSV-only, never feeds back into the sim.
+
+    Every value here only shapes what gets LOGGED (capture classification,
+    local density sampling, effective-population-size window); none of it is
+    read by agent decisions, reproduction or mutation — changing this section
+    cannot alter simulation outcomes, only what gets measured about them.
+
+    Capture classification (adjacent / directed / undirected) migrates the
+    heuristic from ``tools/apple_capture_probe.py`` (2026-07-09) into a
+    permanent runtime metric, fixing its known calibration bug along the way
+    (docs/RESULTS-density.md): the probe's fixed ``lookback=30`` ticks did not
+    scale with ``agent.max_speed``, so its "60% of the gap closed" threshold
+    silently got harder to hit once max_speed was halved (poc2.4 density
+    lever). The lookback window is now DERIVED (see
+    ``src.diagnostics.capture_lookback_ticks``: ``ceil(sensors.max_distance /
+    agent.max_speed)``, the ticks needed to cross the whole sensing range once
+    at max speed) instead of a fixed magic number — invariant n°1.
+    """
+
+    capture_close_mult: float = 1.5  # "adjacent" if already within this × reach
+    capture_directed_ratio: float = 0.6  # fraction of the gap that must close
+    capture_ahead_degrees: float = 90.0  # forward half-plane, egocentric
+    # Local density (agents/apples within this radius), sampled ONLY at
+    # capture events — not every tick (O(pop) or O(apples) per capture, not
+    # per tick, so the cost scales with how often apples get eaten, not with
+    # simulation length).
+    local_density_radius: float = 150.0
+    # Effective population size (N_e, Crow & Kimura) rolling window, in ticks.
+    # APPROXIMATION for this project's overlapping-generation model (no
+    # discrete generations): see src.diagnostics.effective_population_size.
+    ne_window_ticks: int = 1000
+    # steer_score threshold above which an agent counts as a "forager" for
+    # forager_pct (CSV) — matches the value tools/campaign.py has used for
+    # every verdict table since poc2.4's novelty campaign.
+    forager_threshold: float = 0.1
+
+    def __post_init__(self) -> None:
+        _require_positive(self, "capture_close_mult", "local_density_radius")
+        _require_rate(self, "capture_directed_ratio")
+        if not 0.0 < self.capture_ahead_degrees <= 180.0:
+            raise ConfigError(
+                "diagnostics.capture_ahead_degrees must be in (0, 180], got "
+                f"{self.capture_ahead_degrees}"
+            )
+        if self.ne_window_ticks < 1:
+            raise ConfigError(
+                f"diagnostics.ne_window_ticks must be >= 1, got {self.ne_window_ticks}"
+            )
+
+
+@dataclass(frozen=True)
 class PopulationConfig:
     """Population bounds.
 
@@ -334,9 +386,42 @@ class PopulationConfig:
 
     initial_size: int
     max_size: int
+    # Island model (research-roadmap "modèle d'îles", structural alternative to
+    # crossover): partitions the population into N quasi-isolated
+    # sub-populations, each its own reproduction-slot budget (max_size split as
+    # evenly as possible, see Simulation._island_capacities) and its own
+    # eligible/priority ranking and mating pool — a dominant lineage in one
+    # island cannot drain another island's slots. A few agents per island
+    # migrate one step around a fixed ring every migration_interval_ticks,
+    # giving bounded gene flow without merging selection pressure (unlike NEAT
+    # fitness sharing, falsified 2026-07-09: species churn every tick, moyenne
+    # 62->59%). 1 (default) = legacy single population, byte-for-byte
+    # unchanged: no partitioning, no migration, zero extra RNG draws.
+    num_islands: int = 1
+    migration_interval_ticks: int = 500
+    migration_count: int = 1
 
     def __post_init__(self) -> None:
         _require_positive(self, "initial_size", "max_size")
+        if self.num_islands < 1:
+            raise ConfigError(
+                f"population.num_islands must be >= 1, got {self.num_islands}"
+            )
+        if self.num_islands > self.max_size:
+            raise ConfigError(
+                "population.num_islands must be <= population.max_size, got "
+                f"{self.num_islands} islands for max_size {self.max_size}"
+            )
+        if self.migration_interval_ticks < 1:
+            raise ConfigError(
+                "population.migration_interval_ticks must be >= 1, got "
+                f"{self.migration_interval_ticks}"
+            )
+        if self.migration_count < 0:
+            raise ConfigError(
+                "population.migration_count must be >= 0, got "
+                f"{self.migration_count}"
+            )
 
 
 @dataclass(frozen=True)
@@ -393,6 +478,7 @@ class SimConfig:
     genome: GenomeConfig
     speciation: SpeciationConfig
     novelty: NoveltyConfig
+    diagnostics: DiagnosticsConfig
     population: PopulationConfig
     simulation: SimulationConfig
     logging: LoggingConfig
@@ -444,6 +530,13 @@ class SimConfig:
                 _build(NoveltyConfig, "novelty", data)
                 if "novelty" in data
                 else NoveltyConfig()
+            ),
+            # Optional section: absent -> defaults (backward-compatible, every
+            # pre-diagnostics config keeps loading unchanged).
+            diagnostics=(
+                _build(DiagnosticsConfig, "diagnostics", data)
+                if "diagnostics" in data
+                else DiagnosticsConfig()
             ),
             population=_build(PopulationConfig, "population", data),
             simulation=_build(SimulationConfig, "simulation", data),

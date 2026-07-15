@@ -27,8 +27,13 @@ from src.config import SensorConfig
 from src.network import NeuralNetwork
 
 
-def _probe_input(k: int, sensors: SensorConfig) -> list[float]:
-    """Sensor vector with a single apple on ray ``k`` (layout-aware)."""
+def probe_apple_on_ray(k: int, sensors: SensorConfig) -> list[float]:
+    """Sensor vector with a single apple on ray ``k`` (layout-aware).
+
+    Shared with ``src.diagnostics.steer_score`` — same synthetic-input
+    construction, two different consumers (novelty descriptor vs. the
+    steering-correlation probe migrated from ``tools/steer_probe.py``).
+    """
     num_rays = sensors.num_rays
     apple_dist = [1.0] * num_rays
     apple_dist[k] = 0.2  # a close apple on ray k
@@ -57,7 +62,7 @@ def behavior_descriptor(net: NeuralNetwork, sensors: SensorConfig) -> list[float
     behaviour space novelty should reward diversity in.
     """
     return [
-        math.tanh(net.activate(_probe_input(k, sensors))[1])
+        math.tanh(net.activate(probe_apple_on_ray(k, sensors))[1])
         for k in range(sensors.num_rays)
     ]
 

@@ -82,6 +82,27 @@ def test_tick_respawns_returns_apple_after_delay(cfg, env):
     assert apple.respawn_timer == 0
 
 
+def test_tick_respawns_stamps_spawn_tick(cfg, env):
+    apple = env.apples[0]
+    assert apple.spawn_tick == 0  # initial board
+    env.mark_eaten(apple)
+    rng = random.Random(7)
+    for _ in range(cfg.apple.respawn_delay - 1):
+        env.tick_respawns(rng, tick=999)  # not due yet: untouched
+    assert apple.spawn_tick == 0
+    env.tick_respawns(rng, tick=999)  # the tick it actually respawns on
+    assert apple.spawn_tick == 999
+
+
+def test_tick_respawns_defaults_tick_to_zero(cfg, env):
+    apple = env.apples[0]
+    env.mark_eaten(apple)
+    rng = random.Random(7)
+    for _ in range(cfg.apple.respawn_delay):
+        env.tick_respawns(rng)  # no tick arg -> defaults to 0
+    assert apple.spawn_tick == 0
+
+
 def test_respawn_returns_to_safe_zone(cfg, env):
     zw = cfg.penalty_zone.width
     r = cfg.apple.radius

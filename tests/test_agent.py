@@ -246,7 +246,7 @@ def test_eat_gains_energy_and_defers_respawn(cfg, env, genome):
     agent = make_agent(cfg, env, genome, (cx, cy))
     agent.energy = 1.0
     eaten = agent.eat()
-    assert eaten == 1
+    assert len(eaten) == 1
     assert agent.energy == pytest.approx(1.0 + cfg.apple.energy)
     # Deferred respawn: the eaten apple leaves the live list and starts its timer.
     assert env.apples == []

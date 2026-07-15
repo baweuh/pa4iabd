@@ -88,7 +88,7 @@ def _run_seed(args: tuple[str, int, int, "dict[int, int] | None"]) -> SeedResult
     pop = sim.population
     scores = [steer_score(a.network, cfg.sensors) for a in pop]
     hiddens = [sum(1 for n in a.genome.nodes if n.node_type == "hidden") for a in pop]
-    positive = sum(1 for s in scores if s > 0.1)
+    positive = sum(1 for s in scores if s > cfg.diagnostics.forager_threshold)
     return SeedResult(
         seed,
         sim.tick_count,

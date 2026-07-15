@@ -161,6 +161,86 @@ def test_cross_validation_population(raw: dict) -> None:
         SimConfig.from_dict(raw)
 
 
+def test_num_islands_defaults_one_when_omitted(raw: dict) -> None:
+    assert "num_islands" not in raw["population"]
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.population.num_islands == 1
+    assert cfg.population.migration_interval_ticks == 500
+    assert cfg.population.migration_count == 1
+
+
+def test_num_islands_parsed_when_present(raw: dict) -> None:
+    raw["population"]["num_islands"] = 4
+    assert SimConfig.from_dict(raw).population.num_islands == 4
+
+
+def test_num_islands_rejects_zero(raw: dict) -> None:
+    raw["population"]["num_islands"] = 0
+    with pytest.raises(ConfigError, match="num_islands must be >= 1"):
+        SimConfig.from_dict(raw)
+
+
+def test_num_islands_rejects_more_than_max_size(raw: dict) -> None:
+    raw["population"]["num_islands"] = raw["population"]["max_size"] + 1
+    with pytest.raises(ConfigError, match="num_islands must be <= population.max_size"):
+        SimConfig.from_dict(raw)
+
+
+def test_migration_interval_ticks_rejects_zero(raw: dict) -> None:
+    raw["population"]["migration_interval_ticks"] = 0
+    with pytest.raises(ConfigError, match="migration_interval_ticks must be >= 1"):
+        SimConfig.from_dict(raw)
+
+
+def test_migration_count_rejects_negative(raw: dict) -> None:
+    raw["population"]["migration_count"] = -1
+    with pytest.raises(ConfigError, match="migration_count must be >= 0"):
+        SimConfig.from_dict(raw)
+
+
+def test_diagnostics_optional_section_defaults(raw: dict) -> None:
+    assert "diagnostics" not in raw
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.diagnostics.capture_close_mult == 1.5
+    assert cfg.diagnostics.capture_directed_ratio == 0.6
+    assert cfg.diagnostics.capture_ahead_degrees == 90.0
+    assert cfg.diagnostics.local_density_radius == 150.0
+    assert cfg.diagnostics.ne_window_ticks == 1000
+    assert cfg.diagnostics.forager_threshold == 0.1
+
+
+def test_diagnostics_parsed_when_present(raw: dict) -> None:
+    raw["diagnostics"] = {"ne_window_ticks": 2000, "local_density_radius": 75.0}
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.diagnostics.ne_window_ticks == 2000
+    assert cfg.diagnostics.local_density_radius == 75.0
+    assert cfg.diagnostics.capture_close_mult == 1.5  # untouched default
+
+
+def test_diagnostics_rejects_bad_ahead_degrees(raw: dict) -> None:
+    raw["diagnostics"] = {"capture_ahead_degrees": 0.0}
+    with pytest.raises(ConfigError, match="capture_ahead_degrees must be in"):
+        SimConfig.from_dict(raw)
+
+
+def test_diagnostics_rejects_zero_ne_window(raw: dict) -> None:
+    raw["diagnostics"] = {"ne_window_ticks": 0}
+    with pytest.raises(ConfigError, match="ne_window_ticks must be >= 1"):
+        SimConfig.from_dict(raw)
+
+
+def test_diagnostics_rejects_bad_directed_ratio(raw: dict) -> None:
+    raw["diagnostics"] = {"capture_directed_ratio": 1.5}
+    with pytest.raises(ConfigError, match="must be in \\[0, 1\\]"):
+        SimConfig.from_dict(raw)
+
+
+def test_diagnostics_rejects_non_positive_density_radius(raw: dict) -> None:
+    raw["diagnostics"] = {"local_density_radius": 0.0}
+    with pytest.raises(ConfigError, match="must be > 0"):
+        SimConfig.from_dict(raw)
+
+
 def test_invalid_yaml(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("world: [unclosed", encoding="utf-8")

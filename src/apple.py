@@ -15,8 +15,12 @@ class Apple:
 
     ``respawn_timer`` counts down the ticks an eaten apple spends off-board
     before it reappears (managed by Environment); 0 means the apple is live.
+    ``spawn_tick`` is the tick this apple last appeared (0 for the initial
+    board) — diagnostics-only (capture classification's reference point,
+    see ``src.diagnostics``), never read by simulation logic.
     """
 
     x: float
     y: float
     respawn_timer: int = 0
+    spawn_tick: int = 0

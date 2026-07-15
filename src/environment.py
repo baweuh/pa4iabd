@@ -105,12 +105,15 @@ class Environment:
         self._pending.append(apple)
         self._apple_coords_cache = None
 
-    def tick_respawns(self, rng: Random) -> None:
+    def tick_respawns(self, rng: Random, tick: int = 0) -> None:
         """Advance every pending apple's countdown; respawn the ones that are due.
 
         Decrement each pending timer; when it reaches 0 the apple is relocated to
         a fresh safe position and returned to ``apples``. Called once per tick
-        (Phase 6, step 8). Logs nothing — rendering is Phase 7.
+        (Phase 6, step 8). Logs nothing — rendering is Phase 7. ``tick`` stamps
+        the respawned apple's ``spawn_tick`` (diagnostics-only, see
+        ``src.diagnostics``); the default 0 keeps every call site that doesn't
+        care about it (most tests) unchanged.
         """
         still_pending: list[Apple] = []
         for apple in self._pending:
@@ -118,6 +121,7 @@ class Environment:
             if apple.respawn_timer <= 0:
                 apple.respawn_timer = 0
                 apple.x, apple.y = self._random_safe_position(rng)
+                apple.spawn_tick = tick
                 self.apples.append(apple)
                 self._apple_coords_cache = None
             else:

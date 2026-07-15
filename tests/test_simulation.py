@@ -7,7 +7,9 @@ from __future__ import annotations
 import copy
 import csv
 import random
+from collections import Counter
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -744,3 +746,276 @@ def test_fitness_sharing_on_lets_small_species_outrank_larger_one(tmp_path):
     generations = {a.generation for a in sim.population}
     assert 31 in generations  # novel's shared fitness beats dominant_a's diluted one
     assert 11 not in generations
+
+
+# ------------------------------------------------------------------ #
+# Island model (population.num_islands, structural alternative to crossover)
+# ------------------------------------------------------------------ #
+
+
+def test_islands_default_is_single_legacy_population(cfg):
+    sim = Simulation(cfg, random.Random(1))
+    assert cfg.population.num_islands == 1
+    assert all(sim._island[a] == 0 for a in sim.population)
+
+
+def test_islands_founders_split_round_robin(tmp_path):
+    cfg = build_config(
+        tmp_path, population={"initial_size": 6, "max_size": 20, "num_islands": 3}
+    )
+    sim = Simulation(cfg, random.Random(2))
+    counts = Counter(sim._island[a] for a in sim.population)
+    assert counts == {0: 2, 1: 2, 2: 2}
+
+
+def test_islands_capacities_split_max_size_with_remainder_first(tmp_path):
+    cfg = build_config(
+        tmp_path, population={"initial_size": 3, "max_size": 10, "num_islands": 3}
+    )
+    sim = Simulation(cfg, random.Random(3))
+    assert sim._island_capacities() == [4, 3, 3]
+    assert sum(sim._island_capacities()) == cfg.population.max_size
+
+
+def test_islands_reproduction_stays_within_each_island(tmp_path):
+    # One island starved of slots (already at its capacity), the other with
+    # room and a high-energy eligible agent: only the island WITH room
+    # reproduces, even though the other island's agent is also eligible.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 1.0,
+            "max_energy": 2.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,
+        },
+        population={"initial_size": 4, "max_size": 4, "num_islands": 2},
+    )
+    sim = Simulation(cfg, random.Random(4))
+    sim.env.apples.clear()
+    island0 = [a for a in sim.population if sim._island[a] == 0]
+    island1 = [a for a in sim.population if sim._island[a] == 1]
+    assert len(island0) == 2 and len(island1) == 2
+    for agent in sim.population:
+        agent.energy = cfg.agent.max_energy  # everyone eligible
+    island0[0].alive = False  # opens exactly one slot, in island 0 only
+
+    sim.tick()
+
+    assert sim.total_reproductions == 1
+    survivors_and_children = sim.population
+    assert sum(1 for a in survivors_and_children if sim._island[a] == 0) == 2
+    assert sum(1 for a in survivors_and_children if sim._island[a] == 1) == 2
+
+
+def test_islands_child_inherits_parent_island(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 1.0,
+            "max_energy": 2.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,
+        },
+        population={"initial_size": 2, "max_size": 3, "num_islands": 2},
+    )
+    sim = Simulation(cfg, random.Random(5))
+    sim.env.apples.clear()
+    for agent in sim.population:
+        agent.energy = cfg.agent.max_energy
+
+    sim.tick()
+
+    assert sim.total_reproductions == 1
+    child = next(a for a in sim.population if a.generation == 1)
+    parent_island = sim._island[[a for a in sim.population if a.generation == 0][0]]
+    assert sim._island[child] == parent_island
+
+
+def test_islands_migration_moves_agents_to_next_island_on_ring(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        population={
+            "initial_size": 6,
+            "max_size": 20,
+            "num_islands": 3,
+            "migration_interval_ticks": 1,
+            "migration_count": 10,  # more than any island holds -> everyone moves
+        },
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()
+    before = dict(sim._island)
+
+    sim.tick()
+
+    after = {a: sim._island[a] for a in before}  # same agents, no births/deaths here
+    assert after == {a: (isl + 1) % 3 for a, isl in before.items()}
+
+
+def test_islands_migration_never_called_when_single_island(cfg):
+    # num_islands == 1: tick() must not call _migrate (would just burn RNG
+    # draws for a permanently self-looping ring — every other lever in this
+    # project keeps its off/default value byte-for-byte RNG-free).
+    sim = Simulation(cfg, random.Random(7))
+    with patch.object(sim, "_migrate") as migrate:
+        sim.tick()
+    migrate.assert_not_called()
+
+
+def test_islands_migration_called_when_multi_island(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        population={
+            "initial_size": 4,
+            "max_size": 10,
+            "num_islands": 2,
+            "migration_interval_ticks": 1,
+        },
+    )
+    sim = Simulation(cfg, random.Random(8))
+    with patch.object(sim, "_migrate") as migrate:
+        sim.tick()
+    migrate.assert_called_once()
+
+
+# ------------------------------------------------------------------ #
+# Extended diagnostics (poc2.4, 2026-07-15): capture classification,
+# density, N_e — all observational, see src/diagnostics.py.
+# ------------------------------------------------------------------ #
+
+
+def test_tick_classifies_adjacent_capture_end_to_end(tmp_path):
+    cfg = build_config(tmp_path, apple={"respawn_delay": 5})
+    sim = Simulation(cfg, random.Random(3))
+    _single_agent_on_apple(sim)
+    agent = sim.population[0]
+
+    sim.tick()  # agent starts exactly ON the apple -> "adjacent", not steered
+
+    assert agent.fortuitous_captures == 1
+    assert agent.directed_captures == 0
+    assert sim._capture_counts["adjacent"] == 1
+
+
+def test_classify_captures_directed_when_history_shows_approach(tmp_path):
+    cfg = build_config(tmp_path)
+    sim = Simulation(cfg, random.Random(2))
+    agent = sim.population[0]
+    agent.heading = 0.0
+    apple = sim.env.apples[0]
+    apple.spawn_tick = 0
+    # Reference position 200px behind (along heading 0), apple where the
+    # agent stands now: closes ~91% of the gap, straight ahead -> directed.
+    sim._position_history[agent].append((0, agent.x - 200.0, agent.y, 0.0))
+    apple.x, apple.y = agent.x, agent.y
+
+    sim._classify_captures(agent, [apple])
+
+    assert agent.directed_captures == 1
+    assert sim._capture_counts["directed"] == 1
+
+
+def test_classify_captures_samples_local_density(tmp_path):
+    cfg = build_config(tmp_path)
+    sim = Simulation(cfg, random.Random(4))
+    agent = sim.population[0]
+    apple = sim.env.apples[0]
+    apple.x, apple.y = agent.x, agent.y
+
+    assert sim._local_agent_density_samples == []
+    sim._classify_captures(agent, [apple])
+
+    assert len(sim._local_agent_density_samples) == 1
+    assert len(sim._local_apple_density_samples) == 1
+
+
+def test_position_history_bounded_to_capture_lookback(tmp_path):
+    cfg = build_config(tmp_path, simulation={"max_ticks": 5, "seed": 1})
+    sim = Simulation(cfg, random.Random(1))
+    for _ in range(5):
+        sim.tick()
+    agent = sim.population[0] if sim.population else None
+    if agent is not None:
+        assert len(sim._position_history[agent]) <= sim._capture_lookback + 1
+
+
+def test_csv_row_has_extended_diagnostics_columns(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        apple={"respawn_delay": 5},
+        simulation={"ticks_per_second": 60, "max_ticks": 1, "seed": 1},
+        logging={
+            "csv_path": str(tmp_path / "metrics.csv"),
+            "log_interval_ticks": 1,
+            "best_genome_path": str(tmp_path / "best_genome.json"),
+        },
+    )
+    sim = Simulation(cfg, random.Random(1))
+    _single_agent_on_apple(sim)
+    sim.run()
+
+    run_csv = Path(cfg.logging.csv_path).parent / sim.run_id / "metrics.csv"
+    rows = list(csv.reader(run_csv.open(encoding="utf-8")))
+    header = rows[0]
+    row = dict(zip(header, rows[1]))
+
+    assert 0.0 <= float(row["forager_pct"]) <= 100.0
+    assert float(row["mean_hidden_nodes"]) >= 0.0
+    assert float(row["agent_density_global"]) > 0.0
+    assert float(row["apple_density_global"]) >= 0.0
+    # The single agent started ON the apple: one "adjacent" capture, 100%.
+    assert float(row["capture_adjacent_pct"]) == pytest.approx(100.0)
+    assert float(row["capture_directed_pct"]) == 0.0
+    assert float(row["apples_eaten_per_tick"]) == pytest.approx(1.0)
+    assert float(row["effective_population_size"]) >= 0.0
+
+
+def test_diagnostics_accumulators_reset_after_log_row(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        apple={"respawn_delay": 1},
+        logging={
+            "csv_path": str(tmp_path / "metrics.csv"),
+            "log_interval_ticks": 1,
+            "best_genome_path": str(tmp_path / "best_genome.json"),
+        },
+    )
+    sim = Simulation(cfg, random.Random(1))
+    _single_agent_on_apple(sim)
+    sim.open_csv_logger()
+    sim.tick()  # captures + logs at interval 1
+
+    assert sim._capture_counts == {"adjacent": 0, "directed": 0, "undirected": 0}
+    assert sim._local_agent_density_samples == []
+    assert sim._apples_eaten_interval == 0
+    sim.close_csv_logger()
+
+
+def test_ne_reflects_concentrated_vs_even_reproduction(tmp_path):
+    from src.diagnostics import effective_population_size
+
+    cfg = build_config(tmp_path)
+    sim = Simulation(cfg, random.Random(1))
+    agents = sim.population[:4]
+
+    # Concentrated: one parent has 5 births in the window, others none.
+    sim._birth_events.clear()
+    for _ in range(5):
+        sim._birth_events.append((sim.tick_count, agents[0]))
+    concentrated = effective_population_size(
+        [Counter(p for _, p in sim._birth_events).get(a, 0) for a in agents]
+    )
+
+    # Even: each of the 4 has exactly 1 birth.
+    sim._birth_events.clear()
+    for a in agents:
+        sim._birth_events.append((sim.tick_count, a))
+    even = effective_population_size(
+        [Counter(p for _, p in sim._birth_events).get(a, 0) for a in agents]
+    )
+
+    assert concentrated < even
+    assert even == pytest.approx(len(agents))

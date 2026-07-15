@@ -76,9 +76,9 @@
         **robuste (3 seeds) ET stable (30k)** : 86/84/56 % fourrageurs
 - [x] Décision : promouvoir `apple_repro_bigpop` en défaut ? → **OUI**, tranché en
         poc2.3 volet 5 (voir ci-dessous) après l'ablation du capteur 67.
-- [ ] ⬜ Validation élargie (N seeds) + réglage de K pour remonter seed 123 (toujours
-        le plus faible du trio, 42-56 % selon le run — piste ouverte si besoin de plus
-        de perf)
+- [x] ✅ Validation élargie (6 seeds) + réglage de K — repris en poc2.4 (voir
+        ci-dessous, chantier « K-sweep »). K=1.5 promu : moyenne 6 seeds/30k
+        66→79 %, meilleur résultat net du projet. `docs/RESULTS-k-sweep.md`.
 
 ## Branche poc2.3 — Capteurs 67 + visualisation + relance structurelle ✅
 > POC hors numérotation. Journal complet dans `docs/Audits/AUDIT-poc2.3.md`.
@@ -311,3 +311,54 @@
         `--quiet`) — plain-text, pas de barre carriage-return, lisible en
         direct comme dans un log. 8 nouveaux tests, 202 verts, black clean,
         pylint 9.96/10. Détails : `docs/FALSIFIED-truncation.md`.
+- [x] ✅ **K-sweep (`agent.apples_per_offspring`) — MEILLEUR RÉSULTAT NET DU
+        PROJET, PROMU** (2026-07-15). Reprise du point ouvert poc2.2 ÉTAPE 10
+        (« régler K »), motivée par le défaut post-densité qui n'est plus
+        uniforme (seed 99 à 32 % @30k pendant que 42/5 tiennent 85-86 %).
+        Sweep 15k/6 seeds K∈{1.5,2.0,2.5,3.0,3.5,4.0,5.0} : tendance nette,
+        K bas > K haut, K=1.5 gagne (67 % vs 58 % défaut). **Confirmation
+        30k** : moyenne **66→79 % (+13)**, **5/6 seeds montent (jusqu'à +24
+        sur seed 99), le 6e quasi stable (7 : 77→76, −1)** — même profil
+        qu'un levier additif (aucun effondrement) mais un gain net supérieur
+        à novelty (+10) et densité (+4). L'effet s'AMPLIFIE de 15k à 30k
+        (67→79), pas d'érosion. **`default.yaml` promu** :
+        `agent.apples_per_offspring` 3.0→1.5, rien d'autre touché. 216 tests
+        verts, black clean, pylint 10/10. Détails : `docs/RESULTS-k-sweep.md`.
+- [x] ✅ **Modèle d'îles — FALSIFIÉ, réducteur net** (2026-07-15). Piste
+        research-roadmap (alternative structurelle au crossover) :
+        `population.num_islands` (défaut 1=legacy) partitionne la pop en N
+        sous-populations quasi-isolées (slots/priorité/mating pool séparés),
+        migration en anneau (`migration_interval_ticks`, `migration_count`).
+        Campagne 6 seeds/30k vs le nouveau défaut (K=1.5) : moyenne
+        **79%→68% (−11)**, **les 6 seeds régressent** (7 : 76→48, pire cas),
+        profil réducteur classique (même famille que crossover/fitness
+        sharing/biais/critère minimal). Diagnostic : 4 îles de 100 agents
+        rouvrent la dérive fondatrice que poc2.2 avait corrigée en passant
+        de pop 200→400 — chaque île isolée est fonctionnellement une petite
+        population, en-deçà du régime robuste. `default.yaml` garde
+        `num_islands` absent (=1). Mécanisme câblé + testé comme référence
+        (14 tests dédiés). 216 tests verts, black clean, pylint 10/10.
+        Détails : `docs/FALSIFIED-islands.md`.
+- [x] ✅ **Instrumentation étendue (diagnostics) — densité, captures
+        dirigées/fortuites, N_e, métriques déjà calculées** (2026-07-15,
+        demande Robin). Observationnel pur — zéro risque sur la sim, aucune
+        campagne de falsification requise. `src/diagnostics.py` (nouveau
+        module) : `steer_score` migré de `tools/steer_probe.py` (tools/ ne
+        doit pas être importé par src/), `classify_capture`/
+        `capture_lookback_ticks` migrés de `tools/apple_capture_probe.py`
+        avec son bug de calibration connu corrigé (fenêtre dérivée de
+        `sensors.max_distance/agent.max_speed` au lieu d'un lookback fixe de
+        30 ticks qui ne suivait pas `max_speed`), `local_agent_density`/
+        `local_apple_density` (échantillonnées seulement aux captures, pas
+        à chaque tick), `effective_population_size` (N_e, Crow & Kimura,
+        fenêtre glissante `diagnostics.ne_window_ticks`, approximation
+        documentée pour générations chevauchantes). CSV étendu de 13→26
+        colonnes (steer_score/forager%/hidden/novelty moyens, densités
+        globale+locale agents/pommes, %adjacent/directed/undirected,
+        apples_eaten_per_tick, N_e). Nouveau `DiagnosticsConfig` (section
+        optionnelle, tout par défaut = comportement legacy inchangé).
+        `Agent.eat()` retourne désormais la liste des pommes mangées (au
+        lieu du compte) pour permettre la classification ; `Agent` gagne
+        `directed_captures`/`fortuitous_captures` (cumul lifetime, mirroring
+        `apples_eaten`). 31 nouveaux tests (diagnostics + config + intégration
+        simulation), 247 tests verts, black clean, pylint 10/10.

@@ -25,6 +25,7 @@ from random import Random
 
 import numpy as np
 
+from src.apple import Apple
 from src.config import SimConfig
 from src.environment import Environment
 from src.genome import Genome
@@ -90,6 +91,13 @@ class Agent:
         # Lifetime apples eaten — updated by Simulation each tick, read by the renderer
         # to identify the best forager (forage_rate = apples_eaten / max(age, 1)).
         self.apples_eaten: int = 0
+        # Lifetime capture classification (diagnostics only, src.diagnostics),
+        # updated by Simulation alongside apples_eaten: "directed" = genuine
+        # steering toward the apple; "fortuitous" folds together "adjacent"
+        # (free catch, no travel needed) and "undirected" (random-walk luck) —
+        # the population-level CSV keeps the finer 3-way split.
+        self.directed_captures: int = 0
+        self.fortuitous_captures: int = 0
         # Behavioural-novelty descriptor (turn-response profile). Deterministic
         # from the network → computed once, lazily, and cached for life.
         self._behavior_descriptor: list[float] | None = None
@@ -255,13 +263,15 @@ class Agent:
         self.energy -= self._env.penalty_at(self.x, self.y)
         self.energy = min(self.energy, self._config.agent.max_energy)
 
-    def eat(self) -> int:
+    def eat(self) -> list[Apple]:
         """Consume every apple whose body overlaps the agent; defer their respawn.
 
-        Returns the number of apples eaten this tick. Energy is capped at
-        ``max_energy``. Eaten apples are handed to ``Environment.mark_eaten`` so
-        they reappear after ``apple.respawn_delay`` ticks (CDC §5.2); they are
-        collected first to avoid mutating ``env.apples`` while iterating it.
+        Returns the apples eaten this tick (``len(...)`` for a plain count;
+        Simulation also uses the apples themselves to classify captures, see
+        ``src.diagnostics``). Energy is capped at ``max_energy``. Eaten apples
+        are handed to ``Environment.mark_eaten`` so they reappear after
+        ``apple.respawn_delay`` ticks (CDC §5.2); they are collected first to
+        avoid mutating ``env.apples`` while iterating it.
         """
         reach = self._config.agent.radius + self._config.apple.radius
         gain = self._config.apple.energy
@@ -273,7 +283,7 @@ class Agent:
         for apple in bitten:
             self.energy = min(self.energy + gain, self._config.agent.max_energy)
             self._env.mark_eaten(apple)
-        return len(bitten)
+        return bitten
 
     # ------------------------------------------------------------------ #
     # Life cycle

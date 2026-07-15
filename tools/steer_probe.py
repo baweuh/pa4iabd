@@ -11,60 +11,14 @@ Usage: python -m tools.steer_probe <best_genome.json> [config.yaml]
 
 from __future__ import annotations
 
-import math
 import statistics as st
 import sys
 from random import Random
 
-from src.config import SensorConfig, SimConfig
+from src.config import SimConfig
+from src.diagnostics import steer_score  # noqa: F401  (re-exported for callers)
 from src.genome import TRACKER, Genome
 from src.network import NeuralNetwork
-
-
-def _probe_inputs(k: int, sensors: SensorConfig) -> list[float]:
-    """Build a sensor vector with a lone apple on ray k, matching the configured
-    sensor layout (mirrors ``Agent.sense()``'s toggle logic exactly)."""
-    num_rays = sensors.num_rays
-    apple_dist = [1.0] * num_rays
-    apple_dist[k] = 0.2
-    wall_dist = [1.0] * num_rays  # walls never closer than the probed apple
-    appf = [0.0] * num_rays
-    appf[k] = 1.0
-    wallf = [0.0] * num_rays
-    if sensors.split_distance:
-        vec = apple_dist + wall_dist + appf + wallf
-    else:
-        combined = [min(a, w) for a, w in zip(apple_dist, wall_dist)]
-        vec = combined + appf + wallf
-    vec = vec + [0.5]  # energy
-    if sensors.proprioception:
-        vec.append(0.0)  # actual_speed = still
-    if sensors.apples_in_view:
-        vec.append(1.0 / num_rays)  # exactly one ray sees an apple
-    if len(vec) != sensors.num_inputs:
-        raise ValueError(
-            f"probe built {len(vec)} inputs, expected {sensors.num_inputs}"
-        )
-    return vec
-
-
-def steer_score(net: NeuralNetwork, sensors: SensorConfig) -> float:
-    """Pearson r between 'apple on the left' and 'turns left'."""
-    num_rays = sensors.num_rays
-    xs: list[float] = []
-    ys: list[float] = []
-    for k in range(1, num_rays):
-        if k == num_rays // 2:
-            continue  # directly behind: ambiguous
-        ang = k * (2 * math.pi / num_rays)
-        raw = net.activate(_probe_inputs(k, sensors))
-        xs.append(math.sin(ang))
-        ys.append(math.tanh(raw[1]))
-    mx, my = st.mean(xs), st.mean(ys)
-    num = sum((a - mx) * (b - my) for a, b in zip(xs, ys))
-    dx = math.sqrt(sum((a - mx) ** 2 for a in xs))
-    dy = math.sqrt(sum((b - my) ** 2 for b in ys))
-    return num / (dx * dy) if dx * dy > 1e-12 else 0.0
 
 
 def main(argv: list[str]) -> int:
