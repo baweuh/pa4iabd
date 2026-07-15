@@ -20,6 +20,7 @@ import pytest
 
 from src.agent import Agent
 from src.config import SimConfig
+from src.diagnostics import steer_score
 from src.environment import Environment
 from src.genome import INPUT, OUTPUT, TRACKER, Genome
 from src.hyperneat import (
@@ -118,6 +119,67 @@ def test_substrate_genome_is_dense_and_enabled(cfg, cppn_genome):
     assert all(c.enabled for c in substrate.connections)
 
 
+def test_substrate_connectivity_one_is_dense_legacy(cfg, cppn_genome):
+    """connectivity=1.0 (default) keeps every edge — unchanged from the MVP."""
+    from src.network import NeuralNetwork
+
+    cppn_network = NeuralNetwork(cppn_genome, cfg.network)
+    substrate = build_substrate_genome(cppn_network, cfg.sensors, cfg.hyperneat)
+    num_inputs = cfg.sensors.num_inputs
+    assert len(substrate.connections) == num_inputs * 2
+
+
+def test_substrate_connectivity_below_one_prunes_per_output(cfg, cppn_genome):
+    from src.network import NeuralNetwork
+
+    sparse_hn = dataclasses.replace(cfg.hyperneat, connectivity=0.3)
+    cppn_network = NeuralNetwork(cppn_genome, cfg.network)
+    substrate = build_substrate_genome(cppn_network, cfg.sensors, sparse_hn)
+    num_inputs = cfg.sensors.num_inputs
+    expected_per_output = max(1, round(0.3 * num_inputs))
+    by_output: dict[int, int] = {}
+    for c in substrate.connections:
+        by_output[c.out_node] = by_output.get(c.out_node, 0) + 1
+    assert set(by_output.values()) == {expected_per_output}
+
+
+def test_substrate_connectivity_keeps_at_least_one_edge_per_output(cfg, cppn_genome):
+    """Floor guard: even a near-zero connectivity never silences an output."""
+    from src.network import NeuralNetwork
+
+    tiny_hn = dataclasses.replace(cfg.hyperneat, connectivity=0.001)
+    cppn_network = NeuralNetwork(cppn_genome, cfg.network)
+    substrate = build_substrate_genome(cppn_network, cfg.sensors, tiny_hn)
+    num_inputs = cfg.sensors.num_inputs
+    by_output: dict[int, int] = {}
+    for c in substrate.connections:
+        by_output[c.out_node] = by_output.get(c.out_node, 0) + 1
+    assert len(by_output) == 2  # neither output silenced
+    assert all(n >= 1 for n in by_output.values())
+
+
+def test_substrate_connectivity_keeps_strongest_weights(cfg, cppn_genome):
+    """Pruned edges are the top-|weight| ones, not an arbitrary subset."""
+    from src.network import NeuralNetwork
+
+    cppn_network = NeuralNetwork(cppn_genome, cfg.network)
+    dense = build_substrate_genome(cppn_network, cfg.sensors, cfg.hyperneat)
+    sparse_hn = dataclasses.replace(cfg.hyperneat, connectivity=0.2)
+    sparse = build_substrate_genome(cppn_network, cfg.sensors, sparse_hn)
+
+    num_inputs = cfg.sensors.num_inputs
+    for out_id in (num_inputs, num_inputs + 1):
+        dense_by_weight = sorted(
+            (c for c in dense.connections if c.out_node == out_id),
+            key=lambda c: abs(c.weight),
+            reverse=True,
+        )
+        k = max(1, round(0.2 * num_inputs))
+        expected_ids = {c.in_node for c in dense_by_weight[:k]}
+        actual_ids = {c.in_node for c in sparse.connections if c.out_node == out_id}
+        assert actual_ids == expected_ids
+
+
 def test_substrate_weights_bounded_by_weight_scale(cfg, cppn_genome):
     from src.network import NeuralNetwork
 
@@ -144,6 +206,47 @@ def test_substrate_network_deterministic(cfg, cppn_genome):
     )
     senses = [0.3] * cfg.sensors.num_inputs
     assert net_a.activate(senses) == net_b.activate(senses)
+
+
+def test_dense_weight_scale_3_is_saturated_founder_diagnostic(cfg):
+    """Locks in the FALSIFIED-hyperneat.md root cause as a regression check.
+
+    At the (falsified) MVP default weight_scale=3.0, a majority of random
+    CPPN founders produce a substrate whose turn output doesn't vary at all
+    with which ray sees the apple (steer_score's near-zero-variance guard
+    returns exactly 0.0) — the substrate is saturated, not just weak. If
+    this ever stops reproducing, the diagnosis in docs/FALSIFIED-hyperneat.md
+    needs revisiting.
+    """
+    rng = random.Random(0)
+    zero_count = 0
+    for _ in range(30):
+        TRACKER.reset()
+        cppn = Genome.new_fully_connected(
+            cfg.genome, CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS, rng
+        )
+        net = build_substrate_network(cppn, cfg.sensors, cfg.network, cfg.hyperneat)
+        if steer_score(net, cfg.sensors) == 0.0:
+            zero_count += 1
+    assert zero_count >= 15  # majority saturated at weight_scale=3.0 (default)
+
+
+def test_lower_weight_scale_fixes_founder_saturation(cfg):
+    """The V2 diagnosis: weight_scale, not density, drives the saturation.
+
+    Same founders, only ``weight_scale`` lowered (0.5 instead of the
+    default 3.0, ``connectivity`` left dense at 1.0) — zero saturated
+    founders, matching the sweep behind ``config/lever_hyperneat_v2.yaml``.
+    """
+    low_scale_hn = dataclasses.replace(cfg.hyperneat, weight_scale=0.5)
+    rng = random.Random(0)
+    for _ in range(30):
+        TRACKER.reset()
+        cppn = Genome.new_fully_connected(
+            cfg.genome, CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS, rng
+        )
+        net = build_substrate_network(cppn, cfg.sensors, cfg.network, low_scale_hn)
+        assert steer_score(net, cfg.sensors) != 0.0
 
 
 # ------------------------------------------------------------------ #

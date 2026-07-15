@@ -403,9 +403,23 @@ class HyperNEATConfig:
     # linear (unbounded), so this keeps substrate weights in the same order
     # of magnitude as directly-encoded ones (genome.weight_max default 5.0).
     weight_scale: float = 3.0
+    # Fraction of input sources kept per output, by |weight| (mirrors
+    # genome.initial_connectivity's semantics/naming). 1.0 (default) = dense,
+    # every input wired to every output — the original MVP, FALSIFIED
+    # (docs/FALSIFIED-hyperneat.md): summing ~48 correlated substrate
+    # connections into one output saturates tanh and drowns any single
+    # ray's signal (steer_score exactly 0.0 on 74/100 random CPPN founders).
+    # Lower values keep only the top-``connectivity`` fraction of edges per
+    # output (at least 1, so no output is permanently silent — same floor
+    # as ``Genome._founder_inputs_for``), directly reducing that background
+    # sum — the sparsification the HyperNEAT literature (D'Ambrosio & Stanley
+    # 2010) uses a learned LEO output for; this is the simpler, fixed-
+    # threshold version, one variable at a time per this project's discipline.
+    connectivity: float = 1.0
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_scale")
+        _require_rate(self, "connectivity")
 
 
 @dataclass(frozen=True)

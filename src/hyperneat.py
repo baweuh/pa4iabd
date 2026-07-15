@@ -99,13 +99,19 @@ def substrate_input_coords(sensors: SensorConfig) -> list[tuple[float, float, fl
 def build_substrate_genome(
     cppn_net: NeuralNetwork, sensors: SensorConfig, hyperneat_config: HyperNEATConfig
 ) -> Genome:
-    """Query ``cppn_net`` for every (input, output) pair to build a dense substrate.
+    """Query ``cppn_net`` for every (input, output) pair to build the substrate.
 
     The substrate is a fresh, throwaway ``Genome`` (never mutated or evolved
     itself — it is fully rebuilt from the CPPN for every agent) with the same
     node-id convention as ``Genome.new_fully_connected``: inputs ``0..N-1``,
     outputs ``N..N+1``. A local ``InnovationTracker`` is enough since these
     innovation numbers are never compared against another genome's.
+
+    ``hyperneat_config.connectivity`` (default 1.0 = dense, every input wired
+    to every output — the original MVP) keeps only the top-``connectivity``
+    fraction of edges per output by ``|weight|`` when < 1.0, at least 1 —
+    see ``HyperNEATConfig.connectivity`` for why (dense summation was
+    diagnosed as saturating the output, docs/FALSIFIED-hyperneat.md).
     """
     input_coords = substrate_input_coords(sensors)
     num_inputs = len(input_coords)
@@ -114,23 +120,53 @@ def build_substrate_genome(
     nodes = [NodeGene(i, INPUT) for i in range(num_inputs)]
     nodes += [NodeGene(num_inputs + j, OUTPUT) for j in range(num_outputs)]
 
-    tracker = InnovationTracker()
-    connections: list[ConnectionGene] = []
+    # Same i-outer, j-inner query order as the original (dense-only) MVP, so
+    # connectivity=1.0 stays byte-for-byte identical (edges list, innovation
+    # numbering, float-summation order all unchanged).
+    edges: list[tuple[int, int, float]] = []  # (in_node, out_node, weight)
     for i, (x1, y1, z1) in enumerate(input_coords):
         for j, (x2, y2, z2) in enumerate(_OUTPUT_COORDS):
             raw_weight = cppn_net.activate([x1, y1, z1, x2, y2, z2])[0]
             weight = math.tanh(raw_weight) * hyperneat_config.weight_scale
-            out_id = num_inputs + j
-            connections.append(
-                ConnectionGene(
-                    in_node=i,
-                    out_node=out_id,
-                    weight=weight,
-                    enabled=True,
-                    innovation=tracker.innovation_for(i, out_id),
-                )
-            )
+            edges.append((i, num_inputs + j, weight))
+
+    tracker = InnovationTracker()
+    connections = [
+        ConnectionGene(
+            in_node=i,
+            out_node=o,
+            weight=w,
+            enabled=True,
+            innovation=tracker.innovation_for(i, o),
+        )
+        for i, o, w in _select_edges(edges, hyperneat_config.connectivity)
+    ]
     return Genome(nodes, connections)
+
+
+def _select_edges(
+    edges: list[tuple[int, int, float]], connectivity: float
+) -> list[tuple[int, int, float]]:
+    """Keep the top-``connectivity`` fraction of edges per output, by ``|weight|``.
+
+    ``connectivity >= 1.0`` returns ``edges`` unchanged — the exact same
+    list, no re-sort (legacy dense path, byte-for-byte identical to the
+    original MVP). Lower values keep at least 1 edge per output, same "no
+    output stays permanently silent" floor as
+    ``Genome._founder_inputs_for``; the original relative order is
+    preserved among the survivors (no reordering beyond dropping entries).
+    """
+    if connectivity >= 1.0:
+        return edges
+    by_output: dict[int, list[tuple[int, int, float]]] = {}
+    for edge in edges:
+        by_output.setdefault(edge[1], []).append(edge)
+    kept: set[tuple[int, int]] = set()
+    for group in by_output.values():
+        k = max(1, round(connectivity * len(group)))
+        ranked = sorted(group, key=lambda e: abs(e[2]), reverse=True)
+        kept.update((e[0], e[1]) for e in ranked[:k])
+    return [e for e in edges if (e[0], e[1]) in kept]
 
 
 def build_substrate_network(
