@@ -1,11 +1,12 @@
 # Synthèse du projet — ALife Neuroevolution
 
 > Vue d'ensemble transverse : de la fondation technique (Phases 1-8) à la branche
-> `poc2.4`. Pour le détail, voir `docs/Phase/*` (implémentation), les audits
-> `docs/Audits/*`, et pour poc2.4 `docs/DESIGN-poc2.4-perf.md` (perf) +
-> `docs/RESULTS-novelty.md` (nouveauté).
-> Rédigé le 2026-07-08, mis à jour le 2026-07-10 (poc2.4 : perf ×4 de la boucle
-> de recherche, et bonus de nouveauté = 1er levier positif, promu en défaut).
+> `poc2.5`. Pour le détail, voir `docs/Phase/*` (implémentation), les audits
+> `docs/Audits/*`, poc2.4 `docs/DESIGN-poc2.4-perf.md` (perf) +
+> `docs/RESULTS-novelty.md` (nouveauté), et poc2.5
+> `docs/DESIGN-hyperneat-mvp.md` + `docs/FALSIFIED-hyperneat.md` (HyperNEAT).
+> Rédigé le 2026-07-08, mis à jour le 2026-07-16 (poc2.5 : feuille de route
+> recherche close 5/5, HyperNEAT falsifié en V1+V2 — voir §6).
 
 ---
 
@@ -23,10 +24,19 @@ Juil 7-8     poc2.3          Capteurs 67 + viz réseau, puis 4 relances/audits :
                              volet 3 (crossover) 🟡 · volet 4 (crossover+bigpop) ❌ ·
                              volet 5 (ablation capteur → 49 promu défaut) ✅
    ↓
-Juil 10      poc2.4          Perf ×4 de la boucle de recherche (campagnes parallèles
+Juil 10-15   poc2.4          Perf ×4 de la boucle de recherche (campagnes parallèles
                              + perception batchée NumPy), puis reprise recherche :
-                             bonus de NOUVEAUTÉ ✅ = 1er levier positif (+10 sur
-                             6 seeds), promu en défaut (52 %→62 % fourrageurs)
+                             NOUVEAUTÉ ✅ (+10) et K-SWEEP ✅ (+13, meilleur résultat
+                             net) promus en défaut ; fitness sharing/troncature/
+                             biais/îles ❌ falsifiés ; instrumentation étendue +
+                             audit + cleanup
+   ↓
+Juil 15-16   poc2.5          HyperNEAT (encodage indirect, research-roadmap #4,
+                             dernier point ouvert) : CPPN→substrat, 2 outils
+                             (inspect_network, trace_lineage), V1 ❌ (pire
+                             régression du projet, −52) puis V2 ❌ corrigée
+                             (root cause fixée, +4 seulement, −48 encore) —
+                             feuille de route recherche CLOSE (5/5)
 ```
 
 Fil rouge unique de tout le projet **évolutif** : *le fourrage dirigé est trop
@@ -597,12 +607,56 @@ relevés non corrigés (voir PLAN.md : forager_threshold en dur dans
 run_and_probe, from_json+tracker latent, code quasi-mort, warnings renderer).
 
 Bilan de session (2026-07-15) : 249 tests verts, black clean, pylint 9.96/10
-(`src/`). Chantier suivant (session à venir) : **encodage indirect type
-HyperNEAT** (research-roadmap #4, dernier recours) — CPPN + substrat
-géométrique exploitant la régularité de l'anneau de rayons, plus lourd et
-plus spéculatif que A/B/D, à cadrer avec Robin avant de s'y engager. Les 2
-fixes d'audit tombent à pic : HyperNEAT stressera justement les boucles
-`tick()` (fuite) et la perf.
+(`src/`). Cleanup mineur post-audit traité dans la foulée (`234fc6e`) : les
+5 points relevés ci-dessus (forager_threshold en dur, monkeypatch
+redondant, `open()` sans context manager, 3 warnings pylint renderer)
+tous corrigés, 249 tests verts, pylint 10/10.
+
+### poc2.5 — HyperNEAT (encodage indirect), V1 et V2 falsifiées (2026-07-15/16)
+
+Dernier point ouvert de la feuille de route recherche (#4) : au lieu que
+le génome décrive directement le réseau 49→2, il décrit un **CPPN**
+(6 coordonnées → 1 poids) interrogé sur la géométrie de l'anneau de 16
+rayons pour produire les poids d'un **substrat fixe**. Découverte clé :
+`Genome`/`NeuralNetwork` sont déjà agnostiques à ce qu'ils représentent —
+le CPPN s'évolue avec l'infrastructure NEAT existante **sans aucune
+modification** (mutation/crossover/spéciation inchangés). Deux outils
+livrés en prérequis : `tools/inspect_network.py` (boucle 0-tick :
+steer_score + régularité géométrique + transfert de résolution) et
+`tools/trace_lineage.py` (vraie lignée agent→parent→…→fondateur sur un
+run pop-pleine, monkeypatch process-local).
+
+**V1 (substrat dense, `weight_scale=3.0`) — FALSIFIÉ, pire régression du
+projet.** Campagne 6 seeds/15k : moyenne foragers **67%→15% (−52)**,
+dépasse le nœud de biais (−34, pire précédent). Les 6 seeds régressent,
+2 s'effondrent démographiquement (190/400, 43/400 — jamais vu avant).
+Root cause diagnostiquée empiriquement (pas juste un score) :
+`steer_score` exactement 0,0 sur 74/100 CPPN fondateurs aléatoires contre
+0/100 génomes directs — le CPPN à 0 nœud caché (purement linéaire) sature
+son propre `tanh` de sortie, noyant le signal d'un rayon isolé.
+
+**V2 (`weight_scale→0,5`, substrat resté dense) — RE-FALSIFIÉ, amélioration
+réelle mais insuffisante.** Sweep founder-level (0 tick, avant toute
+campagne) affine le diagnostic : la densité seule n'est pas la cause
+dominante (sparsification testée via `hyperneat.connectivity`, réduit sans
+éliminer la dégénérescence) ; `weight_scale` l'est (fondateurs dégénérés
+106/150 à 3,0 → 0/150 dès ≤0,75). Campagne 6 seeds/15k : moyenne foragers
+**15%→19% (+4)**, toujours −48 sous le défaut. Plus aucun effondrement
+démographique (les 6 seeds à pop=400) — la saturation fondatrice était une
+vraie cause et est corrigée — mais la compétence évoluée reste très
+faible : `hidden` moyen quasi nul (0,05–0,17), CPPN à 6 poids fortement
+couplés, hypothèse d'évolvabilité limitée non résolue.
+
+`hyperneat.enabled` reste absent (=false) dans `default.yaml`. Mécanisme +
+outils gardés câblés/testés comme référence (273 tests, pylint 9.97/10).
+V3 (bootstrap nœuds cachés CPPN, mutation dédiée) identifié mais **non
+engagé** — décision à prendre avec Robin. Détails complets :
+`docs/DESIGN-hyperneat-mvp.md`, `docs/FALSIFIED-hyperneat.md`.
+
+**Feuille de route recherche : 5/5 items désormais traités** (fitness
+sharing, troncature, biais, îles, HyperNEAT = falsifiés ; novelty =
+seul levier positif). Aucun chantier recherche ouvert — prochaine
+direction à cadrer avec Robin depuis zéro.
 
 ## 7. Historique des commits clés
 
@@ -635,3 +689,10 @@ fixes d'audit tombent à pic : HyperNEAT stressera justement les boucles
 | `571e3aa` | docs : synthèse — K-sweep, îles, instrumentation ; fin de session |
 | `f070f64` | poc2.4 : fix — tools/campaign.py n'activait jamais le CSV logger |
 | `c25263b` | poc2.4 : fix audit — fuite mémoire accumulateurs diagnostics + cache steer_score |
+| `bea6878` | poc2.4 : audit du code — 2 fixes documentés ; fin de session |
+| `234fc6e` | poc2.4 : cleanup mineur post-audit (5 points corrigés) |
+| `2f217f0` | poc2.5 : HyperNEAT MVP — CPPN indirect encoding + inspect_network.py |
+| `5999b92` | poc2.5 : tools/trace_lineage.py — vraie lignée du champion sur run pop-pleine |
+| `fe58603` | poc2.5 : HyperNEAT MVP falsifié — campagne 6 seeds, pire régression du projet |
+| `694ccb5` | poc2.5 : HyperNEAT V2 — connectivity + diagnostic affiné (weight_scale) |
+| `d5910be` | poc2.5 : HyperNEAT V2 re-falsifié — amélioration réelle mais insuffisante |
