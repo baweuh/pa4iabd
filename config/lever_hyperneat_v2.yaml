@@ -1,0 +1,125 @@
+# Lever test (poc2.5, HyperNEAT V2): identical to config/default.yaml, ONE
+# thing changed vs the FALSIFIED MVP (config/lever_hyperneat_mvp.yaml,
+# docs/FALSIFIED-hyperneat.md) — hyperneat.weight_scale 3.0 -> 0.5.
+#
+# The MVP's founder-level diagnosis found the dense substrate connectivity
+# was NOT the primary cause of saturation (a sparsification sweep,
+# hyperneat.connectivity, reduced but did not eliminate degenerate founders
+# and did not fix the mean steer_score). Digging further: the CPPN starts
+# with 0 hidden nodes (purely linear) and weight_scale=3.0 means even a
+# modest raw CPPN output saturates tanh — EVERY substrate weight lands near
+# +-3.0 regardless of which sensor/output pair is queried, before the
+# substrate even sums them. A founder-level sweep (0 tick, no campaign)
+# found the degenerate-founder fraction (steer_score exactly 0.0, the
+# turn output not varying with which ray sees the apple) drops from
+# 106/150 at weight_scale=3.0 to 0/150 at weight_scale<=0.75, with a
+# steer_score distribution then comparable to direct-encoding founders
+# (mean near 0, healthy spread, no exact zeros). weight_scale=0.5 gives
+# margin below that 0.75 elbow. connectivity stays at its default (1.0,
+# dense) — one variable at a time, per this project's discipline.
+#
+# Default simulation configuration.
+# Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
+# sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
+# NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
+# adding inputs itself destabilises the fully-connected initial genome. The
+# 49-input legacy layout is the only one that reproduces robust 3-seed foraging
+# (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
+# Energy is expressed in apple-equivalent units (invariant n°2).
+
+world:
+  width: 3200          # pixels (2263 * sqrt(2), rounded)
+  height: 1800          # pixels (1273 * sqrt(2), rounded)
+
+penalty_zone:
+  width: 141           # thickness from the wall, in pixels
+  max_drain: 0.003     # energy drained per tick at the wall (softened: was 0.005)
+
+agent:
+  radius: 11.31
+  max_speed: 2.122      # halved (was 4.243) — less ground swept per tick, see header
+  initial_energy: 1.0
+  max_energy: 2.0
+  energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
+  max_age: 5000        # ticks
+  reproduction_threshold: 1.1     # ~1 apple from start → birth; high-r bootstrap (was 1.3)
+  reproduction_cost: 0.35         # more offspring per apple keeps the pop viable (was 0.6)
+  end_of_life_ticks: 500
+  max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
+  move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
+  apples_per_offspring: 1.5      # >0 = fecundity from cumulative apples (structural)
+
+sensors:
+  num_rays: 16
+  max_distance: 283    # pixels
+  fov: 360             # degrees
+  split_distance: false   # legacy layout: 1 combined nearest-object distance/ray
+  proprioception: false   # legacy layout: no actual_speed input
+  apples_in_view: false   # legacy layout: no apples_in_view input
+
+network:
+  num_inputs: 49        # 3*num_rays + 1 : dist, apple_flag, wall_flag (×16) + energy
+  num_outputs: 2         # vx_brut, vy_brut (normalised post-output)
+  activation: "tanh"
+
+apple:
+  count: 160            # denser food → random walkers stumble on it sooner (was 50)
+  radius: 7.07
+  energy: 0.5
+  respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
+
+genome:
+  weight_init_range: 1.0
+  weight_mutation_rate: 0.15
+  weight_perturbation: 0.05
+  add_node_rate: 0.03
+  add_connection_rate: 0.05
+  remove_node_rate: 0.01
+  remove_connection_rate: 0.02
+  weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
+  crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
+
+speciation:
+  # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
+  # Under HyperNEAT this measures CPPN structural distance (6->1 topology),
+  # not the substrate's — same mechanism, different genotype. fitness_sharing
+  # stays off (never promoted, see config/lever_fitness_sharing.yaml).
+  c_excess: 1.0
+  c_disjoint: 1.0
+  c_weight: 0.4
+  compatibility_threshold: 3.0   # genomes closer than this share a species
+  fitness_sharing: false
+
+# Additive behavioural-novelty bonus — kept ON (default.yaml value) so this
+# lever isolates ONE change (hyperneat.weight_scale) against the current
+# default, not a reversion to a pre-novelty baseline.
+novelty:
+  enabled: true
+  weight: 1.0
+  neighbors: 15
+  recompute_interval: 10
+
+# HyperNEAT V2 (poc2.5): weight_scale lowered 3.0 -> 0.5 (see header for the
+# founder-level diagnosis). connectivity left at its default (1.0, dense).
+hyperneat:
+  enabled: true
+  weight_scale: 0.5
+
+population:
+  initial_size: 200        # large initial pool → more random walkers find food naturally
+  max_size: 400            # accommodate growth from successful hunters
+
+simulation:
+  ticks_per_second: 60
+  max_ticks: 0         # 0 = run forever
+  seed: 42
+
+logging:
+  csv_path: "logs/metrics.csv"
+  log_interval_ticks: 100
+  best_genome_path: "logs/best_genome.json"
+
+render:
+  fps: 60
+  window_width: 3200
+  window_height: 1800

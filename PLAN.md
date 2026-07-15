@@ -476,3 +476,22 @@
         0,0 sur 74/100 CPPN fondateurs vs 0/100 génomes directs).
         `hyperneat.enabled` reste absent (=false) dans `default.yaml`.
         Détails complets : `docs/FALSIFIED-hyperneat.md`.
+- [x] ✅ **HyperNEAT V2 — correction ciblée, RE-FALSIFIÉ (amélioration
+        réelle mais insuffisante)**. Diagnostic affiné avant campagne
+        (sweep founder-level, 0 tick) : la sparsification seule
+        (`hyperneat.connectivity`, câblée + testée comme mécanisme
+        secondaire, 4 tests dédiés) réduit mais n'élimine pas la
+        dégénérescence. Vraie cause dominante : `weight_scale=3.0` sature
+        le CPPN (0 nœud caché = purement linéaire) AVANT même la sommation
+        du substrat — fondateurs dégénérés 106/150 à scale 3,0 → 0/150 dès
+        scale≤0,75. `config/lever_hyperneat_v2.yaml` : `weight_scale`
+        3,0→0,5 (une seule variable, `connectivity` reste dense).
+        **Campagne 6 seeds/15k : moy foragers 15%→19% (+4), toujours −48
+        vs défaut (67%)**. Toujours falsifié — mais plus aucun effondrement
+        démographique (V1 avait 2 seeds proches de l'extinction, tous à
+        pop=400 en V2). `hidden` moyen reste quasi nul (0,05–0,17) :
+        hypothèse retenue = évolvabilité du CPPN à 6 poids fortement
+        couplés (pas juste la saturation fondatrice, déjà corrigée). V3
+        (bootstrap nœuds cachés, mutation CPPN dédiée) **à décider avec
+        Robin**, pas engagé. 273 tests verts, black clean, pylint 9.97/10.
+        Détails complets (V1+V2) : `docs/FALSIFIED-hyperneat.md`.
