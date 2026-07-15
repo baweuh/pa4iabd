@@ -509,19 +509,46 @@ campagne 15k reste sous le défaut (58%) mais **passe positive à 30k
 ont déjà montré qu'une population plus petite rouvre la dérive fondatrice).
 Voir `docs/RESULTS-density.md`.
 
-**Critère minimal de reproduction — câblé + testé, validation coupée** :
-Robin veut une repro non frénétique (réservée aux profils durablement
-compétents) et une pop qui flotte dans une bande 400-500 au lieu d'être
-épinglée. Littérature de neuroévolution non-épisodique (Soros & Stanley 2016 ;
-arXiv:2302.09334). Nouveau `agent.reproduction_min_ticks` (0 = legacy) : un
-agent doit tenir un crédit ≥ seuil N ticks consécutifs → **un** enfant → reset
-réfractaire. `config/lever_min_criterion.yaml` (min_ticks 1000, max_size 500).
-189 tests verts. **Enseignement partiel** : un plafond relevé à 500 s'ÉPINGLE
-à 500 (plus dense, contraire à l'anti-surpeuplement) sauf sous gating fort —
-seul min_ticks ≥ ~1000 fait vraiment flotter la pop (~422). Forager% à 15k
-neutre pour 300/600 (58-59 % ≈ défaut) ; 1000 non mesuré (session coupée).
-Reprise = campagne 30k sur `lever_min_criterion.yaml`. `default.yaml` garde le
-paramètre absent (= 0). Commit `0700645`.
+**Critère minimal de reproduction — testé, falsifié** : Robin voulait une repro
+non frénétique (réservée aux profils durablement compétents) et une pop qui
+flotte dans une bande 400-500 au lieu d'être épinglée. Littérature de
+neuroévolution non-épisodique (Soros & Stanley 2016 ; arXiv:2302.09334).
+Nouveau `agent.reproduction_min_ticks` (0 = legacy) : un agent doit tenir un
+crédit ≥ seuil N ticks consécutifs → **un** enfant → reset réfractaire.
+`config/lever_min_criterion.yaml` (min_ticks 1000, max_size 500). **Campagne
+30k/6 seeds (2026-07-15)** : forager% quasi neutre (62%→63%, +1, bruit),
+**variance extrême** (seed 7 : 84→32, −52 ; seed 99 : 27→79, +52), et surtout
+la population NE flotte PAS — tous les seeds terminent épinglés 488-500,
+l'objectif principal n'est pas atteint. **6ᵉ réducteur falsifié**, profil
+identique à fitness sharing/biais/archive. `default.yaml` garde le paramètre
+absent (= 0). Voir `docs/FALSIFIED-min-criterion.md`.
+
+**Troncature de sélection adoucie — testée, falsifiée, pas de bug (chantier
+n°2)** : point #2 de la feuille de route, sauté par hypothèse en 2026-07-08,
+repris et testé le 2026-07-15. `_reproduce_by_energy`/`_reproduce_by_foraging`
+laissaient le meilleur agent drainer tous les slots d'un tick (boucle `while`)
+avant même de regarder le 2ᵉ — littérature (Corus et al. 2021) : troncature
+gloutonne = moteur mécanique d'effets fondateurs. Deux mécanismes câblés :
+`agent.max_children_per_tick` (plafond plat, 0=legacy) et
+`agent.reproduction_round_robin` (répartition breadth-first réelle via
+`_round_robin_fill`, false=legacy — un agent seul sans concurrence reçoit
+quand même tous les slots, contrairement au plafond plat). Sweep 1 seed/10k :
+cap≥3 = no-op (jamais atteint), cap=1/2 sous la baseline ; round-robin
+identique bit à bit à cap=1 (78% vs 82%). **Campagne 30k/6 seeds sur
+round_robin** : mean **62%→65% (+3)** mais variance forte (seed 123 : 76→53,
+−23 ; seed 1 : 23→56, +33) — **1er cas MIXTE du projet** (ni victoire nette
+comme novelty, ni échec net comme les réducteurs). **Diagnostic CSV
+tick-par-tick** (seed 123, demande explicite de Robin) : les deux trajectoires
+sont identiques bit à bit jusqu'à ce que la population atteigne `max_size`
+(~tick 3400), puis divergent car round-robin change l'ordre des naissances →
+change l'ordre de consommation RNG (mutations) → cascade chaotique. **Pas de
+bug** : même sensibilité aux effets fondateurs que crossover/fitness
+sharing/biais/critère minimal. Décision Robin : **ne pas promouvoir**, même
+profil de risque que les réducteurs à variance forte déjà écartés.
+`default.yaml` garde les deux paramètres absents/legacy. Bonus livré :
+`tools/campaign.py` affiche une progression périodique plain-text
+(`--progress-interval`, `--quiet`). 202 tests verts, pylint 9.96/10. Voir
+`docs/FALSIFIED-truncation.md`.
 
 ## 7. Historique des commits clés
 
@@ -545,3 +572,7 @@ paramètre absent (= 0). Commit `0700645`.
 | `282d3aa` | poc2.4 : archive de nouveauté câblée puis falsifiée (moy 62→55) |
 | `6ef2938` | poc2.4 : nœud de biais NEAT câblé puis falsifiée (moy 62→28, pire régression) |
 | `21c82a6` | poc2.4 : fix freeze ~100 ticks — mean_pairwise_distance vectorisée NumPy (318→39ms) |
+| `b3b4afc` | poc2.4 : densité — carte agrandie + vitesse ÷2 promue en défaut (62%→66% @30k) |
+| `0700645` | poc2.4 : critère minimal de reproduction câblé (non promu) |
+| `70e7432` | poc2.4 : critère minimal falsifié — variance extrême, population épinglée |
+| `fd5c116` | poc2.4 : troncature de sélection adoucie — testée, falsifiée, pas de bug |
