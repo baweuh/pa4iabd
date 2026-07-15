@@ -1,4 +1,9 @@
-# Default simulation configuration.
+# Lever test (poc2.4, chantier K-sweep, 2026-07-15): apples_per_offspring=1.5
+# (default 3.0). Goal: lift the current default's weakest seed (99, 32% @30k
+# with novelty+density active) without regressing 42/5. Sweep 1.5/2.0/2.5/3.5/4.0/5.0
+# at 6 seeds/15k, confirm the best candidate at 30k. Identical to default.yaml
+# except agent.apples_per_offspring.
+#
 # Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
 # sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
 # NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
@@ -17,17 +22,6 @@
 # seed 1 : 23%→58%) even though the same lever was mean-negative at 15k
 # (agents eat less per tick, so foraging selection needs more ticks to show).
 # See docs/RESULTS-density.md.
-#
-# agent.apples_per_offspring PROMOTED 3.0→1.5 (poc2.4, 2026-07-15, K-sweep
-# chantier): swept {1.5,2.0,2.5,3.0,3.5,4.0,5.0} at 6 seeds/15k looking for a
-# cheaper offspring gate to lift the seeds density left weak (99 was 32% at
-# 30k). K=1.5 won clearly at 15k (67% vs 58% default) and, confirmed at 30k,
-# is the best single-lever result in the project: mean 66%→79% (+13), 5/6
-# seeds UP (up to +24 on seed 99, 32→56) and the 6th essentially flat
-# (7: 77→76). Cheaper offspring means faster generational turnover per apple
-# eaten — more chances for selection to act per unit of foraging competence,
-# same direction as bigpop's "reduce founder drift" but via reproduction
-# cadence instead of population size. See docs/RESULTS-k-sweep.md.
 
 world:
   width: 3200          # pixels (2263 * sqrt(2), rounded)
@@ -49,7 +43,7 @@ agent:
   end_of_life_ticks: 500
   max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
   move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
-  apples_per_offspring: 1.5      # >0 = fecundity from cumulative apples (structural)
+  apples_per_offspring: 1.5      # K-sweep candidate, see header
 
 sensors:
   num_rays: 16
