@@ -248,29 +248,23 @@
         d'attente de repro : à chaque tick `slots = max_size − survivants`,
         les morts du tick sont remplacés le tick même par les agents de plus
         haute priorité (énergie ou crédit de fourrage).
-- [ ] 🔄 **Critère minimal de reproduction + bande souple — CÂBLÉ + TESTÉ,
-        validation coupée par manque de temps** (demande de Robin : repro non
-        frénétique, réservée aux profils durablement compétents, pop flottant
-        dans une bande 400-500 au lieu d'être épinglée au plafond). Fondé sur
-        la littérature de neuroévolution non-épisodique / critère minimal
-        (Soros & Stanley 2016 ; arXiv:2302.09334). Nouveau paramètre
-        `agent.reproduction_min_ticks` (0 = legacy byte-identique) : un agent
-        doit AVOIR TENU un crédit ≥ `apples_per_offspring` pendant N ticks
-        consécutifs avant de produire **UN** enfant, puis reset (période
-        réfractaire — plus de reflux à chaque tick). Compteur `_credit_streak`
-        calqué sur le cycle de vie de `_repro_credit`. `config/lever_min_criterion.yaml`
-        (min_ticks 1000, `max_size` 500). 7 nouveaux tests, 189 verts, black
-        clean, pylint 10/10. Commit `0700645`.
-        **Résultats partiels** :
-        (a) **Sweep de population** (1 seed, 10k) : min_ticks 60/150/300/600
-        **épinglent** la pop à 500 (moy ~485-495) = PLUS dense que le défaut
-        400 → contraire à l'objectif anti-surpeuplement ; seul min_ticks ≥
-        ~1000 fait vraiment flotter la pop (moy ~422, plage 241-500). La
-        « bande flottante » demandée exige donc un **gating fort**.
-        (b) **Forager% 6 seeds/15k** vs défaut courant (58 % @ 15k) :
-        min_ticks 300 → 59 %, 600 → 58 % (neutres, mais épinglés à 500) ;
-        **min_ticks 1000 = NON MESURÉ** (campagne coupée). Comme la densité
-        (plate à 15k, +4 à 30k), 15k sous-estime probablement.
-        **Reprise** : `python -m tools.campaign config/lever_min_criterion.yaml
-        30000 42,7,123,1,5,99` (vs défaut à 30k ; vérifier bande + forager%
-        ≥ 66). `default.yaml` garde `reproduction_min_ticks` absent (= 0).
+- [x] ✅ **Critère minimal de reproduction + bande souple — FALSIFIÉ**
+        (2026-07-15, campagne 30k complète). Littérature (Soros & Stanley 2016,
+        arXiv:2302.09334) proposait un gate de viabilité durable : agent doit
+        TENIR un crédit ≥ `apples_per_offspring` pendant N ticks consécutifs
+        avant UN enfant (réfractaire, moins frénétique), + pop flottant sous
+        cap souple. Implémentation : `agent.reproduction_min_ticks` (0=legacy),
+        `_credit_streak` dans `simulation.py`, config `lever_min_criterion.yaml`
+        (min_ticks=1000, max_size=500), 7 tests, 189 verts. Commit `0700645`.
+        **Validation 30k (6 seeds)** : ❌
+        (a) **Forager% neutre** : défaut 62% → min_criterion 63% (+1, bruit).
+            Contre l'objectif « sélection plus stricte ».
+        (b) **Variance extrême** : seed 7 chute 84%→32% (−52), seed 99
+            s'envole 27%→79% (+52). Échange classique des réducteurs : une seed
+            gagne, une autre casse.
+        (c) **Population NOT flottante** : tous les seeds terminent 488–500
+            (épinglés au cap 500), pas de bande 400-500 comme visé. Objectif
+            principal non livré.
+        Verdict : 6e mécanisme falsifié, profil identique aux réducteurs (bias,
+        archive). `default.yaml` garde `reproduction_min_ticks` absent (=0).
+        Détails : `docs/FALSIFIED-min-criterion.md`.
