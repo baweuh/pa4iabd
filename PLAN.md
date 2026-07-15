@@ -384,3 +384,33 @@
         déjà documentées (K-sweep, îles, etc.) restent valides. 247 tests
         verts (inchangés, `tools/` non couvert par pytest), black clean,
         pylint 9.94/10 (idem avant, warnings préexistants hors périmètre).
+- [x] ✅ **Audit profond du code (demandé par Robin) — 2 bugs réels corrigés,
+        reste vérifié sain** (2026-07-15, `c25263b`). Lecture intégrale de
+        `src/` + `tools/`, chaque hypothèse vérifiée empiriquement (pas juste
+        raisonnée).
+        **(1) FUITE MÉMOIRE confirmée** : `_log_row()` retournait tôt sans
+        CSV ouvert, sautant `_diagnostics_row()` — seul endroit purgeant les
+        accumulateurs. Toute boucle `tick()` sans `open_csv_logger()`
+        (`tools/run_and_probe.py`, boucle d'éval, futur HyperNEAT) faisait
+        croître sans borne `_birth_events` (qui épingle des Agent morts +
+        génomes/réseaux) et les listes de densité. Prod non impactée (tous les
+        chemins ouvrent le CSV) mais piège latent. Fix :
+        `_reset_interval_accumulators()` + prune N_e appelés à chaque
+        intervalle de log avec OU sans CSV.
+        **(2) PERF / hitch** : `steer_score` recalculé sur toute la pop à
+        chaque ligne de log (56 ms @pop 400 /100 ticks, réédition réduite du
+        freeze corrigé). Or invariant pour un réseau gelé → mis en cache sur
+        l'Agent (`Agent.steer_score`, lazy, mémoïsé) comme
+        `behavior_descriptor`. Sweep 56 ms → ~0 en régime stationnaire.
+        Déterminisme CSV on/off toujours bit-à-bit. 3 nouveaux tests, 249
+        verts, black clean, pylint 9.96/10.
+        **Vérifié NON problématique** : îles > max_size (testé, n'arrive pas —
+        migration nette-nulle). **Mineurs relevés, non corrigés** (faible
+        valeur, à faire dans une passe cleanup dédiée) : `run_and_probe.py`
+        code en dur `0.1` au lieu de `diagnostics.forager_threshold` ;
+        `Genome.from_json`/`from_dict` ne fait pas `bump_node_floor` (latent,
+        aucun appelant ne mute un génome chargé) ; `Environment.in_safe_zone`
+        + `Simulation.run()` quasi-morts (tests seulement) ;
+        `apple_capture_probe.py` duplique `classify_capture` désormais dans
+        `src/diagnostics.py` ; `steer_probe.py` `open()` sans context manager ;
+        3 warnings pylint renderer préexistants (K_LEFT faux positif, etc.).

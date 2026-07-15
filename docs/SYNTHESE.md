@@ -583,11 +583,26 @@ densité locale (échantillonnée aux captures) + globale, `effective_population
 conditions réelles : N_e ~82-90 sur pop 400 — première mesure directe du
 diagnostic « sélection ≪ dérive » répété depuis poc2.2. 31 nouveaux tests.
 
-Bilan de session (2026-07-15) : 247 tests verts, black clean, pylint 10/10
+**Audit profond du code (demandé par Robin)** (2026-07-15, `c25263b`) :
+lecture intégrale de `src/`+`tools/`, chaque hypothèse vérifiée
+empiriquement. **2 bugs réels corrigés** : (1) **fuite mémoire** — les
+accumulateurs de diagnostics n'étaient purgés que dans le chemin CSV, donc
+une boucle `tick()` sans logger faisait croître sans borne `_birth_events`
+(épinglant des Agent morts) et les listes de densité ; purge découplée de
+l'écriture CSV. (2) **perf** — `steer_score` recalculé sur toute la pop à
+chaque ligne de log (56 ms /100 ticks), invariant pour un réseau gelé → mis
+en cache sur l'Agent, sweep 56 ms → ~0. Déterminisme CSV on/off préservé.
+Îles > max_size soupçonné mais **vérifié comme n'arrivant pas**. Mineurs
+relevés non corrigés (voir PLAN.md : forager_threshold en dur dans
+run_and_probe, from_json+tracker latent, code quasi-mort, warnings renderer).
+
+Bilan de session (2026-07-15) : 249 tests verts, black clean, pylint 9.96/10
 (`src/`). Chantier suivant (session à venir) : **encodage indirect type
 HyperNEAT** (research-roadmap #4, dernier recours) — CPPN + substrat
 géométrique exploitant la régularité de l'anneau de rayons, plus lourd et
-plus spéculatif que A/B/D, à cadrer avec Robin avant de s'y engager.
+plus spéculatif que A/B/D, à cadrer avec Robin avant de s'y engager. Les 2
+fixes d'audit tombent à pic : HyperNEAT stressera justement les boucles
+`tick()` (fuite) et la perf.
 
 ## 7. Historique des commits clés
 
@@ -617,3 +632,6 @@ plus spéculatif que A/B/D, à cadrer avec Robin avant de s'y engager.
 | `fd5c116` | poc2.4 : troncature de sélection adoucie — testée, falsifiée, pas de bug |
 | `6f634ab` | poc2.4 : K-sweep — apples_per_offspring 3.0→1.5, meilleur résultat net du projet |
 | `5c7c0ba` | poc2.4 : modèle d'îles (falsifié) + instrumentation étendue |
+| `571e3aa` | docs : synthèse — K-sweep, îles, instrumentation ; fin de session |
+| `f070f64` | poc2.4 : fix — tools/campaign.py n'activait jamais le CSV logger |
+| `c25263b` | poc2.4 : fix audit — fuite mémoire accumulateurs diagnostics + cache steer_score |
