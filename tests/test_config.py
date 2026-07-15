@@ -97,6 +97,33 @@ def test_reproduction_min_ticks_rejects_negative(raw: dict) -> None:
         SimConfig.from_dict(raw)
 
 
+def test_max_children_per_tick_defaults_zero_when_omitted(raw: dict) -> None:
+    # Backward-compatible addition: absent from every pre-existing config -> 0.
+    raw["agent"].pop("max_children_per_tick", None)
+    assert SimConfig.from_dict(raw).agent.max_children_per_tick == 0
+
+
+def test_max_children_per_tick_parsed_when_present(raw: dict) -> None:
+    raw["agent"]["max_children_per_tick"] = 2
+    assert SimConfig.from_dict(raw).agent.max_children_per_tick == 2
+
+
+def test_max_children_per_tick_rejects_negative(raw: dict) -> None:
+    raw["agent"]["max_children_per_tick"] = -1
+    with pytest.raises(ConfigError, match="max_children_per_tick must be >= 0"):
+        SimConfig.from_dict(raw)
+
+
+def test_reproduction_round_robin_defaults_false_when_omitted(raw: dict) -> None:
+    raw["agent"].pop("reproduction_round_robin", None)
+    assert SimConfig.from_dict(raw).agent.reproduction_round_robin is False
+
+
+def test_reproduction_round_robin_parsed_when_present(raw: dict) -> None:
+    raw["agent"]["reproduction_round_robin"] = True
+    assert SimConfig.from_dict(raw).agent.reproduction_round_robin is True
+
+
 def test_apple_respawn_delay_loaded(raw: dict) -> None:
     cfg = SimConfig.from_dict(raw)
     assert cfg.apple.respawn_delay == 150

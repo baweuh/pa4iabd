@@ -268,3 +268,46 @@
         Verdict : 6e mécanisme falsifié, profil identique aux réducteurs (bias,
         archive). `default.yaml` garde `reproduction_min_ticks` absent (=0).
         Détails : `docs/FALSIFIED-min-criterion.md`.
+- [x] ✅ **Troncature de sélection adoucie (research-roadmap chantier n°2) —
+        FALSIFIÉ, pas de bug, sensibilité chaotique confirmée** (2026-07-15).
+        Chantier identifié depuis le 2026-07-08, sauté par hypothèse
+        (« probable même échec réducteur »), enfin testé empiriquement. Deux
+        implémentations :
+        (a) `agent.max_children_per_tick` (0=legacy) : plafond plat d'enfants
+            par agent par tick. Sweep 1 seed/10k : cap∈{3,5,8,10} = no-op pur
+            (aucun agent ne dépasse jamais 3 enfants/tick sur ce seed) ; cap=1
+            → 78%, cap=2 → 80%, tous deux **sous** la baseline 82%.
+        (b) `agent.reproduction_round_robin` (false=legacy) : répartition
+            réellement breadth-first (`_round_robin_fill` dans
+            `simulation.py`) — un enfant par agent par PASSE avant qu'aucun
+            agent n'en reçoive un 2ᵉ, mais un agent seul (sans concurrence)
+            reçoit quand même tous les slots (passes successives), contrairement
+            au plafond plat. Sweep 1 seed/10k : identique bit à bit à cap=1
+            (78%), preuve qu'en régime stationnaire (≤1 slot ouvert/tick) tous
+            les mécanismes convergent.
+        **Campagne 30k (6 seeds) sur round_robin** : mean 62%→65% (+3), mais
+        variance élevée — seed 123 : 76%→53% (−23), seed 1 : 23%→56% (+33),
+        seed 5 : 81%→92% (+11), seed 99 : 27%→38% (+11), seed 7 : 84%→70%
+        (−14), seed 42 : 82%→80% (−2). Ni victoire nette (novelty : aucun seed
+        ne régresse) ni échec net (comme les réducteurs précédents) — premier
+        cas mixte du projet.
+        **Diagnostic demandé par Robin (seed 123, CSV tick-par-tick, défaut vs
+        round_robin)** : les deux trajectoires sont **identiques bit à bit
+        jusqu'à ce que la population atteigne `max_size=400`** (~tick 3400) —
+        avant ça, rarement plus d'un agent éligible par tick, donc round-robin
+        et le greedy legacy sont mathématiquement équivalents. Elles divergent
+        exactement au moment où une vraie compétition multi-agents apparaît :
+        round-robin change l'ORDRE des naissances → change l'ordre de
+        consommation du RNG (mutations) → cascade chaotique. **Pas de bug** :
+        même sensibilité aux effets fondateurs / à l'ordre de reproduction
+        que tous les leviers précédents (crossover, fitness sharing, biais,
+        critère minimal) — documentée depuis poc2.2. Round-robin ne fait que
+        redistribuer la loterie des mutations précoces différemment par seed.
+        Décision Robin : **ne pas promouvoir**, même profil de risque que les
+        réducteurs à variance élevée déjà écartés. `default.yaml` garde
+        `max_children_per_tick` et `reproduction_round_robin` absents (=0/false,
+        legacy). Bonus livré au passage : `tools/campaign.py` affiche
+        maintenant une ligne de progression périodique (`--progress-interval`,
+        `--quiet`) — plain-text, pas de barre carriage-return, lisible en
+        direct comme dans un log. 8 nouveaux tests, 202 verts, black clean,
+        pylint 9.96/10. Détails : `docs/FALSIFIED-truncation.md`.

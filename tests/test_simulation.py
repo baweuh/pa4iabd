@@ -306,6 +306,226 @@ def test_multi_offspring_high_energy(tmp_path):
     assert sim.total_reproductions >= 2  # at least two children this tick
 
 
+def test_max_children_per_tick_caps_energy_path(tmp_path):
+    # Truncation softening (research-roadmap chantier n°2): even with ample
+    # energy and free slots, one agent may not produce more than the cap.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 3.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,  # energy-based reproduction
+            "max_children_per_tick": 1,
+        },
+        population={"initial_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(7))
+    sim.env.apples.clear()
+    sim.population[0].energy = 3.0  # uncapped would afford ~8 children here
+    sim.tick()
+    assert sim.total_reproductions == 1
+
+
+def test_max_children_per_tick_spills_to_next_agent(tmp_path):
+    # Without the cap the top-priority agent alone would drain every open
+    # slot (test_multi_offspring_high_energy); with cap=1 the runner-up gets
+    # a slot too instead of being starved out by greedy truncation.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 3.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,  # energy-based reproduction
+            "max_children_per_tick": 1,
+        },
+        population={"initial_size": 2, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(8))
+    sim.env.apples.clear()
+    top, second = sim.population
+    top.energy, top.generation = cfg.agent.max_energy, 10
+    second.energy, second.generation = 2.0, 20  # also easily above threshold
+
+    sim.tick()
+
+    assert sim.total_reproductions == 2  # one slot each, no agent capped out
+    generations = {a.generation for a in sim.population}
+    assert 11 in generations  # top parent's child
+    assert 21 in generations  # runner-up also got a slot
+
+
+def test_max_children_per_tick_zero_is_legacy_unbounded(tmp_path):
+    # 0 (default) must reproduce test_multi_offspring_high_energy's uncapped
+    # behaviour byte-for-byte: same config, no max_children_per_tick override.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,
+        },
+        population={"initial_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(7))
+    sim.env.apples.clear()
+    sim.population[0].energy = 2.5
+    sim.tick()
+    assert sim.total_reproductions >= 2
+
+
+def test_max_children_per_tick_caps_foraging_legacy_path(tmp_path):
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "apples_per_offspring": 2.0,
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_cost": 0.1,
+            "max_children_per_tick": 1,
+        },
+        population={"initial_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()
+    agent = sim.population[0]
+    agent.energy = cfg.agent.max_energy
+    sim._repro_credit[agent] = 10.0  # uncapped would give floor(10/2) = 5 children
+
+    sim.tick()
+
+    assert sim.total_reproductions == 1
+    assert sim._repro_credit[agent] == pytest.approx(
+        8.0
+    )  # only one child's credit spent
+
+
+# ------------------------------------------------------------------ #
+# Round-robin reproduction (truncation softening, take 2)
+# ------------------------------------------------------------------ #
+
+
+def test_round_robin_splits_evenly_between_competing_agents(tmp_path):
+    # Breadth-first softening: with two competing agents, round-robin gives
+    # each ONE child per pass instead of letting the top-priority agent claim
+    # every slot before the runner-up is even looked at (contrast with
+    # test_reproduction_prioritises_highest_energy_at_cap's legacy behaviour).
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 3.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,  # energy-based reproduction
+            "reproduction_round_robin": True,
+        },
+        population={"initial_size": 2, "max_size": 6},
+    )
+    sim = Simulation(cfg, random.Random(8))
+    sim.env.apples.clear()
+    top, second = sim.population
+    top.energy, top.generation = cfg.agent.max_energy, 10  # higher priority
+    second.energy, second.generation = 2.0, 20
+
+    sim.tick()  # 4 free slots (6 - 2 survivors)
+
+    assert sim.total_reproductions == 4
+    gens = [a.generation for a in sim.population]
+    assert gens.count(11) == 2  # top parent: 2, not all 4
+    assert gens.count(21) == 2  # runner-up: 2 too, not shut out
+
+
+def test_round_robin_no_ceiling_without_competition(tmp_path):
+    # Unlike a flat max_children_per_tick cap, round-robin never artificially
+    # limits a SOLE eligible agent — with nobody to alternate with, it still
+    # claims every open slot, just spread across successive passes.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 2.0,
+            "max_energy": 3.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,
+            "reproduction_round_robin": True,
+        },
+        population={"initial_size": 1, "max_size": 10},
+    )
+    sim = Simulation(cfg, random.Random(7))
+    sim.env.apples.clear()
+    sim.population[0].energy = 2.5
+    sim.tick()
+    assert sim.total_reproductions >= 2  # matches the uncapped legacy result
+
+
+def test_round_robin_splits_foraging_credit_under_slot_scarcity(tmp_path):
+    # Same breadth-first split on the foraging-credit path, this time under
+    # slot scarcity so legacy-vs-round-robin actually diverge: legacy would
+    # give the richer forager 3 children and the poorer one only 1 (its
+    # credit priced out once slots run low); round-robin gives 2 and 2.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "apples_per_offspring": 2.0,
+            "initial_energy": 3.0,
+            "max_energy": 3.0,
+            "reproduction_cost": 0.1,
+            "reproduction_round_robin": True,
+        },
+        population={"initial_size": 2, "max_size": 6},
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()
+    rich, poor = sim.population
+    rich.energy = poor.energy = cfg.agent.max_energy
+    rich.generation, poor.generation = 10, 20
+    sim._repro_credit[rich] = 6.0  # 3 children worth, uncontested
+    sim._repro_credit[poor] = 4.0  # 2 children worth, uncontested
+
+    sim.tick()  # 4 free slots (6 - 2 survivors), less than 3+2=5 needed
+
+    assert sim.total_reproductions == 4
+    gens = [a.generation for a in sim.population]
+    assert gens.count(11) == 2  # NOT 3: round-robin yields the richer forager
+    assert gens.count(21) == 2  # NOT 1: the poorer forager isn't shut out
+    assert sim._repro_credit[rich] == pytest.approx(2.0)
+    assert sim._repro_credit[poor] == pytest.approx(0.0)
+
+
+def test_round_robin_off_by_default_is_legacy(tmp_path):
+    # False (default): behaviour must match the pre-existing greedy test
+    # (test_reproduction_prioritises_highest_energy_at_cap) byte-for-byte.
+    cfg = build_config(
+        tmp_path,
+        agent={
+            "initial_energy": 1.0,
+            "max_energy": 2.0,
+            "reproduction_threshold": 0.5,
+            "reproduction_cost": 0.3,
+            "apples_per_offspring": 0.0,
+        },
+        population={"initial_size": 2, "max_size": 3},
+    )
+    sim = Simulation(cfg, random.Random(6))
+    sim.env.apples.clear()
+    high, low = sim.population
+    high.energy, high.generation = cfg.agent.max_energy, 10
+    low.energy, low.generation = cfg.agent.reproduction_threshold + 0.05, 3
+
+    sim.tick()
+
+    assert sim.total_reproductions == 1
+    generations = {a.generation for a in sim.population}
+    assert 11 in generations
+    assert 4 not in generations
+
+
 def test_csv_interval_respected(tmp_path):
     cfg = build_config(
         tmp_path,

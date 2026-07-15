@@ -13,8 +13,13 @@ the verdict tables in the audits.
 
 Usage:
     python -m tools.campaign <config.yaml> <ticks> [seed,seed,...] [--workers N]
+        [--progress-interval SECONDS] [--quiet]
 
-Default seed trio is the campaign standard 42,7,123.
+Default seed trio is the campaign standard 42,7,123. Progress (one plain text
+line per interval, all seeds' tick counts) prints every 10s by default —
+deliberately not a carriage-return progress bar, since campaigns are commonly
+run in the background with output piped to a log file, where a discrete line
+per update is what stays readable. Pass --quiet to suppress it.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ import statistics as st
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from multiprocessing import Manager
 from random import Random
 
 from src.config import SimConfig
@@ -32,6 +38,8 @@ from src.simulation import Simulation
 from tools.steer_probe import steer_score
 
 DEFAULT_SEEDS = (42, 7, 123)
+DEFAULT_PROGRESS_INTERVAL_SECONDS = 10.0
+PROGRESS_REPORTS_PER_SEED = 200  # ~0.5% resolution, negligible IPC overhead
 
 
 @dataclass
@@ -50,13 +58,18 @@ class SeedResult:
     hidden_mean: float
 
 
-def _run_seed(args: tuple[str, int, int]) -> SeedResult:
-    """Worker: run one seed to ``ticks`` and return its metrics."""
-    config_path, ticks, seed = args
+def _run_seed(args: tuple[str, int, int, "dict[int, int] | None"]) -> SeedResult:
+    """Worker: run one seed to ``ticks``, report progress, return its metrics."""
+    config_path, ticks, seed, progress = args
+    report_every = max(1, ticks // PROGRESS_REPORTS_PER_SEED)
     cfg = SimConfig.from_yaml(config_path)
     sim = Simulation(cfg, Random(seed))
     while not sim.is_extinct and sim.tick_count < ticks:
         sim.tick()
+        if progress is not None and sim.tick_count % report_every == 0:
+            progress[seed] = sim.tick_count
+    if progress is not None:
+        progress[seed] = sim.tick_count
 
     if sim.is_extinct or not sim.population:
         return SeedResult(
@@ -107,6 +120,16 @@ def main() -> int:
         default=None,
         help="max parallel processes (default: min(#seeds, cores-1))",
     )
+    parser.add_argument(
+        "--progress-interval",
+        type=float,
+        default=DEFAULT_PROGRESS_INTERVAL_SECONDS,
+        help="seconds between progress lines "
+        f"(default {DEFAULT_PROGRESS_INTERVAL_SECONDS})",
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", help="suppress periodic progress lines"
+    )
     args = parser.parse_args()
 
     seeds = (
@@ -119,9 +142,25 @@ def main() -> int:
         f"seeds={seeds}  workers={workers}"
     )
     t0 = time.perf_counter()
-    jobs = [(args.config, args.ticks, s) for s in seeds]
-    with ProcessPoolExecutor(max_workers=workers) as ex:
-        results = sorted(ex.map(_run_seed, jobs), key=lambda r: seeds.index(r.seed))
+    with Manager() as manager:
+        progress = manager.dict({s: 0 for s in seeds})
+        jobs = [(args.config, args.ticks, s, progress) for s in seeds]
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            futures = [ex.submit(_run_seed, job) for job in jobs]
+            while not args.quiet:
+                elapsed = time.perf_counter() - t0
+                status = "  ".join(
+                    f"{s}:{progress[s]:>{len(str(args.ticks))}}/{args.ticks}"
+                    f"({100 * progress[s] // args.ticks:>3}%)"
+                    for s in seeds
+                )
+                print(f"[{elapsed:6.1f}s] {status}", flush=True)
+                if all(f.done() for f in futures):
+                    break
+                time.sleep(args.progress_interval)
+            results = sorted(
+                (f.result() for f in futures), key=lambda r: seeds.index(r.seed)
+            )
     dt = time.perf_counter() - t0
 
     print(

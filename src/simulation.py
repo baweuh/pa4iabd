@@ -249,18 +249,77 @@ class Simulation:
         Highest-energy eligible agents fill the scarce slots first (species-shared
         when ``speciation.fitness_sharing`` is on, see :meth:`_priority_fn`);
         fecundity per agent is bounded by how many times its energy exceeds the
-        threshold.
+        threshold, optionally softened by ``agent.max_children_per_tick`` (flat
+        per-agent cap) and/or ``agent.reproduction_round_robin`` (breadth-first
+        distribution) — see :class:`~src.config.AgentConfig` and
+        :meth:`_round_robin_fill`.
         """
-        children: list[Agent] = []
+        cap = self._config.agent.max_children_per_tick
         priority = self._priority_fn(survivors, lambda a: a.energy)
         eligible = sorted(
             (a for a in survivors if a.can_reproduce()), key=priority, reverse=True
         )
+
+        if self._config.agent.reproduction_round_robin:
+
+            def step(agent: Agent) -> Agent | None:
+                if not agent.can_reproduce():
+                    return None
+                return self._birth(agent, survivors)
+
+            return self._round_robin_fill(eligible, slots, cap, step)
+
+        children: list[Agent] = []
         for agent in eligible:
-            while agent.can_reproduce() and len(children) < slots:
+            born = 0
+            while (
+                agent.can_reproduce()
+                and len(children) < slots
+                and (cap == 0 or born < cap)
+            ):
                 children.append(self._birth(agent, survivors))
+                born += 1
             if len(children) >= slots:
                 break
+        return children
+
+    def _round_robin_fill(
+        self,
+        eligible: list[Agent],
+        slots: int,
+        cap: int,
+        step: Callable[[Agent], "Agent | None"],
+    ) -> list[Agent]:
+        """Distribute reproduction slots breadth-first across eligible agents.
+
+        Truncation softening (research-roadmap chantier n°2; Corus et al. 2021
+        on truncation-driven diversity loss). One PASS gives at most one child
+        per agent, in priority order, before any agent gets a second — so a
+        dominant agent can no longer claim every open slot before the runner-up
+        is even considered. ``step`` performs one birth attempt for an agent
+        (mutating its energy/credit as a side effect) and returns the child, or
+        ``None`` once the agent no longer qualifies. ``cap`` (0 = unbounded)
+        additionally limits total children per agent across all passes.
+        """
+        children: list[Agent] = []
+        counts: dict[Agent, int] = {}
+        remaining = list(eligible)
+        while remaining and len(children) < slots:
+            next_round: list[Agent] = []
+            for agent in remaining:
+                if len(children) >= slots:
+                    break
+                if cap and counts.get(agent, 0) >= cap:
+                    continue
+                child = step(agent)
+                if child is None:
+                    continue
+                children.append(child)
+                counts[agent] = counts.get(agent, 0) + 1
+                next_round.append(agent)
+            if not next_round:
+                break
+            remaining = next_round
         return children
 
     def _reproduce_by_foraging(
@@ -284,12 +343,18 @@ class Simulation:
         child (its streak resets — a refractory period). The credit streak is
         refreshed here every reproduction tick for all survivors. See
         :meth:`_refresh_credit_streaks`.
+
+        ``agent.max_children_per_tick`` / ``agent.reproduction_round_robin``
+        (both off = legacy) soften the greedy per-agent while-loop on the
+        ``min_ticks == 0`` path only — see :class:`~src.config.AgentConfig` and
+        :meth:`_round_robin_fill`. No-op once ``min_ticks > 0``, which already
+        limits every agent to one child per tick.
         """
         min_ticks = self._config.agent.reproduction_min_ticks
+        cap = self._config.agent.max_children_per_tick
         if min_ticks > 0:
             self._refresh_credit_streaks(survivors, per_child)
 
-        children: list[Agent] = []
         priority = self._priority_fn(survivors, lambda a: self._repro_credit[a])
         eligible = sorted(
             (
@@ -301,6 +366,18 @@ class Simulation:
             key=priority,
             reverse=True,
         )
+
+        if min_ticks == 0 and self._config.agent.reproduction_round_robin:
+
+            def step(agent: Agent) -> Agent | None:
+                if self._repro_credit[agent] < per_child or agent.energy <= 0.0:
+                    return None
+                self._repro_credit[agent] -= per_child
+                return self._birth(agent, survivors)
+
+            return self._round_robin_fill(eligible, slots, cap, step)
+
+        children: list[Agent] = []
         for agent in eligible:
             if len(children) >= slots:
                 break
@@ -312,11 +389,14 @@ class Simulation:
                     self._credit_streak[agent] = 0
                     children.append(self._birth(agent, survivors))
                 continue
+            born = 0
             while (
                 self._repro_credit[agent] >= per_child
                 and agent.energy > 0.0
                 and len(children) < slots
+                and (cap == 0 or born < cap)
             ):
+                born += 1
                 self._repro_credit[agent] -= per_child
                 children.append(self._birth(agent, survivors))
         return children

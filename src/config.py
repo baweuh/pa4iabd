@@ -76,6 +76,35 @@ class AgentConfig:
     # 6-seed campaign (extinction risk if too strict: births may stop matching
     # old-age deaths).
     reproduction_min_ticks: int = 0
+    # Truncation softening (research-roadmap chantier n°2, untested until
+    # poc2.4): both reproduction paths sort eligible agents by priority and let
+    # the TOP one fill every open slot via a `while` loop before even looking
+    # at the runner-up — the literature (Corus et al. 2021) flags this greedy
+    # truncation as a mechanical driver of founder effects / diversity loss.
+    # 0 = legacy (unbounded, current behaviour, byte-for-byte unchanged). N > 0
+    # caps how many children ANY single agent may produce in one tick, forcing
+    # slots that would have gone to the top agent to spill to the next eligible
+    # agent instead — softer selection pressure, more parents represented per
+    # tick. Applies to both _reproduce_by_energy and the legacy
+    # (min_ticks == 0) branch of _reproduce_by_foraging; irrelevant once
+    # reproduction_min_ticks > 0, since that gate already caps at one child.
+    max_children_per_tick: int = 0
+    # Truncation softening, take 2: a single-seed sweep of max_children_per_tick
+    # (poc2.4, 2026-07-15) showed the flat per-agent cap either does nothing
+    # (never binds when few agents compete for slots) or actively hurts
+    # (binds too early, artificially throttling growth even absent real
+    # competition). This alternative reshapes HOW slots are handed out instead
+    # of how many any one agent may take: eligible agents (priority order) are
+    # given children breadth-first, one per agent per PASS, looping back for a
+    # second pass only once every still-qualifying agent has had its first —
+    # so the top-priority agent can never claim a 2nd child before the
+    # runner-up gets its 1st, but an agent facing no competition still gets
+    # every slot across successive passes (no artificial ceiling). False (0,
+    # default) = legacy greedy while-loop, byte-for-byte unchanged. Composes
+    # with max_children_per_tick (still caps total per agent across passes,
+    # 0 = unbounded). No-op once reproduction_min_ticks > 0 (already 1
+    # child/agent/tick).
+    reproduction_round_robin: bool = False
 
     def __post_init__(self) -> None:
         _require_positive(
@@ -97,6 +126,11 @@ class AgentConfig:
             raise ConfigError(
                 "agent.reproduction_min_ticks must be >= 0, got "
                 f"{self.reproduction_min_ticks}"
+            )
+        if self.max_children_per_tick < 0:
+            raise ConfigError(
+                "agent.max_children_per_tick must be >= 0, got "
+                f"{self.max_children_per_tick}"
             )
 
 
