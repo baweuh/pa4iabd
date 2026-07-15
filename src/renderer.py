@@ -239,9 +239,8 @@ class Renderer:
         ):
             self._speed_down()
         elif key in (pygame.K_LEFT, pygame.K_RIGHT):  # pylint: disable=no-member
-            self._select_adjacent(
-                -1 if key == pygame.K_LEFT else +1
-            )  # pylint: disable=no-member
+            direction = -1 if key == pygame.K_LEFT else +1  # pylint: disable=no-member
+            self._select_adjacent(direction)
         elif key == pygame.K_n:  # pylint: disable=no-member
             self._show_network = not self._show_network
         elif key == pygame.K_F11:  # pylint: disable=no-member
@@ -315,8 +314,7 @@ class Renderer:
         self._fitness_history.append((t, rate))
         if len(self._fitness_history) > CHART_HISTORY_LEN:
             self._fitness_history.pop(0)
-        if rate > self._fitness_peak:
-            self._fitness_peak = rate
+        self._fitness_peak = max(self._fitness_peak, rate)
 
     def _draw_fitness_chart(self) -> None:
         """Sparkline of max forage rate (apples/tick) in the top-right corner."""
@@ -371,7 +369,7 @@ class Renderer:
 
         self._screen.blit(chart, (px, py))
 
-    def _draw_network_panel(self) -> None:
+    def _draw_network_panel(self) -> None:  # pylint: disable=too-many-statements
         """Draw a network diagram for the selected agent (toggle: N key).
 
         Input nodes are colour-coded by sensor group; hidden nodes are gold;

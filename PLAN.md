@@ -55,6 +55,8 @@
 - [x] PHASE8.md (architecture + décisions)
 
 ## Phase 9 — AWS + Dashboard ⬜
+> **Hors périmètre de Claude — géré par un collègue de Robin.** Ne pas
+> attaquer cette phase, même une fois tout le reste clos (convenu 2026-07-15).
 - [ ] S3 (upload ZIP + génomes)
 - [ ] DynamoDB (métriques)
 - [ ] Amplify (dashboard)

@@ -26,7 +26,8 @@ def main(argv: list[str]) -> int:
     config_path = argv[2] if len(argv) > 2 else "config/default.yaml"
     cfg = SimConfig.from_yaml(config_path)
 
-    champ = Genome.from_json(open(genome_path, encoding="utf-8").read())
+    with open(genome_path, encoding="utf-8") as f:
+        champ = Genome.from_json(f.read())
     hidden = sum(1 for n in champ.nodes if n.node_type == "hidden")
     enabled = sum(1 for c in champ.connections if c.enabled)
     weights = [c.weight for c in champ.connections if c.enabled]

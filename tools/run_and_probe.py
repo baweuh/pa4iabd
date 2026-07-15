@@ -15,7 +15,6 @@ from random import Random
 
 from src.config import SimConfig
 from src.simulation import Simulation
-from tools.steer_probe import steer_score
 
 
 def main(argv: list[str]) -> int:
@@ -34,9 +33,9 @@ def main(argv: list[str]) -> int:
         return 0
 
     pop = sim.population
-    scores = [steer_score(a.network, cfg.sensors) for a in pop]
+    scores = [a.steer_score for a in pop]  # cached, see Agent.steer_score
     hiddens = [sum(1 for n in a.genome.nodes if n.node_type == "hidden") for a in pop]
-    positive = sum(1 for s in scores if s > 0.1)
+    positive = sum(1 for s in scores if s > cfg.diagnostics.forager_threshold)
 
     print(
         f"[{label}] tick {sim.tick_count}  pop {len(pop)}  "
@@ -47,8 +46,8 @@ def main(argv: list[str]) -> int:
         f"median {st.median(scores):+.3f}  max {max(scores):+.3f}"
     )
     print(
-        f"  agents steering toward apples (r>0.1) : {positive}/{len(pop)} "
-        f"({100 * positive / len(pop):.0f}%)"
+        f"  agents steering toward apples (r>{cfg.diagnostics.forager_threshold}) : "
+        f"{positive}/{len(pop)} ({100 * positive / len(pop):.0f}%)"
     )
     print(f"  mean hidden nodes : {st.mean(hiddens):.2f}  " f"(max {max(hiddens)})")
     return 0
