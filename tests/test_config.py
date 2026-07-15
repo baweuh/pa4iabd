@@ -241,6 +241,26 @@ def test_diagnostics_rejects_non_positive_density_radius(raw: dict) -> None:
         SimConfig.from_dict(raw)
 
 
+def test_hyperneat_optional_section_defaults(raw: dict) -> None:
+    assert "hyperneat" not in raw
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.hyperneat.enabled is False
+    assert cfg.hyperneat.weight_scale == 3.0
+
+
+def test_hyperneat_parsed_when_present(raw: dict) -> None:
+    raw["hyperneat"] = {"enabled": True, "weight_scale": 5.0}
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.hyperneat.enabled is True
+    assert cfg.hyperneat.weight_scale == 5.0
+
+
+def test_hyperneat_rejects_non_positive_weight_scale(raw: dict) -> None:
+    raw["hyperneat"] = {"weight_scale": 0.0}
+    with pytest.raises(ConfigError, match="weight_scale must be > 0"):
+        SimConfig.from_dict(raw)
+
+
 def test_invalid_yaml(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("world: [unclosed", encoding="utf-8")

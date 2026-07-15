@@ -416,3 +416,38 @@
         `apple_capture_probe.py` duplique `classify_capture` désormais dans
         `src/diagnostics.py` ; `steer_probe.py` `open()` sans context manager ;
         3 warnings pylint renderer préexistants (K_LEFT faux positif, etc.).
+- [x] ✅ **Cleanup mineur post-audit** (2026-07-15, `234fc6e`) : les 5
+        points relevés à l'audit ci-dessus traités — seuil forager en dur
+        (`run_and_probe.py`) remplacé par `diagnostics.forager_threshold`,
+        `steer_score(...)` remplacé par la propriété cachée `a.steer_score` ;
+        monkeypatch `Environment.tick_respawns` (devenu redondant,
+        `Apple.spawn_tick` tracké nativement) supprimé de
+        `apple_capture_probe.py`, classification réutilisée depuis
+        `src.diagnostics` ; `steer_probe.py` `open()` avec context manager ;
+        3 warnings pylint `renderer.py` corrigés (10.00/10). 249 tests
+        verts, black clean, pylint propre.
+
+## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) 🔄
+> POC hors numérotation. Recherche n°4 (dernier point ouvert de la feuille de
+> route, voir memory `research-roadmap`) : au lieu que le génome décrive
+> directement le réseau, il décrit un CPPN interrogé sur la géométrie du
+> capteur pour produire les poids d'un substrat fixe. Convenu avec Robin
+> (2026-07-15) : MVP dé-risqué avant la version complète. Détails complets :
+> `docs/DESIGN-hyperneat-mvp.md`.
+- [x] **Session 1 — mécanique + outil d'itération rapide** : `src/geometry.py`
+        (extrait de `agent.py`, casse un cycle d'import) ; `src/hyperneat.py`
+        (coordonnées substrat génériques à tout `SensorConfig`, CPPN 6→1,
+        construction du substrat dense) ; `HyperNEATConfig` (section
+        optionnelle, `enabled: false` par défaut — zéro impact sur le
+        comportement existant) ; câblage conditionnel dans
+        `Simulation._spawn_agent`/`Agent.__init__` ; `NeuralNetwork.activate()`
+        généralisé à N sorties (rétrocompatible, nécessaire pour le CPPN à 1
+        sortie) ; `config/lever_hyperneat_mvp.yaml` ; `tools/inspect_network.py`
+        (steer_score + descripteur + score de régularité géométrique vs
+        témoin aléatoire + test de transfert de résolution, 0 tick). Sanity
+        check sur un génome réel : substrat ~3× plus lisse qu'un génome
+        direct aléatoire, steer_score stable en doublant la résolution sans
+        ré-évoluer — le mécanisme produit ce qui était visé. 267 tests
+        verts, black clean, pylint 9.98/10.
+- [ ] **Session 2 (à venir)** : `tools/trace_lineage.py`, puis la campagne
+        6 seeds de falsification / décision de promotion — pas encore lancée.

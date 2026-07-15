@@ -87,8 +87,14 @@ class NeuralNetwork:
         self._node_type: dict[int, str] = node_type
         self._incoming: dict[int, list[tuple[int, float]]] = incoming
 
-    def activate(self, inputs: Sequence[float]) -> tuple[float, float]:
-        """Run a forward pass and return (vx_raw, vy_raw)."""
+    def activate(self, inputs: Sequence[float]) -> tuple[float, ...]:
+        """Run a forward pass; return one raw value per output node, in id order.
+
+        For an agent's own network this is always ``(vx_raw, vy_raw)`` (2
+        outputs, per invariant n°5) — but the class is otherwise agnostic to
+        output count, which a HyperNEAT CPPN (1 output: a queried connection
+        weight, see ``src.hyperneat``) relies on.
+        """
         if len(inputs) != len(self.input_ids):
             raise ValueError(
                 f"expected {len(self.input_ids)} inputs, got {len(inputs)}"
@@ -110,4 +116,4 @@ class NeuralNetwork:
             else:  # HIDDEN
                 values[nid] = self._activation(total)
 
-        return (values[self.output_ids[0]], values[self.output_ids[1]])
+        return tuple(values[nid] for nid in self.output_ids)

@@ -30,20 +30,10 @@ from src.config import SimConfig
 from src.diagnostics import steer_score as _compute_steer_score
 from src.environment import Environment
 from src.genome import Genome
+from src.geometry import ray_angles
+from src.hyperneat import build_substrate_network
 from src.network import NeuralNetwork
 from src.novelty import behavior_descriptor as _compute_descriptor
-
-
-def ray_angles(num_rays: int, fov_degrees: float, heading: float = 0.0) -> list[float]:
-    """Egocentric ray angles (radians) centred on ``heading``.
-
-    Ray 0 is the forward direction (``heading``); subsequent rays are spaced
-    evenly across the full ``fov_degrees``. With ``fov == 360`` the rays cover
-    the full circle. Shared with the renderer so displayed rays always match
-    perceived rays.
-    """
-    step = math.radians(fov_degrees) / num_rays
-    return [heading + i * step for i in range(num_rays)]
 
 
 class Agent:
@@ -65,8 +55,17 @@ class Agent:
         self._env = environment
         self._rng = rng
 
-        # Invariant n°4: build (and topo-sort) the network ONCE, here.
-        self.network = NeuralNetwork(genome, config.network)
+        # Invariant n°4: build (and topo-sort) the network ONCE, here. Under
+        # HyperNEAT, ``genome`` is a CPPN and the executable network is a
+        # substrate DERIVED from it (src.hyperneat); otherwise it's the
+        # genome's direct wiring, as before.
+        self.network = (
+            build_substrate_network(
+                genome, config.sensors, config.network, config.hyperneat
+            )
+            if config.hyperneat.enabled
+            else NeuralNetwork(genome, config.network)
+        )
 
         self.energy: float = config.agent.initial_energy
         self.age: int = 0

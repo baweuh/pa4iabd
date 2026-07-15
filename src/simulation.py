@@ -53,6 +53,7 @@ from src.diagnostics import (
 )
 from src.novelty import population_novelty
 from src.genome import TRACKER, Genome
+from src.hyperneat import CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS
 from src.speciation import (
     assign_species,
     compatibility_distance,
@@ -178,11 +179,23 @@ class Simulation:
     # Population helpers
     # ------------------------------------------------------------------ #
     def _spawn_agent(self) -> Agent:
-        """Create one agent with a fresh genome at a random safe-zone position."""
+        """Create one agent with a fresh genome at a random safe-zone position.
+
+        Under HyperNEAT (``config.hyperneat.enabled``) the genome is a CPPN
+        (fixed 6 -> 1 shape, see ``src.hyperneat``), not a direct 49 -> 2
+        wiring — ``Agent.__init__`` derives the executable substrate network
+        from it. Every other genome operator (mutate/crossover/clone) is
+        agnostic to this distinction, so nothing else changes.
+        """
+        num_inputs, num_outputs = (
+            (CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS)
+            if self._config.hyperneat.enabled
+            else (self._config.network.num_inputs, self._config.network.num_outputs)
+        )
         genome = Genome.new_fully_connected(
             self._config.genome,
-            self._config.network.num_inputs,
-            self._config.network.num_outputs,
+            num_inputs,
+            num_outputs,
             self._rng,
         )
         return Agent(

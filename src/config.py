@@ -376,6 +376,39 @@ class DiagnosticsConfig:
 
 
 @dataclass(frozen=True)
+class HyperNEATConfig:
+    """Indirect encoding: the genome evolves a CPPN queried over a fixed substrate.
+
+    Research-roadmap item #4 (last one standing after fitness sharing/
+    truncation/bias/islands were falsified and novelty/K-sweep/density were
+    promoted): instead of the genome directly wiring the 49→2 network,
+    ``Agent.genome`` becomes a small CPPN (Compositional Pattern-Producing
+    Network, Stanley 2007) — evolved with the exact same ``GenomeConfig``
+    mutation operators — queried once per (sensor, output) pair at birth to
+    derive the weights of a FIXED, direct (no hidden layer) substrate: the
+    executable network an agent actually runs every tick. Query coordinates
+    come from ``src.hyperneat`` (ring position + channel for sensors, fixed
+    points for outputs), reusing the egocentric ray angles already computed
+    for perception (``agent.ray_angles``). See docs/DESIGN-hyperneat-mvp.md.
+
+    False (default) = legacy direct encoding, byte-for-byte unchanged: this
+    whole section may be omitted from a config. Never promoted to
+    default.yaml without a validated 6-seed campaign, same discipline as
+    every other lever in this project.
+    """
+
+    enabled: bool = False
+    # Bounds every derived substrate weight to (-weight_scale, weight_scale)
+    # via tanh(cppn_output) * weight_scale — the CPPN's own output node is
+    # linear (unbounded), so this keeps substrate weights in the same order
+    # of magnitude as directly-encoded ones (genome.weight_max default 5.0).
+    weight_scale: float = 3.0
+
+    def __post_init__(self) -> None:
+        _require_positive(self, "weight_scale")
+
+
+@dataclass(frozen=True)
 class PopulationConfig:
     """Population bounds.
 
@@ -479,6 +512,7 @@ class SimConfig:
     speciation: SpeciationConfig
     novelty: NoveltyConfig
     diagnostics: DiagnosticsConfig
+    hyperneat: HyperNEATConfig
     population: PopulationConfig
     simulation: SimulationConfig
     logging: LoggingConfig
@@ -537,6 +571,13 @@ class SimConfig:
                 _build(DiagnosticsConfig, "diagnostics", data)
                 if "diagnostics" in data
                 else DiagnosticsConfig()
+            ),
+            # Optional section: absent -> hyperneat disabled (backward-compatible,
+            # every pre-hyperneat config keeps loading unchanged).
+            hyperneat=(
+                _build(HyperNEATConfig, "hyperneat", data)
+                if "hyperneat" in data
+                else HyperNEATConfig()
             ),
             population=_build(PopulationConfig, "population", data),
             simulation=_build(SimulationConfig, "simulation", data),
