@@ -362,3 +362,25 @@
         `directed_captures`/`fortuitous_captures` (cumul lifetime, mirroring
         `apples_eaten`). 31 nouveaux tests (diagnostics + config + intégration
         simulation), 247 tests verts, black clean, pylint 10/10.
+- [x] ✅ **Correctif critique — `tools/campaign.py` n'activait JAMAIS le CSV
+        logger** (2026-07-15, trouvé en répondant à la question de Robin
+        « mes métriques seront-elles observées dans les prochaines
+        mesures ? »). Toutes les campagnes de recherche du projet (K-sweep,
+        îles, novelty, densité, critère minimal, troncature…) tournent via
+        `tools/campaign.py`, qui bouclait `sim.tick()` sans jamais appeler
+        `open_csv_logger()` — ni les colonnes historiques ni les nouvelles
+        n'étaient donc écrites, seul le tableau récapitulatif de fin de run
+        l'était (calcul indépendant). Corrigé : `_run_seed` ouvre/ferme le
+        logger comme `main.py`. Bug connexe trouvé et corrigé au passage :
+        `Simulation._run_id` a une résolution à la SECONDE — des seeds
+        lancés en parallèle par `ProcessPoolExecutor` (quasi simultanément)
+        pouvaient partager le même `_run_id` et donc écrire CSV +
+        best-genome JSON dans le MÊME dossier, s'écrasant mutuellement (bug
+        préexistant, indépendant du CSV, présent depuis le début du projet).
+        Fix : chaque seed reçoit désormais un sous-dossier dédié
+        (`logs/.../seed<N>/<run_id>/`). **Vérifié bit-à-bit que l'activation
+        du CSV ne change RIEN au déterminisme** (positions/énergies/record/
+        repro identiques avec logger on/off, 5000 ticks) — les campagnes
+        déjà documentées (K-sweep, îles, etc.) restent valides. 247 tests
+        verts (inchangés, `tools/` non couvert par pytest), black clean,
+        pylint 9.94/10 (idem avant, warnings préexistants hors périmètre).

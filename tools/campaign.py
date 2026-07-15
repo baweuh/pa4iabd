@@ -29,8 +29,9 @@ import os
 import statistics as st
 import time
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from multiprocessing import Manager
+from pathlib import Path
 from random import Random
 
 from src.config import SimConfig
@@ -58,16 +59,49 @@ class SeedResult:
     hidden_mean: float
 
 
+def _per_seed_config(cfg: SimConfig, seed: int) -> SimConfig:
+    """Redirect CSV/best-genome output to a seed-exclusive subfolder.
+
+    ``Simulation._run_id`` has SECOND resolution (``datetime.now()``), and a
+    campaign launches every seed's process at essentially the same instant —
+    without this, parallel seeds sharing a run_id would all write CSV rows
+    and best-genome JSON files to the SAME ``logs/<run_id>/`` folder,
+    corrupting each other's output. Giving each seed its own subfolder (under
+    the config's configured ``logging.csv_path``) makes every seed's
+    ``_run_dir()`` distinct regardless of run_id collisions.
+    """
+    base = Path(cfg.logging.csv_path)
+    seed_dir = base.parent / f"seed{seed}"
+    return replace(
+        cfg,
+        logging=replace(
+            cfg.logging,
+            csv_path=str(seed_dir / base.name),
+            best_genome_path=str(seed_dir / Path(cfg.logging.best_genome_path).name),
+        ),
+    )
+
+
 def _run_seed(args: tuple[str, int, int, "dict[int, int] | None"]) -> SeedResult:
-    """Worker: run one seed to ``ticks``, report progress, return its metrics."""
+    """Worker: run one seed to ``ticks``, report progress, return its metrics.
+
+    Drives the CSV logger throughout (like ``main.py``'s headless mode), so
+    every campaign now produces the full extended-diagnostics CSV per seed
+    (``logs/.../seed<N>/<run_id>/metrics.csv``) for post-hoc analysis, not
+    just this function's own end-of-run verdict snapshot.
+    """
     config_path, ticks, seed, progress = args
     report_every = max(1, ticks // PROGRESS_REPORTS_PER_SEED)
-    cfg = SimConfig.from_yaml(config_path)
+    cfg = _per_seed_config(SimConfig.from_yaml(config_path), seed)
     sim = Simulation(cfg, Random(seed))
-    while not sim.is_extinct and sim.tick_count < ticks:
-        sim.tick()
-        if progress is not None and sim.tick_count % report_every == 0:
-            progress[seed] = sim.tick_count
+    sim.open_csv_logger()
+    try:
+        while not sim.is_extinct and sim.tick_count < ticks:
+            sim.tick()
+            if progress is not None and sim.tick_count % report_every == 0:
+                progress[seed] = sim.tick_count
+    finally:
+        sim.close_csv_logger()
     if progress is not None:
         progress[seed] = sim.tick_count
 
