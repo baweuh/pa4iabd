@@ -427,13 +427,15 @@
         3 warnings pylint `renderer.py` corrigés (10.00/10). 249 tests
         verts, black clean, pylint propre.
 
-## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) 🔄
+## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) ✅ FALSIFIÉ
 > POC hors numérotation. Recherche n°4 (dernier point ouvert de la feuille de
 > route, voir memory `research-roadmap`) : au lieu que le génome décrive
 > directement le réseau, il décrit un CPPN interrogé sur la géométrie du
 > capteur pour produire les poids d'un substrat fixe. Convenu avec Robin
-> (2026-07-15) : MVP dé-risqué avant la version complète. Détails complets :
-> `docs/DESIGN-hyperneat-mvp.md`.
+> (2026-07-15) : MVP dé-risqué avant la version complète. **Verdict : pire
+> régression du projet (moy 67%→15%), root cause diagnostiquée (substrat
+> dense + CPPN sans nœud caché sature et noie le signal).** Détails
+> complets : `docs/DESIGN-hyperneat-mvp.md`, `docs/FALSIFIED-hyperneat.md`.
 - [x] **Session 1 — mécanique + outil d'itération rapide** : `src/geometry.py`
         (extrait de `agent.py`, casse un cycle d'import) ; `src/hyperneat.py`
         (coordonnées substrat génériques à tout `SensorConfig`, CPPN 6→1,
@@ -459,6 +461,18 @@
         vérifiée indépendamment sur un run réel (6 générations, chaîne
         cohérente). 267 tests verts (inchangé, `tools/` non couvert par
         pytest), black clean, pylint 9.97/10.
-- [ ] **Campagne 6 seeds de falsification** (42,7,123,1,5,99, 15k ticks,
+- [x] ✅ **Campagne 6 seeds de falsification — FALSIFIÉ, pire régression
+        du projet** (42,7,123,1,5,99, 15k ticks,
         `config/lever_hyperneat_mvp.yaml` vs `default.yaml` fraîchement
-        relancé) — EN COURS, résultat à documenter.
+        relancé). Moy foragers **67%→15% (−52)** — dépasse la pire
+        régression précédente (biais NEAT, −34). **Les 6 seeds
+        régressent**, `steer_median` passe négatif sur presque tous les
+        seeds, 2 seeds s'effondrent démographiquement (123: 190/400,
+        5: 43/400 — jamais observé sur aucun levier précédent). Root
+        cause diagnostiquée (pas juste un score) : substrat dense +
+        CPPN sans nœud caché à la genèse (6 poids seulement, fortement
+        corrélés) sature le `tanh` de sortie et noie le signal d'un
+        rayon isolé — vérifié empiriquement (`steer_score` exactement
+        0,0 sur 74/100 CPPN fondateurs vs 0/100 génomes directs).
+        `hyperneat.enabled` reste absent (=false) dans `default.yaml`.
+        Détails complets : `docs/FALSIFIED-hyperneat.md`.
