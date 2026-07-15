@@ -116,11 +116,50 @@ du comportement évolué, qui n'a pas encore été poussé) :
   une capacité que l'encodage direct ne peut structurellement pas avoir
   (son nombre d'entrées est figé à la naissance).
 
-## Hors scope de cette session
+## Session 2 — `tools/trace_lineage.py`
 
-- `tools/trace_lineage.py` (2ᵉ outil convenu) — construit juste avant la
-  campagne, à la session suivante.
-- La campagne 6 seeds de falsification / décision de promotion.
+2ᵉ outil convenu, livré. Fait tourner une simulation **réelle, pop-pleine**
+(vraie sélection, rien de rétréci — le modèle d'îles avait justement montré
+qu'une population plus petite rouvre la dérive fondatrice, voir
+`docs/FALSIFIED-islands.md`), puis reconstruit la vraie lignée du champion
+final jusqu'à un fondateur : `agent → parent → … → fondateur`.
+
+**Bookkeeping** (monkeypatch `Agent.reproduce`, le temps du process
+seulement — jamais `src/`, même technique que `apple_capture_probe.py`) :
+chaque naissance reçoit un petit id entier séquentiel et enregistre
+`(parent_id, tick, genome)` — le **génome seul** (quelques dizaines
+d'objets légers), jamais l'`Agent` complet (réseau, historique de
+position, référence env). Coût délibérément **borné à ce seul run** (quelques
+milliers de petits génomes pour un run de campagne complet) — rien à voir
+avec la fuite `_birth_events` corrigée plus tôt (qui épinglait des `Agent`
+entiers, sans borne, dans TOUS les runs de prod). Les diagnostics
+(steer_score/descripteur/structure) ne sont calculés qu'à la toute fin,
+pour les quelques agents réellement sur la lignée retenue — pas à chaque
+naissance.
+
+**Choix du "champion"** : `steer_score` (compétence de pilotage évoluée),
+pas `apples_eaten` — le nombre de pommes à vie confond compétence et
+longévité (un fondateur survivant longtemps peut manger plus qu'un
+descendant réellement meilleur mais plus jeune), ce qui choisirait
+trivialement une lignée peu profonde. Même convention que
+`run_and_probe.py`/`inspect_network.py`.
+
+**Vérifié** : logique de reconstruction de chaîne validée indépendamment
+sur un run réel (6 générations, ids/parents/ticks cohérents de bout en
+bout). Sur un run court (3000 ticks), le champion par steer_score tombe
+souvent sur un fondateur (lignée triviale) — attendu, pas un bug : le
+signal steer_score n'a pas encore assez de temps pour diverger entre
+fondateurs et descendants ; les runs de campagne réels (15-30k ticks) sont
+le régime pour lequel l'outil est prévu.
+
+## Hors scope de cette session (session 1) / prochaine étape (session 2)
+
+- ~~`tools/trace_lineage.py`~~ FAIT (voir ci-dessus, session 2).
+- La campagne 6 seeds de falsification / décision de promotion — lancée
+  en session 2 (`config/lever_hyperneat_mvp.yaml` vs `default.yaml`,
+  seeds 42/7/123/1/5/99, 15k ticks), résultat à documenter séparément
+  (`docs/RESULTS-hyperneat.md` ou `docs/FALSIFIED-hyperneat.md` selon le
+  verdict).
 - Les améliorations listées plus haut (couche cachée, multi-activation,
   LEO, entrée distance) si le MVP s'avère prometteur.
 
@@ -136,7 +175,9 @@ du comportement évolué, qui n'a pas encore été poussé) :
 - `src/network.py` — `activate()` généralisé à N sorties.
 - `config/lever_hyperneat_mvp.yaml` — lever isolant `hyperneat.enabled`.
 - `tools/inspect_network.py` (nouveau) — boucle d'itération 0-tick.
+- `tools/trace_lineage.py` (nouveau, session 2) — lignée réelle du
+  champion sur un run pop-pleine, monkeypatch process-local.
 - `tests/test_hyperneat.py` (nouveau, 15 tests) + extensions
   `tests/test_config.py` (3 tests) — 267 tests verts, black clean,
-  pylint 9.98/10 (dette préexistante inchangée : `simulation.py`
+  pylint 9.97/10 (dette préexistante inchangée : `simulation.py`
   too-many-lines, `main()` sans docstring dans `tools/`).

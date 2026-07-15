@@ -449,5 +449,16 @@
         direct aléatoire, steer_score stable en doublant la résolution sans
         ré-évoluer — le mécanisme produit ce qui était visé. 267 tests
         verts, black clean, pylint 9.98/10.
-- [ ] **Session 2 (à venir)** : `tools/trace_lineage.py`, puis la campagne
-        6 seeds de falsification / décision de promotion — pas encore lancée.
+- [x] **Session 2 — `tools/trace_lineage.py`** : reconstruit la vraie lignée
+        du champion final (agent→parent→…→fondateur) sur un run RÉEL,
+        pop-pleine (monkeypatch process-local de `Agent.reproduce`, jamais
+        `src/`, même technique que `apple_capture_probe.py`). Champion
+        choisi par `steer_score` (pas `apples_eaten`, qui confond
+        compétence et longévité). Coût borné à ce seul run (génomes
+        légers, jamais l'`Agent` complet). Logique de reconstruction
+        vérifiée indépendamment sur un run réel (6 générations, chaîne
+        cohérente). 267 tests verts (inchangé, `tools/` non couvert par
+        pytest), black clean, pylint 9.97/10.
+- [ ] **Campagne 6 seeds de falsification** (42,7,123,1,5,99, 15k ticks,
+        `config/lever_hyperneat_mvp.yaml` vs `default.yaml` fraîchement
+        relancé) — EN COURS, résultat à documenter.
