@@ -681,11 +681,10 @@ def test_apples_per_offspring_zero_keeps_legacy_energy_path(tmp_path):
 def _split_into_dominant_pair_and_novel(cfg, sim):
     """3 living agents: dominant_a/dominant_b share one (size-2) species,
     novel diverges enough to form its own (size-1) species."""
+    del cfg  # unused since poc3 (no structural mutation config needed here)
     dominant_a, dominant_b, novel = sim.population
     dominant_b.genome = dominant_a.genome.clone()
-    rng = random.Random(3)
-    for _ in range(5):  # > compatibility_threshold worth of excess genes
-        novel.genome.add_node(cfg.genome, rng)
+    novel.genome.weights += 50.0  # well beyond compatibility_threshold
     return dominant_a, dominant_b, novel
 
 

@@ -63,6 +63,12 @@ network:
   num_inputs: 49        # 3*num_rays + 1 : dist, apple_flag, wall_flag (×16) + energy
   num_outputs: 2         # vx_brut, vy_brut (normalised post-output)
   activation: "tanh"
+  # poc3: topology is FIXED, no structural mutation. 0 (v1 default) = a
+  # single linear layer straight from inputs to outputs — matches the
+  # near-zero hidden-node count the previous NEAT encoding averaged after
+  # tens of thousands of ticks (isolates the topology-fixing/batching
+  # change from a capacity change, see docs/DESIGN-poc3-fixed-topology.md).
+  hidden_size: 0
 
 apple:
   count: 160            # denser food → random walkers stumble on it sooner (was 50)
@@ -71,25 +77,22 @@ apple:
   respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
 
 genome:
+  # poc3: topology is fixed (see network.hidden_size) — only weights evolve,
+  # no more structural mutation rates.
   weight_init_range: 1.0
   weight_mutation_rate: 0.15
   weight_perturbation: 0.05
-  add_node_rate: 0.03
-  add_connection_rate: 0.05
-  remove_node_rate: 0.01
-  remove_connection_rate: 0.02
   weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
   crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
 
 speciation:
-  # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
-  # Used to count species + measure genetic diversity in the metrics CSV, and
-  # (only when fitness_sharing: true) to divide reproduction priority by
-  # species size. fitness_sharing defaults to false: observability only, same
-  # as before — not yet promoted (needs a validated 3-seed campaign, see
-  # config/lever_fitness_sharing.yaml).
-  c_excess: 1.0
-  c_disjoint: 1.0
+  # Genetic-distance coefficients. poc3: with a fixed topology every genome
+  # shares the same weight-vector layout, so distance is a plain mean
+  # absolute weight difference (no more excess/disjoint gene concept, see
+  # src/speciation.py). Used to count species + measure genetic diversity in
+  # the metrics CSV, and (only when fitness_sharing: true) to divide
+  # reproduction priority by species size — defaults to false: observability
+  # only, same as before.
   c_weight: 0.4
   compatibility_threshold: 3.0   # genomes closer than this share a species
   fitness_sharing: false

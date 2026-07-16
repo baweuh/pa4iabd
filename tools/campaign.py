@@ -121,7 +121,9 @@ def _run_seed(args: tuple[str, int, int, "dict[int, int] | None"]) -> SeedResult
 
     pop = sim.population
     scores = [steer_score(a.network, cfg.sensors) for a in pop]
-    hiddens = [sum(1 for n in a.genome.nodes if n.node_type == "hidden") for a in pop]
+    # poc3: topology is fixed by config, never mutated structurally — every
+    # agent has exactly network.hidden_size hidden units, always (no longer
+    # an emergent per-agent metric like it was under NEAT).
     positive = sum(1 for s in scores if s > cfg.diagnostics.forager_threshold)
     return SeedResult(
         seed,
@@ -133,7 +135,7 @@ def _run_seed(args: tuple[str, int, int, "dict[int, int] | None"]) -> SeedResult
         st.mean(scores),
         st.median(scores),
         100.0 * positive / len(pop),
-        st.mean(hiddens),
+        float(cfg.network.hidden_size),
     )
 
 

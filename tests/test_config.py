@@ -241,36 +241,28 @@ def test_diagnostics_rejects_non_positive_density_radius(raw: dict) -> None:
         SimConfig.from_dict(raw)
 
 
-def test_hyperneat_optional_section_defaults(raw: dict) -> None:
-    assert "hyperneat" not in raw
-    cfg = SimConfig.from_dict(raw)
-    assert cfg.hyperneat.enabled is False
-    assert cfg.hyperneat.weight_scale == 3.0
-    assert cfg.hyperneat.bootstrap_hidden_nodes == 0
+def test_network_hidden_size_defaults_zero_when_omitted(raw: dict) -> None:
+    raw["network"].pop("hidden_size", None)
+    assert SimConfig.from_dict(raw).network.hidden_size == 0
 
 
-def test_hyperneat_parsed_when_present(raw: dict) -> None:
-    raw["hyperneat"] = {"enabled": True, "weight_scale": 5.0}
-    cfg = SimConfig.from_dict(raw)
-    assert cfg.hyperneat.enabled is True
-    assert cfg.hyperneat.weight_scale == 5.0
+def test_network_hidden_size_parsed_when_present(raw: dict) -> None:
+    raw["network"]["hidden_size"] = 8
+    assert SimConfig.from_dict(raw).network.hidden_size == 8
 
 
-def test_hyperneat_rejects_non_positive_weight_scale(raw: dict) -> None:
-    raw["hyperneat"] = {"weight_scale": 0.0}
-    with pytest.raises(ConfigError, match="weight_scale must be > 0"):
+def test_network_rejects_negative_hidden_size(raw: dict) -> None:
+    raw["network"]["hidden_size"] = -1
+    with pytest.raises(ConfigError, match="hidden_size must be >= 0"):
         SimConfig.from_dict(raw)
 
 
-def test_hyperneat_bootstrap_hidden_nodes_parsed(raw: dict) -> None:
-    raw["hyperneat"] = {"bootstrap_hidden_nodes": 2}
-    cfg = SimConfig.from_dict(raw)
-    assert cfg.hyperneat.bootstrap_hidden_nodes == 2
-
-
-def test_hyperneat_rejects_negative_bootstrap_hidden_nodes(raw: dict) -> None:
-    raw["hyperneat"] = {"bootstrap_hidden_nodes": -1}
-    with pytest.raises(ConfigError, match="bootstrap_hidden_nodes must be >= 0"):
+def test_speciation_unknown_key_rejected(raw: dict) -> None:
+    """poc3: c_excess/c_disjoint no longer exist (fixed topology, no more
+    excess/disjoint gene concept) — a leftover NEAT-era key must be rejected,
+    not silently ignored."""
+    raw["speciation"]["c_excess"] = 1.0
+    with pytest.raises(ConfigError, match="unknown key"):
         SimConfig.from_dict(raw)
 
 

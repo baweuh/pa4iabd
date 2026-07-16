@@ -1,10 +1,7 @@
-"""Pure geometry helpers shared across perception, rendering, and HyperNEAT.
+"""Pure geometry helpers shared across perception and rendering.
 
-Split out of ``agent.py`` so ``src/hyperneat.py`` can reuse the exact same
-egocentric ray-angle formula for substrate coordinates without an import
-cycle (``agent.py`` builds networks via ``hyperneat.py`` when HyperNEAT is
-enabled; ``hyperneat.py`` needs ray geometry — this module depends on
-neither).
+Split out of ``agent.py`` so other modules can reuse the exact same
+egocentric ray-angle formula without importing ``agent.py`` itself.
 """
 
 from __future__ import annotations

@@ -1,26 +1,23 @@
-"""Tests for NeuralNetwork."""
+"""Tests for NeuralNetwork and batch_activate (fixed topology, poc3)."""
 
-# pylint: disable=missing-function-docstring,protected-access
+# pylint: disable=missing-function-docstring
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import random
 
+import numpy as np
 import pytest
 
 from src.config import SimConfig
-from src.genome import (
-    ConnectionGene,
-    Genome,
-    InnovationTracker,
-    NodeGene,
-    BIAS,
-    INPUT,
-    HIDDEN,
-    OUTPUT,
-)
-from src.network import NeuralNetwork
+from src.genome import Genome, network_layer_shapes
+from src.network import NeuralNetwork, batch_activate
+
+NUM_INPUTS = 49
+NUM_OUTPUTS = 2
+LINEAR_SHAPES = [(NUM_INPUTS, NUM_OUTPUTS)]
 
 
 @pytest.fixture(name="cfg")
@@ -28,48 +25,23 @@ def cfg_fixture():
     return SimConfig.from_yaml("config/default.yaml")
 
 
-def _small_genome() -> Genome:
-    """Hand-crafted genome: inputs 0,1 → hidden 4 → outputs 2,3.
-
-    Node ids deliberately non-contiguous to stress topo-sort.
-    """
-    nodes = [
-        NodeGene(0, INPUT),
-        NodeGene(1, INPUT),
-        NodeGene(4, HIDDEN),
-        NodeGene(2, OUTPUT),
-        NodeGene(3, OUTPUT),
-    ]
-    connections = [
-        ConnectionGene(0, 4, weight=0.5, enabled=True, innovation=0),
-        ConnectionGene(1, 4, weight=-1.0, enabled=True, innovation=1),
-        ConnectionGene(4, 2, weight=2.0, enabled=True, innovation=2),
-        ConnectionGene(4, 3, weight=-0.5, enabled=True, innovation=3),
-    ]
-    return Genome(nodes, connections)
-
-
-def _cyclic_genome() -> Genome:
-    """Enabled cycle: 0→1→2→0."""
-    nodes = [NodeGene(0, INPUT), NodeGene(1, HIDDEN), NodeGene(2, OUTPUT)]
-    connections = [
-        ConnectionGene(0, 1, 0.5, True, 0),
-        ConnectionGene(1, 2, 0.5, True, 1),
-        ConnectionGene(2, 0, 0.5, True, 2),
-    ]
-    return Genome(nodes, connections)
+def _hand_crafted_genome() -> Genome:
+    """2 inputs -> 1 hidden -> 2 outputs, known weights (exact-value tests)."""
+    # Layer 0 (2 -> 1): [[0.5], [-1.0]]. Layer 1 (1 -> 2): [[2.0, -0.5]].
+    weights = np.array([0.5, -1.0, 2.0, -0.5], dtype=np.float64)
+    return Genome([(2, 1), (1, 2)], weights)
 
 
 # --------------------------------------------------------------------------- #
-# Known topology
+# Known topology — exact values
 # --------------------------------------------------------------------------- #
 def test_known_topology(cfg):
-    g = _small_genome()
+    g = _hand_crafted_genome()
     nn = NeuralNetwork(g, cfg.network)
 
     x0, x1 = 1.0, 0.5
     h = math.tanh(0.5 * x0 + (-1.0) * x1)  # tanh(0.5 - 0.5) = tanh(0) = 0
-    expected_vx = 2.0 * h  # linear output
+    expected_vx = 2.0 * h  # linear output layer
     expected_vy = -0.5 * h
     vx, vy = nn.activate([x0, x1])
     assert vx == pytest.approx(expected_vx)
@@ -77,7 +49,7 @@ def test_known_topology(cfg):
 
 
 def test_known_topology_nonzero_hidden(cfg):
-    g = _small_genome()
+    g = _hand_crafted_genome()
     nn = NeuralNetwork(g, cfg.network)
 
     x0, x1 = 2.0, -1.0
@@ -87,33 +59,25 @@ def test_known_topology_nonzero_hidden(cfg):
     assert vy == pytest.approx(-0.5 * h)
 
 
-# --------------------------------------------------------------------------- #
-# Connection order must not matter
-# --------------------------------------------------------------------------- #
-def test_output_independent_of_connection_order(cfg):
-    g1 = _small_genome()
-    g2 = _small_genome()
-    g2.connections.reverse()
-
-    nn1 = NeuralNetwork(g1, cfg.network)
-    nn2 = NeuralNetwork(g2, cfg.network)
-
-    inputs = [1.0, 0.5]
-    assert nn1.activate(inputs) == nn2.activate(inputs)
+def test_zero_weights_give_zero_output(cfg):
+    g = Genome(LINEAR_SHAPES, np.zeros(NUM_INPUTS * NUM_OUTPUTS))
+    nn = NeuralNetwork(g, cfg.network)
+    vx, vy = nn.activate([1.0] * NUM_INPUTS)
+    assert vx == 0.0
+    assert vy == 0.0
 
 
 # --------------------------------------------------------------------------- #
 # Determinism
 # --------------------------------------------------------------------------- #
 def test_forward_deterministic(cfg):
-    tracker = InnovationTracker()
     rng = random.Random(42)
-    g = Genome.new_fully_connected(cfg.genome, 33, 2, rng, tracker)
+    g = Genome.new_random(cfg.genome, LINEAR_SHAPES, rng)
 
     nn1 = NeuralNetwork(g, cfg.network)
     nn2 = NeuralNetwork(g, cfg.network)
 
-    inputs = [float(i) / 33 for i in range(33)]
+    inputs = [float(i) / NUM_INPUTS for i in range(NUM_INPUTS)]
     out1a = nn1.activate(inputs)
     out1b = nn1.activate(inputs)
     out2 = nn2.activate(inputs)
@@ -123,113 +87,78 @@ def test_forward_deterministic(cfg):
 
 
 # --------------------------------------------------------------------------- #
-# Cycle detection
-# --------------------------------------------------------------------------- #
-def test_cycle_raises(cfg):
-    g = _cyclic_genome()
-    with pytest.raises(ValueError, match="cycle"):
-        NeuralNetwork(g, cfg.network)
-
-
-# --------------------------------------------------------------------------- #
-# Disabled connections
-# --------------------------------------------------------------------------- #
-def test_disabled_connection_ignored(cfg):
-    g_enabled = _small_genome()
-    g_disabled = _small_genome()
-    # add an extra enabled connection 0→2 in g_enabled, disabled in g_disabled
-    g_enabled.connections.append(ConnectionGene(0, 2, 99.0, True, 10))
-    g_disabled.connections.append(ConnectionGene(0, 2, 99.0, False, 10))
-
-    nn_e = NeuralNetwork(g_enabled, cfg.network)
-    nn_d = NeuralNetwork(g_disabled, cfg.network)
-
-    inputs = [1.0, 0.5]
-    assert nn_e.activate(inputs) != nn_d.activate(inputs)
-
-    # Now both disabled: should produce same result as g_disabled
-    g_ref = _small_genome()
-    nn_ref = NeuralNetwork(g_ref, cfg.network)
-    assert nn_d.activate(inputs) == nn_ref.activate(inputs)
-
-
-# --------------------------------------------------------------------------- #
-# Output with no incoming edges = 0.0
-# --------------------------------------------------------------------------- #
-def test_output_with_no_incoming_is_zero(cfg):
-    nodes = [NodeGene(0, INPUT), NodeGene(1, OUTPUT), NodeGene(2, OUTPUT)]
-    conns: list[ConnectionGene] = []
-    g = Genome(nodes, conns)
-    nn = NeuralNetwork(g, cfg.network)
-    vx, vy = nn.activate([1.0])
-    assert vx == 0.0
-    assert vy == 0.0
-
-
-# --------------------------------------------------------------------------- #
 # Input length validation
 # --------------------------------------------------------------------------- #
 def test_input_length_validation(cfg):
-    g = _small_genome()
+    g = _hand_crafted_genome()
     nn = NeuralNetwork(g, cfg.network)
     with pytest.raises(ValueError, match="2 inputs"):
         nn.activate([1.0])  # expects 2, got 1
 
 
 # --------------------------------------------------------------------------- #
-# Eval order is cached (invariant n°4)
+# Matrices are built once (invariant n°4)
 # --------------------------------------------------------------------------- #
-def test_eval_order_cached(cfg):
-    g = _small_genome()
+def test_matrices_cached(cfg):
+    g = _hand_crafted_genome()
     nn = NeuralNetwork(g, cfg.network)
-    order_before = nn._eval_order
+    matrices_before = nn._matrices  # pylint: disable=protected-access
     nn.activate([1.0, 0.5])
-    assert nn._eval_order is order_before  # same object, never replaced
+    assert nn._matrices is matrices_before  # pylint: disable=protected-access
 
 
 # --------------------------------------------------------------------------- #
-# Bias node
-# --------------------------------------------------------------------------- #
-def test_bias_activates_with_zero_inputs(cfg):
-    """A bias-only output (no sensory input wired) still fires from the constant."""
-    nodes = [
-        NodeGene(0, INPUT),
-        NodeGene(1, OUTPUT),
-        NodeGene(2, OUTPUT),
-        NodeGene(3, BIAS),
-    ]
-    conns = [ConnectionGene(3, 1, weight=3.0, enabled=True, innovation=0)]
-    nn = NeuralNetwork(Genome(nodes, conns), cfg.network)
-    vx, vy = nn.activate([0.0])
-    assert vx == pytest.approx(3.0)  # 1.0 (bias) * 3.0, input never touched
-    assert vy == pytest.approx(0.0)  # unwired output, no bias connection
-
-
-def test_bias_not_counted_as_sensory_input(cfg):
-    """Bias doesn't grow input_ids — the sensor vector length is unaffected."""
-    nodes = [
-        NodeGene(0, INPUT),
-        NodeGene(1, OUTPUT),
-        NodeGene(2, OUTPUT),
-        NodeGene(3, BIAS),
-    ]
-    conns = [ConnectionGene(3, 1, weight=1.0, enabled=True, innovation=0)]
-    nn = NeuralNetwork(Genome(nodes, conns), cfg.network)
-    assert nn.input_ids == [0]
-    nn.activate([0.0])  # would raise ValueError if bias were expected here too
-
-
-# --------------------------------------------------------------------------- #
-# Full network (33 inputs, 2 outputs) smoke test
+# Full network smoke test
 # --------------------------------------------------------------------------- #
 def test_full_network_finite(cfg):
-    tracker = InnovationTracker()
     rng = random.Random(99)
-    g = Genome.new_fully_connected(cfg.genome, 33, 2, rng, tracker)
+    g = Genome.new_random(cfg.genome, LINEAR_SHAPES, rng)
     nn = NeuralNetwork(g, cfg.network)
 
     for _ in range(10):
-        inputs = [rng.uniform(-1, 1) for _ in range(33)]
+        inputs = [rng.uniform(-1, 1) for _ in range(NUM_INPUTS)]
         vx, vy = nn.activate(inputs)
         assert math.isfinite(vx)
         assert math.isfinite(vy)
+
+
+# --------------------------------------------------------------------------- #
+# batch_activate — the core poc3 correctness guarantee
+# --------------------------------------------------------------------------- #
+def test_batch_activate_matches_per_agent_loop_linear(cfg):
+    """batch_activate must equal calling NeuralNetwork.activate() per genome."""
+    rng = random.Random(1)
+    pop = 37  # deliberately not a round number
+    genomes = [Genome.new_random(cfg.genome, LINEAR_SHAPES, rng) for _ in range(pop)]
+    senses = np.array(
+        [[rng.uniform(-1, 1) for _ in range(NUM_INPUTS)] for _ in range(pop)]
+    )
+
+    batched = batch_activate(genomes, senses, cfg.network)
+    looped = np.array(
+        [NeuralNetwork(g, cfg.network).activate(row) for g, row in zip(genomes, senses)]
+    )
+    assert batched.shape == (pop, NUM_OUTPUTS)
+    np.testing.assert_allclose(batched, looped, rtol=1e-10, atol=1e-12)
+
+
+def test_batch_activate_matches_per_agent_loop_with_hidden_layer(cfg):
+    hn = dataclasses.replace(cfg.network, hidden_size=8)
+    shapes = network_layer_shapes(hn)
+    rng = random.Random(2)
+    pop = 23
+    genomes = [Genome.new_random(cfg.genome, shapes, rng) for _ in range(pop)]
+    senses = np.array(
+        [[rng.uniform(-1, 1) for _ in range(NUM_INPUTS)] for _ in range(pop)]
+    )
+
+    batched = batch_activate(genomes, senses, hn)
+    looped = np.array(
+        [NeuralNetwork(g, hn).activate(row) for g, row in zip(genomes, senses)]
+    )
+    np.testing.assert_allclose(batched, looped, rtol=1e-10, atol=1e-12)
+
+
+def test_batch_activate_empty_population(cfg):
+    result = batch_activate([], np.empty((0, NUM_INPUTS)), cfg.network)
+    assert result.shape == (0, NUM_OUTPUTS)

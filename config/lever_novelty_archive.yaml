@@ -62,10 +62,6 @@ genome:
   weight_init_range: 1.0
   weight_mutation_rate: 0.15
   weight_perturbation: 0.05
-  add_node_rate: 0.03
-  add_connection_rate: 0.05
-  remove_node_rate: 0.01
-  remove_connection_rate: 0.02
   weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
   crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
 
@@ -76,8 +72,6 @@ speciation:
   # species size. fitness_sharing defaults to false: observability only, same
   # as before — not yet promoted (needs a validated 3-seed campaign, see
   # config/lever_fitness_sharing.yaml).
-  c_excess: 1.0
-  c_disjoint: 1.0
   c_weight: 0.4
   compatibility_threshold: 3.0   # genomes closer than this share a species
   fitness_sharing: false

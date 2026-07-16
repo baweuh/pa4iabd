@@ -8,8 +8,9 @@ moves, eats nearby apples, and pays its metabolic cost.
 Invariants honoured here:
 - n°1 — zero hardcoding: every number comes from ``SimConfig``.
 - n°2 — energy is apple-equivalent PER TICK (drain + wall penalty per tick).
-- n°4 — the network's topological sort is computed ONCE, at agent creation, and
-  cached for the agent's whole life (``NeuralNetwork`` built in ``__init__``).
+- n°4 — the network's fixed-topology matrices are built ONCE, at agent
+  creation, and cached for the agent's whole life (``NeuralNetwork`` built
+  in ``__init__``, poc3).
 - n°5 — egocentric outputs: output[0] × max_speed = signed forward speed;
   output[1] × max_turn_rate = heading delta (rad/tick).
 
@@ -31,7 +32,6 @@ from src.diagnostics import steer_score as _compute_steer_score
 from src.environment import Environment
 from src.genome import Genome
 from src.geometry import ray_angles
-from src.hyperneat import build_substrate_network
 from src.network import NeuralNetwork
 from src.novelty import behavior_descriptor as _compute_descriptor
 
@@ -55,17 +55,10 @@ class Agent:
         self._env = environment
         self._rng = rng
 
-        # Invariant n°4: build (and topo-sort) the network ONCE, here. Under
-        # HyperNEAT, ``genome`` is a CPPN and the executable network is a
-        # substrate DERIVED from it (src.hyperneat); otherwise it's the
-        # genome's direct wiring, as before.
-        self.network = (
-            build_substrate_network(
-                genome, config.sensors, config.network, config.hyperneat
-            )
-            if config.hyperneat.enabled
-            else NeuralNetwork(genome, config.network)
-        )
+        # Invariant n°4: build the network ONCE, here — a fixed-topology
+        # matrix stack (src.genome.network_layer_shapes), never rebuilt or
+        # re-derived for the agent's whole life.
+        self.network = NeuralNetwork(genome, config.network)
 
         self.energy: float = config.agent.initial_energy
         self.age: int = 0
@@ -209,7 +202,29 @@ class Agent:
         """
         self.last_senses = senses
         raw = self.network.activate(senses)
-        # Output nodes are linear; apply tanh explicitly to bound speed and turn.
+        return self._act_on_raw(raw)
+
+    def decide_from_raw(
+        self, senses: list[float], raw: tuple[float, float]
+    ) -> tuple[float, float]:
+        """Like :meth:`decide`, but ``raw`` was already computed elsewhere.
+
+        Used by the batched tick path (``src.network.batch_activate`` runs
+        the whole population's forward pass in one NumPy call — see
+        ``Simulation.tick``) so the per-agent egocentric transform below
+        doesn't re-run the network a second time. Behaviourally identical to
+        ``decide(senses)``.
+        """
+        self.last_senses = senses
+        return self._act_on_raw(raw)
+
+    def _act_on_raw(self, raw) -> tuple[float, float]:
+        """Egocentric transform shared by :meth:`decide`/:meth:`decide_from_raw`.
+
+        output[0] (tanh ∈ (-1,1)) × max_speed  = signed forward/backward speed.
+        output[1] (tanh ∈ (-1,1)) × max_turn_rate = heading delta (rad/tick).
+        """
+        # Output layer is linear; apply tanh explicitly to bound speed and turn.
         speed = math.tanh(raw[0]) * self._config.agent.max_speed
         self._last_speed = abs(speed)
         self.heading = (

@@ -34,7 +34,6 @@ def main(argv: list[str]) -> int:
 
     pop = sim.population
     scores = [a.steer_score for a in pop]  # cached, see Agent.steer_score
-    hiddens = [sum(1 for n in a.genome.nodes if n.node_type == "hidden") for a in pop]
     positive = sum(1 for s in scores if s > cfg.diagnostics.forager_threshold)
 
     print(
@@ -49,7 +48,7 @@ def main(argv: list[str]) -> int:
         f"  agents steering toward apples (r>{cfg.diagnostics.forager_threshold}) : "
         f"{positive}/{len(pop)} ({100 * positive / len(pop):.0f}%)"
     )
-    print(f"  mean hidden nodes : {st.mean(hiddens):.2f}  " f"(max {max(hiddens)})")
+    print(f"  hidden layer size (fixed) : {cfg.network.hidden_size}")
     return 0
 
 

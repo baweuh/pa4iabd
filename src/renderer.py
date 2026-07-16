@@ -372,9 +372,13 @@ class Renderer:
     def _draw_network_panel(self) -> None:  # pylint: disable=too-many-statements
         """Draw a network diagram for the selected agent (toggle: N key).
 
-        Input nodes are colour-coded by sensor group; hidden nodes are gold;
-        output nodes are green.  Connection colour encodes weight sign
-        (green=positive, red=negative); alpha encodes magnitude.
+        poc3: the topology is FIXED (``genome.layer_shapes``/``matrices()``)
+        — one column per layer boundary, drawn straight from the weight
+        matrices, no structural walk needed (every agent shares the same
+        shape). Input nodes are colour-coded by sensor group; hidden nodes
+        (only when ``network.hidden_size > 0``) are gold; output nodes are
+        green. Connection colour encodes weight sign (green=positive,
+        red=negative); alpha encodes magnitude.
         """
         agent = self._selected_agent
         if agent is None:
@@ -390,10 +394,11 @@ class Renderer:
         )
         panel.fill(COLOR_NET_BG)
 
-        hidden_count = sum(1 for n in genome.nodes if n.node_type == "hidden")
+        layer_sizes = [genome.layer_shapes[0][0]] + [
+            out for _, out in genome.layer_shapes
+        ]
         title = self._small_font.render(
-            f"Network  [N]  nodes:{len(genome.nodes)}  hidden:{hidden_count}  "
-            f"conn:{sum(1 for c in genome.connections if c.enabled)}",
+            f"Network  [N]  layers:{layer_sizes}  weights:{genome.weights.size}",
             True,
             (200, 200, 200),
         )
@@ -401,78 +406,63 @@ class Renderer:
 
         inner_y0 = NET_VIZ_PAD + 18
         inner_h = NET_PANEL_H - inner_y0 - NET_VIZ_PAD
+        num_cols = len(layer_sizes)
         col_in = NET_VIZ_PAD + NET_INPUT_R + 1
         col_out = NET_PANEL_W - NET_VIZ_PAD - NET_OUTPUT_R - 1
-        col_hid = (col_in + col_out) // 2
 
-        input_nodes = sorted(
-            [n for n in genome.nodes if n.node_type == "input"], key=lambda n: n.node_id
-        )
-        hidden_nodes = sorted(
-            [n for n in genome.nodes if n.node_type == "hidden"],
-            key=lambda n: n.node_id,
-        )
-        output_nodes = sorted(
-            [n for n in genome.nodes if n.node_type == "output"],
-            key=lambda n: n.node_id,
-        )
+        def _col_x(col: int) -> int:
+            if num_cols == 1:
+                return col_in
+            return col_in + (col_out - col_in) * col // (num_cols - 1)
 
         n_rays = self._config.sensors.num_rays
 
-        def _input_color(node_id: int) -> tuple[int, int, int]:
+        def _input_color(index: int) -> tuple[int, int, int]:
             groups = [n_rays, n_rays, n_rays, n_rays, 1, 1, 1]
             boundary = 0
             for idx, size in enumerate(groups):
-                if node_id < boundary + size:
+                if index < boundary + size:
                     return _NET_INPUT_GROUPS[idx]
                 boundary += size
             return (150, 150, 200)
 
-        def _node_pos(node) -> tuple[int, int]:
-            if node.node_type == "input":
-                k = input_nodes.index(node)
-                total = max(len(input_nodes) - 1, 1)
-                return col_in, inner_y0 + int(k / total * inner_h)
-            if node.node_type == "output":
-                k = output_nodes.index(node)
-                step = inner_h // (len(output_nodes) + 1)
-                return col_out, inner_y0 + step * (k + 1)
-            k = hidden_nodes.index(node)
-            step = inner_h // (len(hidden_nodes) + 1)
-            return col_hid, inner_y0 + step * (k + 1)
+        def _node_pos(col: int, index: int, count: int) -> tuple[int, int]:
+            x = _col_x(col)
+            if count <= 1:
+                return x, inner_y0 + inner_h // 2
+            return x, inner_y0 + int(index / (count - 1) * inner_h)
 
-        node_map = {n.node_id: n for n in genome.nodes}
         wmax = max(self._config.genome.weight_max, 1e-9)
+        for col, matrix in enumerate(genome.matrices()):
+            in_size, out_size = matrix.shape
+            for i in range(in_size):
+                src = _node_pos(col, i, in_size)
+                for j in range(out_size):
+                    weight = float(matrix[i, j])
+                    alpha = int(min(abs(weight) / wmax, 1.0) * 160) + 30
+                    line_color = (
+                        (*COLOR_NET_POS, alpha)
+                        if weight >= 0
+                        else (*COLOR_NET_NEG, alpha)
+                    )
+                    pygame.draw.line(
+                        panel, line_color, src, _node_pos(col + 1, j, out_size), 1
+                    )
 
-        for conn in genome.connections:
-            if not conn.enabled:
-                continue
-            if conn.in_node not in node_map or conn.out_node not in node_map:
-                continue
-            alpha = int(min(abs(conn.weight) / wmax, 1.0) * 160) + 30
-            col = (
-                (*COLOR_NET_POS, alpha) if conn.weight >= 0 else (*COLOR_NET_NEG, alpha)
-            )
-            pygame.draw.line(
-                panel,
-                col,
-                _node_pos(node_map[conn.in_node]),
-                _node_pos(node_map[conn.out_node]),
-                1,
-            )
-
-        for node in input_nodes:
+        for i in range(layer_sizes[0]):
             pygame.draw.circle(
-                panel, _input_color(node.node_id), _node_pos(node), NET_INPUT_R
+                panel, _input_color(i), _node_pos(0, i, layer_sizes[0]), NET_INPUT_R
             )
 
-        for node in hidden_nodes:
-            pos = _node_pos(node)
-            pygame.draw.circle(panel, COLOR_NET_HIDDEN, pos, NET_HIDDEN_R)
-            pygame.draw.circle(panel, (255, 255, 255, 80), pos, NET_HIDDEN_R, 1)
+        for col in range(1, num_cols - 1):
+            for i in range(layer_sizes[col]):
+                pos = _node_pos(col, i, layer_sizes[col])
+                pygame.draw.circle(panel, COLOR_NET_HIDDEN, pos, NET_HIDDEN_R)
+                pygame.draw.circle(panel, (255, 255, 255, 80), pos, NET_HIDDEN_R, 1)
 
-        for i, node in enumerate(output_nodes):
-            pos = _node_pos(node)
+        out_col = num_cols - 1
+        for i in range(layer_sizes[out_col]):
+            pos = _node_pos(out_col, i, layer_sizes[out_col])
             pygame.draw.circle(panel, COLOR_NET_OUTPUT, pos, NET_OUTPUT_R)
             lbl = self._small_font.render(
                 _NET_OUTPUT_LABELS[i] if i < len(_NET_OUTPUT_LABELS) else str(i),

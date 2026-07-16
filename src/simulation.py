@@ -52,8 +52,8 @@ from src.diagnostics import (
     local_apple_density,
 )
 from src.novelty import population_novelty
-from src.genome import TRACKER, Genome
-from src.hyperneat import CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS
+from src.genome import Genome, network_layer_shapes
+from src.network import batch_activate
 from src.speciation import (
     assign_species,
     compatibility_distance,
@@ -101,8 +101,6 @@ class Simulation:
         self._config = config
         self._rng = rng if rng is not None else Random(config.simulation.seed)
 
-        # A fresh innovation history per simulation keeps genome ids deterministic.
-        TRACKER.reset()
         self.env = Environment(config, self._rng)
 
         self.tick_count: int = 0
@@ -181,26 +179,16 @@ class Simulation:
     def _spawn_agent(self) -> Agent:
         """Create one agent with a fresh genome at a random safe-zone position.
 
-        Under HyperNEAT (``config.hyperneat.enabled``) the genome is a CPPN
-        (fixed 6 -> 1 shape, see ``src.hyperneat``), not a direct 49 -> 2
-        wiring — ``Agent.__init__`` derives the executable substrate network
-        from it. Every other genome operator (mutate/crossover/clone) is
-        agnostic to this distinction, so nothing else changes.
+        The genome's shape is FIXED (poc3, see ``src.genome.network_layer_shapes``)
+        — every agent in a run shares it, which is what lets
+        ``src.network.batch_activate`` stack the whole population into one
+        forward pass (``Simulation.tick``).
         """
-        num_inputs, num_outputs = (
-            (CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS)
-            if self._config.hyperneat.enabled
-            else (self._config.network.num_inputs, self._config.network.num_outputs)
-        )
-        genome = Genome.new_fully_connected(
+        genome = Genome.new_random(
             self._config.genome,
-            num_inputs,
-            num_outputs,
+            network_layer_shapes(self._config.network),
             self._rng,
         )
-        if self._config.hyperneat.enabled:
-            for _ in range(self._config.hyperneat.bootstrap_hidden_nodes):
-                genome.add_node(self._config.genome, self._rng)
         return Agent(
             genome, self._safe_spawn_position(), self._config, self.env, self._rng
         )
@@ -263,17 +251,24 @@ class Simulation:
                 (self.tick_count, agent.x, agent.y, agent.heading)
             )
 
-        # Stage 1 — perception, action, eating.
+        # Stage 1 — perception, decision, action, eating.
         # "Freeze then perceive": the whole population's senses are computed in a
-        # single NumPy pass against the tick-start world (batch_sense), then each
-        # agent acts and eats in index order. Agents never sense one another, so
-        # the only behavioural delta vs a per-agent perceive-then-eat loop is that
-        # an agent may perceive an apple a lower-index agent eats the same tick.
-        # Perception is 57% of the tick; batching it is the poc2.4 perf win.
+        # single NumPy pass against the tick-start world (batch_sense), then the
+        # whole population's forward pass runs in one batched call too
+        # (batch_activate, poc3 — every genome shares the same fixed topology,
+        # see src.genome.network_layer_shapes) before each agent acts and eats
+        # in index order. Agents never sense one another, so the only
+        # behavioural delta vs a per-agent perceive-then-eat loop is that an
+        # agent may perceive an apple a lower-index agent eats the same tick.
         senses = batch_sense(self.population, self.env, self._config)
-        for agent, agent_senses in zip(self.population, senses):
+        raw_outputs = batch_activate(
+            [agent.genome for agent in self.population],
+            np.asarray(senses, dtype=np.float64),
+            self._config.network,
+        )
+        for agent, agent_senses, raw in zip(self.population, senses, raw_outputs):
             agent.age += 1
-            vx, vy = agent.decide(agent_senses)
+            vx, vy = agent.decide_from_raw(agent_senses, raw)
             agent.move(vx, vy)
             eaten_apples = agent.eat()
             eaten = len(eaten_apples)
@@ -929,10 +924,11 @@ class Simulation:
             if pop
             else 0.0
         )
-        hidden_counts = [
-            float(sum(1 for n in a.genome.nodes if n.node_type == "hidden"))
-            for a in pop
-        ]
+        # poc3: topology is fixed by config, never mutated structurally — every
+        # agent has exactly network.hidden_size hidden units, always. Kept as
+        # a per-row constant (not computed per-agent) so the CSV schema stays
+        # stable; no longer an emergent metric like it was under NEAT.
+        hidden_size = float(self._config.network.hidden_size)
         novelty_scores = [a.novelty_score for a in pop]
 
         world = self._config.world
@@ -961,7 +957,7 @@ class Simulation:
         row = (
             f"{_mean(steer_scores):.6f}",
             f"{forager_pct:.6f}",
-            f"{_mean(hidden_counts):.6f}",
+            f"{hidden_size:.6f}",
             f"{_mean(novelty_scores):.6f}",
             f"{agent_density_global:.10f}",
             f"{apple_density_global:.10f}",
@@ -1005,15 +1001,16 @@ class Simulation:
         return sum(a.age for a in self.population) / len(self.population)
 
     def _avg_network_size(self) -> float:
-        """Mean (#nodes + #enabled connections) per living genome (0.0 if empty)."""
+        """Weight count per genome (0.0 if empty).
+
+        poc3: topology is fixed by config, so every genome has exactly the
+        same weight count — a constant, not an emergent per-agent metric like
+        it was under NEAT. Kept as "mean" (reading the first agent) for CSV
+        schema stability.
+        """
         if not self.population:
             return 0.0
-        total = 0
-        for agent in self.population:
-            genome = agent.genome
-            enabled = sum(1 for c in genome.connections if c.enabled)
-            total += len(genome.nodes) + enabled
-        return total / len(self.population)
+        return float(self.population[0].genome.weights.size)
 
     def _forage_rates(self) -> list[float]:
         """Per-living-agent apples eaten per tick of life (a current-fitness proxy).

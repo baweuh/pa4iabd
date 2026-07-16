@@ -167,14 +167,24 @@ class SensorConfig:
 
 @dataclass(frozen=True)
 class NetworkConfig:
-    """Neural network shape and activation."""
+    """Neural network shape and activation.
+
+    poc3: the topology is FIXED (no structural mutation) — ``hidden_size``
+    (0 by default) controls it: 0 = a single linear layer straight from
+    inputs to outputs (the lowest-capacity shape, matching the near-zero
+    hidden-node count the previous NEAT encoding averaged after tens of
+    thousands of ticks, see docs/DESIGN-poc3-fixed-topology.md); >0 = one
+    hidden layer of that size. See :func:`src.genome.network_layer_shapes`.
+    """
 
     num_inputs: int
     num_outputs: int
     activation: str
+    hidden_size: int = 0
 
     def __post_init__(self) -> None:
         _require_positive(self, "num_inputs", "num_outputs")
+        _require_non_negative(self, "hidden_size")
         if not self.activation:
             raise ConfigError("network.activation must be a non-empty string")
 
@@ -194,63 +204,39 @@ class AppleConfig:
 
 @dataclass(frozen=True)
 class GenomeConfig:
-    """Mutation operator rates and weight initialisation."""
+    """Weight mutation rates and initialisation.
+
+    poc3: the topology is fixed (see :class:`NetworkConfig`), so there is no
+    structural mutation left — only weight perturbation and crossover.
+    """
 
     weight_init_range: float
     weight_mutation_rate: float
     weight_perturbation: float
-    add_node_rate: float
-    add_connection_rate: float
-    remove_node_rate: float
-    remove_connection_rate: float
     weight_max: float  # hard clamp applied after every weight perturbation
     crossover_rate: float = 0.0  # P(birth is sexual); 0.0 = legacy asexual cloning
-    # Fraction of the full input×output bipartite graph wired at genesis.
-    # 1.0 (default) = legacy fully-connected founder (every input -> every
-    # output). Lower values start each output with a random SPARSE subset of
-    # inputs (at least one, so no output is permanently silent) — reduces the
-    # initial weight-vector size independently of num_inputs, so a rich sensor
-    # layout need not mean a large mutation surface at birth (audit poc2.3
-    # volet 5: initial connectivity, not input count, drove instability).
-    initial_connectivity: float = 1.0
-    # Canonical NEAT bias node: an extra founder source, always-on (value 1.0,
-    # never fed from sensors), wired to outputs exactly like an input at
-    # genesis and mutable like any other connection. Lets a node's response
-    # curve shift independently of its inputs (e.g. steer by default even with
-    # every ray silent) instead of always passing through the origin. False
-    # (default) = legacy behaviour, no bias node exists anywhere in the
-    # project (never promoted to default.yaml without a validated campaign).
-    bias_enabled: bool = False
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_init_range", "weight_perturbation")
         _require_positive(self, "weight_max")
-        _require_rate(
-            self,
-            "weight_mutation_rate",
-            "add_node_rate",
-            "add_connection_rate",
-            "remove_node_rate",
-            "remove_connection_rate",
-            "crossover_rate",
-            "initial_connectivity",
-        )
+        _require_rate(self, "weight_mutation_rate", "crossover_rate")
 
 
 @dataclass(frozen=True)
 class SpeciationConfig:
-    """Coefficients for the NEAT compatibility-distance diversity metrics.
+    """Coefficients for the genetic-distance diversity metrics.
 
-    ``c_excess``/``c_disjoint``/``c_weight``/``compatibility_threshold`` feed
-    ``src.speciation`` for both the read-only diversity metrics (species count,
-    genetic diversity in the CSV) AND, when ``fitness_sharing`` is on, the
-    species-relative reproduction priority. Defaults follow the canonical NEAT
-    paper (Stanley & Miikkulainen 2002).
+    poc3: with a fixed topology, every genome shares the same weight-vector
+    layout — there is no more excess/disjoint gene concept (that only made
+    sense when genomes could have different connection sets). Distance is a
+    plain mean-absolute-weight-difference over the shared vector.
+    ``c_weight``/``compatibility_threshold`` feed ``src.speciation`` for both
+    the read-only diversity metrics (species count, genetic diversity in the
+    CSV) AND, when ``fitness_sharing`` is on, the species-relative
+    reproduction priority.
     """
 
-    c_excess: float  # weight of excess genes in the distance
-    c_disjoint: float  # weight of disjoint genes in the distance
-    c_weight: float  # weight of the mean matching-weight difference
+    c_weight: float  # weight of the mean weight-vector difference
     compatibility_threshold: float  # distance below which two genomes share a species
     # NEAT fitness sharing (f'_i = f_i / |species_i|): divides an agent's
     # reproduction priority by its species size before ranking for scarce
@@ -262,7 +248,7 @@ class SpeciationConfig:
 
     def __post_init__(self) -> None:
         _require_positive(self, "compatibility_threshold")
-        _require_non_negative(self, "c_excess", "c_disjoint", "c_weight")
+        _require_non_negative(self, "c_weight")
 
 
 @dataclass(frozen=True)
@@ -376,65 +362,6 @@ class DiagnosticsConfig:
 
 
 @dataclass(frozen=True)
-class HyperNEATConfig:
-    """Indirect encoding: the genome evolves a CPPN queried over a fixed substrate.
-
-    Research-roadmap item #4 (last one standing after fitness sharing/
-    truncation/bias/islands were falsified and novelty/K-sweep/density were
-    promoted): instead of the genome directly wiring the 49→2 network,
-    ``Agent.genome`` becomes a small CPPN (Compositional Pattern-Producing
-    Network, Stanley 2007) — evolved with the exact same ``GenomeConfig``
-    mutation operators — queried once per (sensor, output) pair at birth to
-    derive the weights of a FIXED, direct (no hidden layer) substrate: the
-    executable network an agent actually runs every tick. Query coordinates
-    come from ``src.hyperneat`` (ring position + channel for sensors, fixed
-    points for outputs), reusing the egocentric ray angles already computed
-    for perception (``agent.ray_angles``). See docs/DESIGN-hyperneat-mvp.md.
-
-    False (default) = legacy direct encoding, byte-for-byte unchanged: this
-    whole section may be omitted from a config. Never promoted to
-    default.yaml without a validated 6-seed campaign, same discipline as
-    every other lever in this project.
-    """
-
-    enabled: bool = False
-    # Bounds every derived substrate weight to (-weight_scale, weight_scale)
-    # via tanh(cppn_output) * weight_scale — the CPPN's own output node is
-    # linear (unbounded), so this keeps substrate weights in the same order
-    # of magnitude as directly-encoded ones (genome.weight_max default 5.0).
-    weight_scale: float = 3.0
-    # Fraction of input sources kept per output, by |weight| (mirrors
-    # genome.initial_connectivity's semantics/naming). 1.0 (default) = dense,
-    # every input wired to every output — the original MVP, FALSIFIED
-    # (docs/FALSIFIED-hyperneat.md): summing ~48 correlated substrate
-    # connections into one output saturates tanh and drowns any single
-    # ray's signal (steer_score exactly 0.0 on 74/100 random CPPN founders).
-    # Lower values keep only the top-``connectivity`` fraction of edges per
-    # output (at least 1, so no output is permanently silent — same floor
-    # as ``Genome._founder_inputs_for``), directly reducing that background
-    # sum — the sparsification the HyperNEAT literature (D'Ambrosio & Stanley
-    # 2010) uses a learned LEO output for; this is the simpler, fixed-
-    # threshold version, one variable at a time per this project's discipline.
-    connectivity: float = 1.0
-    # V3 (docs/FALSIFIED-hyperneat.md): V2 eliminated founder saturation
-    # (weight_scale) but the CPPN founder still starts at 0 hidden nodes —
-    # 6 weights only, purely linear, each one steering ~1/6th of every
-    # substrate weight simultaneously (a hard, highly-coupled landscape to
-    # climb by single-weight perturbations; `hidden` stayed near-zero after
-    # 15k ticks in V1/V2). Splitting N connections at genesis via the exact
-    # same ``Genome.add_node`` operator already used for in-life mutation
-    # (no new machinery) gives the CPPN a non-linearity from birth instead
-    # of waiting on `add_node_rate` to stumble into one. 0 (default) =
-    # legacy CPPN founder, byte-for-byte unchanged.
-    bootstrap_hidden_nodes: int = 0
-
-    def __post_init__(self) -> None:
-        _require_positive(self, "weight_scale")
-        _require_rate(self, "connectivity")
-        _require_non_negative(self, "bootstrap_hidden_nodes")
-
-
-@dataclass(frozen=True)
 class PopulationConfig:
     """Population bounds.
 
@@ -538,7 +465,6 @@ class SimConfig:
     speciation: SpeciationConfig
     novelty: NoveltyConfig
     diagnostics: DiagnosticsConfig
-    hyperneat: HyperNEATConfig
     population: PopulationConfig
     simulation: SimulationConfig
     logging: LoggingConfig
@@ -597,13 +523,6 @@ class SimConfig:
                 _build(DiagnosticsConfig, "diagnostics", data)
                 if "diagnostics" in data
                 else DiagnosticsConfig()
-            ),
-            # Optional section: absent -> hyperneat disabled (backward-compatible,
-            # every pre-hyperneat config keeps loading unchanged).
-            hyperneat=(
-                _build(HyperNEATConfig, "hyperneat", data)
-                if "hyperneat" in data
-                else HyperNEATConfig()
             ),
             population=_build(PopulationConfig, "population", data),
             simulation=_build(SimulationConfig, "simulation", data),

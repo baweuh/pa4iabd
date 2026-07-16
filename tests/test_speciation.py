@@ -1,15 +1,16 @@
-"""Tests for the NEAT compatibility-distance diversity metrics."""
+"""Tests for the genetic-distance diversity metrics (fixed topology, poc3)."""
 
-# pylint: disable=missing-function-docstring,protected-access
+# pylint: disable=missing-function-docstring
 
 from __future__ import annotations
 
 from random import Random
 
+import numpy as np
 import pytest
 
 from src.config import SimConfig
-from src.genome import Genome, InnovationTracker
+from src.genome import Genome
 from src.speciation import (
     assign_species,
     compatibility_distance,
@@ -19,6 +20,7 @@ from src.speciation import (
 
 NUM_INPUTS = 33
 NUM_OUTPUTS = 2
+LAYER_SHAPES = [(NUM_INPUTS, NUM_OUTPUTS)]
 
 
 @pytest.fixture(name="spec")
@@ -31,74 +33,61 @@ def gcfg_fixture():
     return SimConfig.from_yaml("config/default.yaml").genome
 
 
-def _fresh(seed: int) -> Genome:
-    return Genome.new_fully_connected(
-        SimConfig.from_yaml("config/default.yaml").genome,
-        NUM_INPUTS,
-        NUM_OUTPUTS,
-        Random(seed),
-        InnovationTracker(),
-    )
+def _fresh(gcfg, seed: int) -> Genome:
+    return Genome.new_random(gcfg, LAYER_SHAPES, Random(seed))
 
 
 # --------------------------------------------------------------------------- #
 # compatibility_distance
 # --------------------------------------------------------------------------- #
-def test_identical_genomes_distance_zero(spec):
-    genome = _fresh(1)
+def test_identical_genomes_distance_zero(spec, gcfg):
+    genome = _fresh(gcfg, 1)
     assert compatibility_distance(genome, genome.clone(), spec) == 0.0
 
 
-def test_two_empty_genomes_distance_zero(spec):
-    empty_a = Genome([], [])
-    empty_b = Genome([], [])
+def test_empty_genomes_distance_zero(spec):
+    empty_a = Genome([], np.array([]))
+    empty_b = Genome([], np.array([]))
     assert compatibility_distance(empty_a, empty_b, spec) == 0.0
 
 
-def test_weight_difference_drives_distance(spec):
-    genome = _fresh(2)
+def test_weight_difference_drives_distance(spec, gcfg):
+    genome = _fresh(gcfg, 2)
     twin = genome.clone()
     delta = 4.0
-    twin.connections[0].weight += delta
-    n = len(genome.connections)
-    # Only the weight term contributes (no structural difference).
+    twin.weights[0] += delta
+    n = genome.weights.size
     expected = spec.c_weight * (delta / n)
     assert compatibility_distance(genome, twin, spec) == pytest.approx(expected)
 
 
-def test_structural_difference_increases_distance(spec, gcfg):
-    # Base and mutant must share one tracker so split edges get genuinely new
-    # innovation numbers — exactly the global-TRACKER invariant the simulation
-    # upholds. A fresh tracker would restart innovations and collide with the base.
-    tracker = InnovationTracker()
-    genome = Genome.new_fully_connected(
-        gcfg, NUM_INPUTS, NUM_OUTPUTS, Random(3), tracker
-    )
-    mutant = genome.clone()
-    rng = Random(99)
-    mutant.add_node(gcfg, rng, tracker)
-    mutant.add_node(gcfg, rng, tracker)
-    # Two splits introduce four brand-new (excess) innovations.
-    dist = compatibility_distance(genome, mutant, spec)
-    assert dist >= spec.c_excess * 4
+def test_larger_divergence_increases_distance(spec, gcfg):
+    base = _fresh(gcfg, 3)
+    small_mutant = base.clone()
+    small_mutant.mutate(gcfg, Random(1))
+    big_mutant = base.clone()
+    for _ in range(20):
+        big_mutant.mutate(gcfg, Random(2))
+        big_mutant.weights += 0.1  # force divergence beyond weight_mutation_rate luck
+
+    dist_small = compatibility_distance(base, small_mutant, spec)
+    dist_big = compatibility_distance(base, big_mutant, spec)
+    assert dist_big > dist_small
 
 
 # --------------------------------------------------------------------------- #
 # count_species
 # --------------------------------------------------------------------------- #
-def test_clones_form_single_species(spec):
-    genome = _fresh(4)
+def test_clones_form_single_species(spec, gcfg):
+    genome = _fresh(gcfg, 4)
     population = [genome.clone() for _ in range(10)]
     assert count_species(population, spec) == 1
 
 
 def test_divergent_genomes_form_multiple_species(spec, gcfg):
-    tracker = InnovationTracker()
-    base = Genome.new_fully_connected(gcfg, NUM_INPUTS, NUM_OUTPUTS, Random(5), tracker)
+    base = _fresh(gcfg, 5)
     far = base.clone()
-    rng = Random(7)
-    for _ in range(5):  # > compatibility_threshold worth of excess genes
-        far.add_node(gcfg, rng, tracker)
+    far.weights += 10.0  # well beyond compatibility_threshold
     assert count_species([base, far], spec) == 2
 
 
@@ -109,19 +98,16 @@ def test_empty_population_zero_species(spec):
 # --------------------------------------------------------------------------- #
 # assign_species (backs fitness sharing in Simulation, not just the metrics)
 # --------------------------------------------------------------------------- #
-def test_assign_species_clones_share_one_id(spec):
-    genome = _fresh(4)
+def test_assign_species_clones_share_one_id(spec, gcfg):
+    genome = _fresh(gcfg, 4)
     population = [genome.clone() for _ in range(10)]
     assert assign_species(population, spec) == [0] * 10
 
 
 def test_assign_species_divergent_genomes_get_distinct_ids(spec, gcfg):
-    tracker = InnovationTracker()
-    base = Genome.new_fully_connected(gcfg, NUM_INPUTS, NUM_OUTPUTS, Random(5), tracker)
+    base = _fresh(gcfg, 5)
     far = base.clone()
-    rng = Random(7)
-    for _ in range(5):
-        far.add_node(gcfg, rng, tracker)
+    far.weights += 10.0
     assert assign_species([base, far], spec) == [0, 1]
 
 
@@ -132,23 +118,20 @@ def test_assign_species_empty_population():
 # --------------------------------------------------------------------------- #
 # mean_pairwise_distance
 # --------------------------------------------------------------------------- #
-def test_mean_pairwise_needs_two(spec):
+def test_mean_pairwise_needs_two(spec, gcfg):
     assert mean_pairwise_distance([], spec) == 0.0
-    assert mean_pairwise_distance([_fresh(6)], spec) == 0.0
+    assert mean_pairwise_distance([_fresh(gcfg, 6)], spec) == 0.0
 
 
-def test_mean_pairwise_zero_for_clones(spec):
-    genome = _fresh(7)
+def test_mean_pairwise_zero_for_clones(spec, gcfg):
+    genome = _fresh(gcfg, 7)
     assert mean_pairwise_distance([genome, genome.clone()], spec) == 0.0
 
 
 def test_mean_pairwise_positive_when_divergent(spec, gcfg):
-    base = _fresh(8)
+    base = _fresh(gcfg, 8)
     mutant = base.clone()
-    rng = Random(11)
-    tracker = InnovationTracker()
-    tracker.bump_node_floor(NUM_INPUTS + NUM_OUTPUTS)
-    mutant.add_node(gcfg, rng, tracker)
+    mutant.weights += 1.0
     assert mean_pairwise_distance([base, mutant], spec) > 0.0
 
 
@@ -156,19 +139,13 @@ def test_mean_pairwise_matches_naive_definition(spec, gcfg):
     """Regression guard: the NumPy-vectorised path vs the O(pop²) definition.
 
     Independent reference — sums ``compatibility_distance`` over every pair
-    directly, not via the internal ``_profile``/``_distance`` the vectorised
-    version was derived from. Population mixes clones, weight mutation,
-    structural mutation (add_node/add_connection/remove_node) and one
-    connection-less genome, so both empty-vs-empty and empty-vs-populated
-    pairs are exercised.
+    directly. Population mixes clones and weight-mutated genomes.
     """
-    tracker = InnovationTracker()
     rng = Random(21)
-    base = Genome.new_fully_connected(gcfg, NUM_INPUTS, NUM_OUTPUTS, rng, tracker)
+    base = Genome.new_random(gcfg, LAYER_SHAPES, rng)
     population = [base.clone() for _ in range(15)]
     for genome in population:
-        genome.mutate(gcfg, rng, tracker)
-    population.append(Genome([n for n in base.nodes], []))  # connection-less
+        genome.mutate(gcfg, rng)
 
     naive_total, naive_pairs = 0.0, 0
     for i in range(len(population)):

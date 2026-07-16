@@ -14,7 +14,7 @@ from src.agent import Agent, ray_angles
 from src.apple import Apple
 from src.config import SimConfig
 from src.environment import Environment
-from src.genome import TRACKER, Genome
+from src.genome import Genome, network_layer_shapes
 
 
 @pytest.fixture(name="cfg")
@@ -29,9 +29,8 @@ def env_fixture(cfg):
 
 @pytest.fixture(name="genome")
 def genome_fixture(cfg):
-    TRACKER.reset()
-    return Genome.new_fully_connected(
-        cfg.genome, cfg.network.num_inputs, cfg.network.num_outputs, random.Random(0)
+    return Genome.new_random(
+        cfg.genome, network_layer_shapes(cfg.network), random.Random(0)
     )
 
 
@@ -56,12 +55,8 @@ def split_cfg_fixture(cfg):
 
 @pytest.fixture(name="split_genome")
 def split_genome_fixture(split_cfg):
-    TRACKER.reset()
-    return Genome.new_fully_connected(
-        split_cfg.genome,
-        split_cfg.network.num_inputs,
-        split_cfg.network.num_outputs,
-        random.Random(0),
+    return Genome.new_random(
+        split_cfg.genome, network_layer_shapes(split_cfg.network), random.Random(0)
     )
 
 
@@ -113,9 +108,8 @@ def test_sense_length_matches_configurable_layout(cfg, split, prop, aiv, expecte
     network = dataclasses.replace(cfg.network, num_inputs=expected)
     cfg2 = dataclasses.replace(cfg, sensors=sensors, network=network)
     env2 = Environment(cfg2, random.Random(0))
-    TRACKER.reset()
-    genome2 = Genome.new_fully_connected(
-        cfg2.genome, expected, cfg2.network.num_outputs, random.Random(0)
+    genome2 = Genome.new_random(
+        cfg2.genome, network_layer_shapes(cfg2.network), random.Random(0)
     )
     agent = Agent(
         genome2,

@@ -17,7 +17,7 @@ from random import Random
 
 from src.config import SimConfig
 from src.diagnostics import steer_score  # noqa: F401  (re-exported for callers)
-from src.genome import TRACKER, Genome
+from src.genome import Genome, network_layer_shapes
 from src.network import NeuralNetwork
 
 
@@ -28,23 +28,19 @@ def main(argv: list[str]) -> int:
 
     with open(genome_path, encoding="utf-8") as f:
         champ = Genome.from_json(f.read())
-    hidden = sum(1 for n in champ.nodes if n.node_type == "hidden")
-    enabled = sum(1 for c in champ.connections if c.enabled)
-    weights = [c.weight for c in champ.connections if c.enabled]
+    weights = champ.weights.tolist()
     cs = steer_score(NeuralNetwork(champ, cfg.network), cfg.sensors)
 
     rng = Random(1234)
     rand_scores: list[float] = []
+    layer_shapes = network_layer_shapes(cfg.network)
     for _ in range(200):
-        TRACKER.reset()
-        g = Genome.new_fully_connected(
-            cfg.genome, cfg.network.num_inputs, cfg.network.num_outputs, rng
-        )
+        g = Genome.new_random(cfg.genome, layer_shapes, rng)
         rand_scores.append(steer_score(NeuralNetwork(g, cfg.network), cfg.sensors))
 
     better = sum(1 for r in rand_scores if r > cs)
     print(
-        f"champion topology : {hidden} hidden, {enabled} enabled conns, "
+        f"champion topology : layers {champ.layer_shapes}, "
         f"weight std {st.pstdev(weights):.3f}"
     )
     print(f"champion steer r  : {cs:+.3f}")

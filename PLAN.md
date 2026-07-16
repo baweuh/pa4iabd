@@ -624,3 +624,62 @@ main, NumPy pur) tout en apportant une mécanique réellement différente de
 l'évolution pure ; un RL classique (Q-learning/policy gradient) sortirait
 du cadre du projet (boucle d'entraînement séparée, tension avec le
 principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
+
+## Branche poc3 — Topologie de réseau fixe + forward pass batché ✅
+> Ouverte depuis `poc2.6` (2026-07-16) après recherche littérature (Hamon
+> et al. 2023, Bejjani et al. 2025 : dans le même paradigme non-épisodique/
+> sélection implicite que ce projet, l'émergence de comportements complexes
+> est liée à l'**échelle**, pas au mécanisme de sélection — cohérent avec
+> l'historique du projet, où seuls les leviers d'échelle/écologie ont
+> marché). Verrou identifié (audit poc2.4) : le forward pass NEAT
+> hétérogène est un plafond dur, non batchable ; la population par défaut a
+> <0,5 nœud caché en moyenne après 30k ticks — NEAT paie son coût plein
+> pour une évolution de topologie qui n'a quasiment jamais lieu. Détails
+> complets : `docs/DESIGN-poc3-fixed-topology.md`.
+
+- [x] **Génome à topologie fixe** (`src/genome.py` réécrit) : `Genome`
+        devient un vecteur de poids plat + `layer_shapes` (dérivé de
+        `NetworkConfig.hidden_size`, jamais hardcodé). Plus de mutation
+        structurelle (add_node/add_connection/remove_*/InnovationTracker
+        supprimés) — feedforward garanti par construction, plus de DFS
+        anti-cycle. `hidden_size: 0` (v1) = couche linéaire 49→2, même
+        capacité effective que le NEAT direct moyennait déjà.
+- [x] **`src.network.batch_activate`** : forward pass de toute la
+        population en un seul appel NumPy batché (`einsum` par couche),
+        remplace la boucle `agent.decide()` par agent dans
+        `Simulation.tick()`. Équivalence numérique verrouillée par test
+        dédié (tolérance 1e-10, linéaire ET avec couche cachée).
+- [x] **`src.speciation` simplifié** : distance = moyenne de différence
+        absolue sur le vecteur de poids partagé (plus de concept
+        excess/disjoint, qui n'avait de sens que pour des topologies
+        variables). `assign_species`/`fitness_sharing` gardent la même
+        signature d'appel.
+- [x] **HyperNEAT supprimé** (décision explicite Robin — bâti sur l'API
+        NEAT structurelle, déjà falsifié V1-V4, jamais promu) :
+        `src/hyperneat.py`, `tools/inspect_network.py`,
+        `tools/trace_lineage.py`, `tests/test_hyperneat.py`,
+        `config/lever_hyperneat_{mvp,v2,v3,v4}.yaml`. Historique complet
+        préservé sur `poc2.5`/`poc2.6`.
+- [x] **Reste de l'écosystème réutilisé tel quel** : environnement,
+        énergie, reproduction, capteurs, boucle de tick, renderer (panneau
+        réseau adapté à la nouvelle forme, pas redessiné), novelty,
+        K-sweep, densité.
+- [x] ✅ **Vérification** : 238 tests verts (test_genome.py/test_network.py/
+        test_speciation.py réécrits, test_hyperneat.py supprimé), black
+        clean, pylint 9.99/10. Run réel headless sans crash, population
+        stable à 400/400. **Perf (pop=400, 3000 ticks, comparaison directe
+        poc2.6 vs poc3) : 56,2→72,1 ticks/s (×1,28)** — diagnostiqué par
+        profil : `batch_activate` ne représente plus que 2,8 % du tick
+        (contre 45 % "plafond dur" pour le forward pass NEAT hétérogène) —
+        **le verrou visé est bien éliminé** ; le nouveau goulot dominant
+        est `agent.eat()` (29 %, jamais batché) et `batch_sense` (49 %,
+        déjà optimisé poc2.4), tous deux hors scope de ce chantier. Sanity
+        comportementale (2 seeds/5000 ticks) : fourrage émerge normalement
+        (73 %/33 %), rien de cassé.
+- [ ] **Hors scope, sessions futures** : monter la population au-delà de
+        400 (l'hypothèse même que ce chantier prépare), sweep
+        `hidden_size` > 0, GPU/JAX, re-validation des leviers existants à
+        plus grande échelle, nettoyage des ~37 configs legacy
+        poc2.2-poc2.4 (structurellement incompatibles, seuls les 3
+        utilisés par la suite de tests ont été corrigés), perf de
+        `agent.eat()`/`batch_sense` (nouveau plafond identifié).
