@@ -427,14 +427,17 @@
         3 warnings pylint `renderer.py` corrigés (10.00/10). 249 tests
         verts, black clean, pylint propre.
 
-## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) ✅ FALSIFIÉ
+## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) ✅ FALSIFIÉ (V1+V2+V3)
 > POC hors numérotation. Recherche n°4 (dernier point ouvert de la feuille de
 > route, voir memory `research-roadmap`) : au lieu que le génome décrive
 > directement le réseau, il décrit un CPPN interrogé sur la géométrie du
 > capteur pour produire les poids d'un substrat fixe. Convenu avec Robin
-> (2026-07-15) : MVP dé-risqué avant la version complète. **Verdict : pire
-> régression du projet (moy 67%→15%), root cause diagnostiquée (substrat
-> dense + CPPN sans nœud caché sature et noie le signal).** Détails
+> (2026-07-15) : MVP dé-risqué avant la version complète. **Verdict V1 :
+> pire régression du projet (moy 67%→15%), root cause diagnostiquée
+> (substrat dense + CPPN sans nœud caché sature et noie le signal).**
+> **V3 (2026-07-16, bootstrap nœud caché CPPN à la genèse) referme
+> l'essentiel de l'écart à 30k (moy 19%→68%, vs 79% défaut) mais reste
+> falsifié au sens strict : un seed s'effondre (123 : 82%→12%).** Détails
 > complets : `docs/DESIGN-hyperneat-mvp.md`, `docs/FALSIFIED-hyperneat.md`.
 - [x] **Session 1 — mécanique + outil d'itération rapide** : `src/geometry.py`
         (extrait de `agent.py`, casse un cycle d'import) ; `src/hyperneat.py`
@@ -495,3 +498,30 @@
         (bootstrap nœuds cachés, mutation CPPN dédiée) **à décider avec
         Robin**, pas engagé. 273 tests verts, black clean, pylint 9.97/10.
         Détails complets (V1+V2) : `docs/FALSIFIED-hyperneat.md`.
+- [x] ✅ **HyperNEAT V3 — bootstrap de nœud(s) caché(s) CPPN à la genèse,
+        écart réduit mais RE-FALSIFIÉ (mixte)** (2026-07-16, décidé avec
+        Robin : direction "bootstrap" retenue plutôt que "mutation CPPN
+        dédiée", campagne lancée directement à 30k — précédent du levier
+        densité, négatif à 15k/positif à 30k). Mécanisme :
+        `hyperneat.bootstrap_hidden_nodes` (0=legacy) appelle
+        `Genome.add_node` N fois sur le CPPN fondateur juste après
+        `new_fully_connected`, dans `Simulation._spawn_agent` — réutilise
+        l'opérateur de split NEAT déjà existant, aucune machinerie
+        nouvelle. Sweep fondateur (0 tick) confirme qu'aucune
+        dégénérescence n'est réintroduite. `config/lever_hyperneat_v3.yaml`
+        = V2 (`weight_scale 0.5`) + `bootstrap_hidden_nodes` 0→1.
+        **Campagne 6 seeds/30k (défaut aussi relancé frais à 30k pour
+        comparaison directe) : moy foragers 79%(défaut)→68%(V3), −11** —
+        écart réduit d'un facteur ~4-5 par rapport à V2 (−48) et V1 (−60).
+        `hidden` moyen passe de 0,05–0,17 (V1/V2) à 0,87–1,40 : le CPPN
+        complexifie enfin structurellement. **2/6 seeds dépassent le
+        défaut** (1 : 68→92, +24 ; 99 : 56→91, +35 — 1ʳᵉ fois qu'un levier
+        HyperNEAT bat le défaut, et nettement) ; 2 quasi stables (42, 7) ;
+        **2 régressent lourdement, dont un effondrement** (5 : 96→50,
+        −46 ; 123 : 82→12, −70, `steer_median` retombe à 0,000). Toujours
+        falsifié au sens strict (pas de campagne 6/6 stable) — mais
+        progrès net et diagnostiqué, pas un plateau. V4 (plus de nœuds
+        bootstrappés, mutation CPPN dédiée, diagnostic ciblé du cas 123)
+        **à décider avec Robin**, pas engagé automatiquement. 278 tests
+        verts, black clean, pylint 9.99/10. Détails complets :
+        `docs/FALSIFIED-hyperneat.md`.
