@@ -554,3 +554,73 @@
         lever_hyperneat_v3.yaml`), toujours falsifié au sens strict, non
         promu ; `hyperneat.enabled` reste absent (=false) dans
         `default.yaml`. Détails complets : `docs/FALSIFIED-hyperneat.md`.
+## Branche poc2.6 — todo grossière, à affiner avec Robin 🔄
+> Ouverte depuis `poc2.5` (2026-07-16) après clôture du chantier HyperNEAT
+> (V1→V4, falsifié) et feuille de route recherche 5/5. Constat de Robin :
+> la plupart des leviers testés jusqu'ici (fitness sharing, troncature,
+> crossover, génome sparse, critère minimal, îles, archive, biais,
+> HyperNEAT) reposent tous sur la **sélection/reproduction**. Cette liste
+> couvre 3 candidats — un seul a un diagnostic préalable (V5), les deux
+> autres sont volontairement grossiers, **à transformer en hypothèse
+> précise avant d'engager toute campagne** (discipline du projet : jamais
+> de campagne sans diagnostic). Ordre et scope à trancher avec Robin.
+
+- [ ] **HyperNEAT V5 — régime de mutation CPPN dédié.** Seule piste avec
+        un diagnostic déjà établi (V2/V3, `docs/FALSIFIED-hyperneat.md`) :
+        le CPPN fondateur progresse à peine structurellement (`hidden`
+        quasi nul ou lentement croissant) avec le régime de mutation
+        hérité de l'encodage direct (`add_node_rate` 0,03/tick,
+        `weight_mutation_rate` 0,15) — jamais ajusté pour un génome à 6-14
+        poids fortement couplés. Bien scopée, coût connu (~30 min/itération,
+        sweep 0 tick + campagne 6 seeds/30k).
+- [ ] **Repro non canonique — à transformer en hypothèse avant campagne.**
+        Deux écarts à la littérature repérés en audit (memory
+        `research-roadmap`), jamais testés comme leviers : `Genome.
+        crossover` traite toujours `self` comme parent "fitter" sans
+        comparer les fitness ; la reproduction ne comble que les slots
+        vidés par la mort (pas de turnover forcé façon rtNEAT). Risque
+        élevé de falsification supplémentaire — quasi tous les leviers de
+        sélection/reproduction du projet ont échoué (troncature, critère
+        minimal, îles, crossover lui-même) — donc priorité basse tant
+        qu'aucun diagnostic ne motive l'un ou l'autre spécifiquement.
+- [ ] **Pistes hors sélection/reproduction — recherche littérature
+        2026-07-16, aucun diagnostic encore, à affiner :**
+    - **Plasticité Hebbienne/neuromodulée pendant la vie de l'agent**
+        (Stanley, Bryant & Miikkulainen 2003 — NEAT + règles Hebbiennes
+        évoluées, testé sur un domaine de **foraging** conçu pour exiger
+        un changement de politique en cours de vie ; Soltoggio et al.
+        2018 « Born to Learn », survey EPANN). Catégorie fondamentalement
+        différente de tout ce qui a été tenté (adaptation individuelle
+        pendant la vie, pas seulement inter-générationnelle) ; nécessite
+        juste une règle de mise à jour de poids en NumPy pur, pas de
+        framework ML (respecte `CLAUDE.md`). Le lien le plus direct avec
+        la tâche de foraging du projet parmi toutes les pistes trouvées.
+    - **Quality-Diversity — MAP-Elites / Novelty Search with Local
+        Competition** (Lehman & Stanley 2011 ; Mouret & Clune 2015).
+        Remplace la sélection générationnelle par un archive de niches
+        comportementales retenant l'élite par niche. NSLC en particulier
+        combine directement novelty (déjà promu en défaut) avec une
+        compétition **locale** plutôt que globale — differe de l'archive
+        de nouveauté déjà falsifiée (mécanisme d'archive différent, pas
+        juste un stockage passif de comportements obsolètes).
+    - **ALPS — Age-Layered Population Structure** (Hornby 2006).
+        Alternative aux îles (déjà falsifiées, poc2.4) pour préserver la
+        diversité : couches d'âge protégeant les jeunes génotypes de la
+        compétition directe avec les anciens, plutôt qu'une isolation
+        géographique. Mécanisme différent pour un objectif similaire
+        (limiter la convergence prématurée) déjà tenté et raté une fois.
+    - **Mutation auto-adaptative** (façon evolution strategies — le taux
+        de mutation évolue lui-même par génome au lieu d'être une
+        constante YAML globale). Tension à trancher avec l'invariant n°1
+        (zéro valeur hardcodée, tout vient de `SimConfig`) : le taux
+        s'auto-règle par l'évolution, pas hardcodé, mais change la nature
+        du paramètre (plus une constante lue en config, un état évolué).
+
+**Sur les leviers "ML"** : le projet interdit tout framework ML
+(`neat-python`/torch/tensorflow/gym, cf. `CLAUDE.md`). Parmi les pistes
+ci-dessus, la plasticité Hebbienne et la mutation auto-adaptative sont
+les deux qui restent dans ces clous (règles de mise à jour codées à la
+main, NumPy pur) tout en apportant une mécanique réellement différente de
+l'évolution pure ; un RL classique (Q-learning/policy gradient) sortirait
+du cadre du projet (boucle d'entraînement séparée, tension avec le
+principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
