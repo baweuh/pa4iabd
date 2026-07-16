@@ -184,8 +184,8 @@ au-delà de 400 :
 | 400 | 90,2 | 106,0 |
 | 2000 | 23,9 | 32,8 |
 | 4000 | 9,0 | 19,3 |
-| 8000 | injouable (mémoire) | 12,3 |
-| 16000 | injouable (mémoire) | 6,7 |
+| 8000 | 2,8 (lent, pas un crash — vérifié après coup) | 12,3 |
+| 16000 | non testé jusqu'à pop pleine (mémoire du tenseur (pop,pop,D) ≈ 32 Go à 16k, > les 15 Go de cette machine — plausible mais pas confirmé) | 6,7 |
 
 Profil à pop=8000 : `batch_sense` redevient le coût dominant (37,5%, linéaire
 en pop — attendu, pas un mur comme les deux précédents) ; `population_novelty`

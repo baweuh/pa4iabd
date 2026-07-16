@@ -696,11 +696,16 @@ principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
         inchangé). 6 tests dédiés (`tests/test_novelty.py`), dont
         exclusion de soi garantie même échantillonné.
 - [x] ✅ **Perf mesurée** (`novelty.max_pool_size: 300`) : 400→106,0 ;
-        2000→32,8 ; 4000→19,3 ticks/s ; **8000 et 16000 agents
-        (injouables/memory crash avant) tournent maintenant à 12,3 et 6,7
-        ticks/s**. Profil à 8000 : `batch_sense` redevient le coût
-        dominant (37,5 %, linéaire, attendu), `population_novelty` tombe
-        à 10,8 %. 249 tests verts, black clean, pylint 9.99/10. Détails :
+        2000→32,8 ; 4000→19,3 ; 8000→12,3 ; 16000→6,7 ticks/s. Sans le
+        correctif (novelty exacte), 8000 tournait à 2,8 ticks/s — lent
+        (~3h/seed pour 30k ticks) mais PAS un crash mémoire, contrairement
+        à ce que ce document affirmait initialement (corrigé après
+        vérification). 16000 en exact non testé jusqu'à pop pleine (le
+        tenseur (pop,pop,D) atteindrait ~32 Go, > les 15 Go de cette
+        machine — plausible mais pas confirmé). Profil à 8000 :
+        `batch_sense` redevient le coût dominant (37,5 %, linéaire,
+        attendu), `population_novelty` tombe à 10,8 %. 249 tests verts,
+        black clean, pylint 9.99/10. Détails :
         `docs/DESIGN-poc3-fixed-topology.md` (addendum).
 - [ ] **Campagne de recherche à grande échelle** : pas encore lancée —
         décider l'échelle cible avec Robin (maintenant techniquement
