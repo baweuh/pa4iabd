@@ -530,3 +530,68 @@ def batch_sense(
         blocks.append(apple_flag.mean(axis=1, keepdims=True))
 
     return np.concatenate(blocks, axis=1).tolist()
+
+
+def batch_eat(
+    agents: "list[Agent]", env: Environment, config: SimConfig
+) -> "list[list[Apple]]":
+    """Resolve apple consumption for the WHOLE population in one NumPy pass.
+
+    Must be called AFTER every agent has moved this tick (uses final
+    positions) — poc3 perf audit found ``Agent.eat()``'s per-agent Python
+    loop over every live apple (O(pop × live apples)) was the new dominant
+    tick cost (29%) once the NEAT forward pass was batched away.
+
+    Bit-identical to calling ``Agent.eat()`` on each agent in population
+    order: that sequential loop's own semantics already resolve competing
+    agents by "whoever's turn comes first (smallest population index) eats
+    it, removing it from ``env.apples`` before later agents' turns" — since
+    ``eat()`` never reads another agent's position, only ``self``'s
+    (already-moved) position and which apples remain live, the winner for
+    each apple is exactly the smallest-index agent within reach of it,
+    regardless of move/eat interleaving order. This computes that reach
+    matrix in one NumPy pass instead of one Python-level distance check per
+    (agent, apple) pair.
+
+    Applies each apple's energy gain (capped at ``max_energy`` once per
+    agent — mathematically identical to capping after each apple
+    individually, since the gain is positive and the cap only ever clips
+    downward) and calls ``env.mark_eaten`` for every eaten apple, same side
+    effects as calling ``Agent.eat()`` per agent. Returns one list of eaten
+    ``Apple`` per agent, in population order (empty list = nothing eaten).
+    """
+    if not agents:
+        return []
+    eaten_per_agent: "list[list[Apple]]" = [[] for _ in agents]
+    apples = list(env.apples)
+    if not apples:
+        return eaten_per_agent
+
+    count = len(agents)
+    px = np.fromiter((a.x for a in agents), np.float64, count)
+    py = np.fromiter((a.y for a in agents), np.float64, count)
+    ax = np.fromiter((a.x for a in apples), np.float64, len(apples))
+    ay = np.fromiter((a.y for a in apples), np.float64, len(apples))
+    reach = config.agent.radius + config.apple.radius
+
+    dist = np.hypot(
+        px[:, np.newaxis] - ax[np.newaxis, :], py[:, np.newaxis] - ay[np.newaxis, :]
+    )
+    in_reach = dist <= reach  # (pop, apples)
+
+    reachable = in_reach.any(axis=0)
+    winner = in_reach.argmax(axis=0)  # first (smallest-index) True row per column
+
+    for apple_idx in np.flatnonzero(reachable):
+        eaten_per_agent[int(winner[apple_idx])].append(apples[int(apple_idx)])
+
+    gain = config.apple.energy
+    max_energy = config.agent.max_energy
+    for agent, won in zip(agents, eaten_per_agent):
+        if not won:
+            continue
+        agent.energy = min(agent.energy + len(won) * gain, max_energy)
+        for apple in won:
+            env.mark_eaten(apple)
+
+    return eaten_per_agent

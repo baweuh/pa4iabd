@@ -289,6 +289,14 @@ class NoveltyConfig:
     archive_enabled: bool = False  # persistent behaviour pool (see class docstring)
     archive_prob: float = 0.01  # P(a scored agent is archived), per refresh
     archive_max_size: int = 500  # FIFO cap on the archive
+    # poc3: population_novelty is O(pop²) — a hard wall at the scales poc3
+    # exists to test (tens of GB of pairwise distances at pop=10 000). 0
+    # (default) = unlimited/exact, byte-for-byte unchanged from before this
+    # field existed. >0 caps how many other behaviours each agent is
+    # compared against (a shared random subsample stands in for the full
+    # pool above this size), making the cost O(pop × max_pool_size)
+    # instead of O(pop²) — see src.novelty.population_novelty.
+    max_pool_size: int = 0
 
     def __post_init__(self) -> None:
         _require_non_negative(self, "weight")
@@ -307,6 +315,7 @@ class NoveltyConfig:
             raise ConfigError(
                 "novelty.archive_max_size must be >= 1, got " f"{self.archive_max_size}"
             )
+        _require_non_negative(self, "max_pool_size")
 
 
 @dataclass(frozen=True)

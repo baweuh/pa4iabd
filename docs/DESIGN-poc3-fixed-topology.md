@@ -143,9 +143,56 @@ aujourd'hui — isoler une seule variable, discipline constante du projet).
 
 ## Hors scope (sessions futures)
 
-Monter la population au-delà de 400 (l'hypothèse même que ce chantier
-prépare à tester), sweep `hidden_size` > 0, GPU/JAX, re-validation
-complète des leviers existants (novelty/K-sweep/densité) sous la nouvelle
-architecture à plus grande échelle, nettoyage des configs legacy
-poc2.2-poc2.4, perf de `agent.eat()`/`batch_sense` (nouveau plafond
-identifié ci-dessus).
+Sweep `hidden_size` > 0, GPU/JAX, re-validation complète des leviers
+existants (novelty/K-sweep/densité) sous la nouvelle architecture à plus
+grande échelle, nettoyage des configs legacy poc2.2-poc2.4, perf de
+`batch_sense` (nouveau plafond dominant, voir addendum ci-dessous).
+
+## Addendum — déblocage de l'échelle (même session, suite immédiate)
+
+Avant de lancer une vraie campagne à grande échelle (le but même de
+poc3), deux nouveaux murs perf identifiés en testant `population.max_size`
+au-delà de 400 :
+
+- **`agent.eat()` (29% du tick à pop=400, jamais batché)** : boucle Python
+  O(pop × pommes vivantes). Remplacé par `src.agent.batch_eat` — une passe
+  NumPy (matrice de distance agents×pommes) qui résout la compétition
+  entre agents pour une même pomme **exactement** comme la boucle
+  séquentielle (plus petit index gagne, puisque `eat()` ne lit jamais la
+  position d'un autre agent). `Simulation.tick()` restructuré : décision +
+  mouvement pour toute la population d'abord, puis un seul appel
+  `batch_eat`. Équivalence verrouillée par `tests/test_batch_eat.py` (5
+  tests, dont un sur un scénario contesté à la main et un sur un vrai run
+  évolué à 50 ticks).
+- **`population_novelty` (O(pop²), le levier novelty promu en défaut)** :
+  un tenseur `(pop, pop, D)` de distances par paires — déjà 21% du tick à
+  pop=2000, et une explosion mémoire pure (dizaines de Go) bien avant
+  10 000 agents. Nouveau `novelty.max_pool_size` (0 = illimité/exact,
+  défaut, **strictement inchangé** pour toute config existante) : au-delà
+  de cette taille, un sous-échantillon aléatoire partagé (tiré via le RNG
+  injecté, déterministe) tient lieu de pool complet — coût O(pop ×
+  max_pool_size) au lieu de O(pop²), même trick que le k-NN de novelty
+  search à grande échelle dans la littérature. Exclusion de soi-même
+  toujours garantie même si l'agent tombe dans l'échantillon. 6 tests
+  dédiés (`tests/test_novelty.py`), dont un qui vérifie l'exclusion de soi
+  sur 20 graines différentes.
+
+**Mesure (pop variable, `novelty.max_pool_size: 300`)** :
+
+| max_size | ticks/s (avant ce correctif) | ticks/s (après) |
+|---|:--:|:--:|
+| 400 | 90,2 | 106,0 |
+| 2000 | 23,9 | 32,8 |
+| 4000 | 9,0 | 19,3 |
+| 8000 | injouable (mémoire) | 12,3 |
+| 16000 | injouable (mémoire) | 6,7 |
+
+Profil à pop=8000 : `batch_sense` redevient le coût dominant (37,5%, linéaire
+en pop — attendu, pas un mur comme les deux précédents) ; `population_novelty`
+tombe à 10,8%. **249 tests verts, black clean, pylint 9.99/10.**
+
+Une vraie campagne de recherche à grande échelle est maintenant
+techniquement jouable (testé sans crash jusqu'à 16 000 agents) — reste à
+décider avec Robin l'échelle cible et si `max_pool_size` doit être validé
+comme approximation acceptable de novelty avant de s'y fier pour un
+verdict de recherche.

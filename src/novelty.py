@@ -20,6 +20,7 @@ sensor configuration (49 or 67 inputs).
 from __future__ import annotations
 
 import math
+from random import Random
 
 import numpy as np
 
@@ -68,7 +69,11 @@ def behavior_descriptor(net: NeuralNetwork, sensors: SensorConfig) -> list[float
 
 
 def population_novelty(
-    descriptors: np.ndarray, neighbors: int, archive: np.ndarray | None = None
+    descriptors: np.ndarray,
+    neighbors: int,
+    archive: np.ndarray | None = None,
+    max_pool_size: int = 0,
+    rng: Random | None = None,
 ) -> np.ndarray:
     """Mean distance to the ``neighbors`` nearest behaviours, per agent.
 
@@ -82,18 +87,46 @@ def population_novelty(
     without being scored itself (Lehman & Stanley 2011). Novelty is measured
     against ``descriptors ∪ archive``; the archive only adds candidates to be
     novel against, it never displaces the current population.
+
+    Brute-force pairwise distance is O(pop²) — fine at pop=400 (the poc2.4
+    campaigns this was validated on), but a hard wall at the population
+    scales poc3 exists to test (a (P, P, D) tensor at P=10 000 is already
+    tens of GB). ``max_pool_size`` (0 = unlimited, exact — the default,
+    byte-for-byte unchanged from before this parameter existed) caps how
+    many OTHER behaviours each agent is compared against: above that many
+    candidates, one random subsample (shared by the whole population this
+    call, drawn from ``rng``) stands in for the full pool, making the cost
+    O(pop × max_pool_size) instead of O(pop²) — the same "one shared
+    reference set instead of pairwise" trick as k-NN novelty search at
+    scale in the literature. Approximate (fewer candidates to be novel
+    against), not wrong: never promoted/engaged unless a config explicitly
+    sets it.
     """
     count = descriptors.shape[0]
     has_archive = archive is not None and archive.shape[0] > 0
     if count <= 1 and not has_archive:
         return np.zeros(count)
-    pool = (
-        np.concatenate([descriptors, archive], axis=0) if has_archive else descriptors
-    )
-    diff = descriptors[:, None, :] - pool[None, :, :]  # (P, P+A, D)
-    dist = np.sqrt(np.sum(diff * diff, axis=2))  # (P, P+A)
+    if has_archive:
+        pool = np.concatenate([descriptors, archive], axis=0)
+        # Position of each pool row's corresponding population index, if any
+        # (archive rows have none — they can never be "self" for anyone).
+        pool_self_index = np.concatenate(
+            [np.arange(count), np.full(archive.shape[0], -1)]
+        )
+    else:
+        pool = descriptors
+        pool_self_index = np.arange(count)
+
+    if max_pool_size and pool.shape[0] > max_pool_size and rng is not None:
+        sample = rng.sample(range(pool.shape[0]), max_pool_size)
+        pool = pool[sample]
+        pool_self_index = pool_self_index[sample]
+
+    diff = descriptors[:, None, :] - pool[None, :, :]  # (P, pool, D)
+    dist = np.sqrt(np.sum(diff * diff, axis=2))  # (P, pool)
     self_idx = np.arange(count)
-    dist[self_idx, self_idx] = np.inf  # never count the agent against itself
+    is_self = pool_self_index[None, :] == self_idx[:, None]
+    dist[is_self] = np.inf  # never count the agent against itself
     k = min(neighbors, pool.shape[0] - 1)
     nearest = np.partition(dist, k - 1, axis=1)[:, :k]  # k smallest per row
     return nearest.mean(axis=1)

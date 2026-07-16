@@ -683,3 +683,25 @@ principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
         poc2.2-poc2.4 (structurellement incompatibles, seuls les 3
         utilisés par la suite de tests ont été corrigés), perf de
         `agent.eat()`/`batch_sense` (nouveau plafond identifié).
+
+### Addendum poc3 — déblocage de l'échelle (même session)
+- [x] **`src.agent.batch_eat`** : vectorise la consommation de pommes
+        (NumPy, matrice agents×pommes), équivalence exacte avec la boucle
+        séquentielle verrouillée par 5 tests dédiés
+        (`tests/test_batch_eat.py`). `eat()` passe de 29 % à ~négligeable
+        du tick.
+- [x] **`novelty.max_pool_size`** : borne le coût O(pop²) de
+        `population_novelty` (sous-échantillon partagé au-delà de la
+        taille configurée, déterministe). 0 = illimité/exact (défaut,
+        inchangé). 6 tests dédiés (`tests/test_novelty.py`), dont
+        exclusion de soi garantie même échantillonné.
+- [x] ✅ **Perf mesurée** (`novelty.max_pool_size: 300`) : 400→106,0 ;
+        2000→32,8 ; 4000→19,3 ticks/s ; **8000 et 16000 agents
+        (injouables/memory crash avant) tournent maintenant à 12,3 et 6,7
+        ticks/s**. Profil à 8000 : `batch_sense` redevient le coût
+        dominant (37,5 %, linéaire, attendu), `population_novelty` tombe
+        à 10,8 %. 249 tests verts, black clean, pylint 9.99/10. Détails :
+        `docs/DESIGN-poc3-fixed-topology.md` (addendum).
+- [ ] **Campagne de recherche à grande échelle** : pas encore lancée —
+        décider l'échelle cible avec Robin (maintenant techniquement
+        jouable jusqu'à 16k+ agents).

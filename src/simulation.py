@@ -36,7 +36,7 @@ from typing import Callable, TextIO
 
 import numpy as np
 
-from src.agent import Agent, batch_sense
+from src.agent import Agent, batch_eat, batch_sense
 from src.apple import Apple
 from src.config import SimConfig
 from src.environment import Environment
@@ -251,15 +251,18 @@ class Simulation:
                 (self.tick_count, agent.x, agent.y, agent.heading)
             )
 
-        # Stage 1 — perception, decision, action, eating.
+        # Stage 1 — perception, decision, action, then eating.
         # "Freeze then perceive": the whole population's senses are computed in a
         # single NumPy pass against the tick-start world (batch_sense), then the
         # whole population's forward pass runs in one batched call too
         # (batch_activate, poc3 — every genome shares the same fixed topology,
-        # see src.genome.network_layer_shapes) before each agent acts and eats
-        # in index order. Agents never sense one another, so the only
-        # behavioural delta vs a per-agent perceive-then-eat loop is that an
-        # agent may perceive an apple a lower-index agent eats the same tick.
+        # see src.genome.network_layer_shapes). Every agent decides and moves
+        # before ANY of them eat — safe because eat()/batch_eat() never reads
+        # another agent's position, only self's (already-moved) position and
+        # which apples remain live, so decide/move order across agents can't
+        # affect who eats what; only eating ORDER matters (batch_eat resolves
+        # competing agents by population index, matching the old per-agent
+        # perceive-move-eat loop's own resolution exactly — see its docstring).
         senses = batch_sense(self.population, self.env, self._config)
         raw_outputs = batch_activate(
             [agent.genome for agent in self.population],
@@ -270,7 +273,9 @@ class Simulation:
             agent.age += 1
             vx, vy = agent.decide_from_raw(agent_senses, raw)
             agent.move(vx, vy)
-            eaten_apples = agent.eat()
+
+        eaten_lists = batch_eat(self.population, self.env, self._config)
+        for agent, eaten_apples in zip(self.population, eaten_lists):
             eaten = len(eaten_apples)
             self._apples_eaten[agent] += eaten
             agent.apples_eaten += eaten
@@ -717,6 +722,9 @@ class Simulation:
         offers. Each scored agent is then independently archived with
         probability ``archive_prob`` (Lehman & Stanley 2011's random-injection
         scheme) — the archive itself is never scored, only added to.
+
+        ``novelty.max_pool_size`` (0 = unlimited/exact, default) bounds the
+        O(pop²) cost at large population — see ``src.novelty.population_novelty``.
         """
         cfg = self._config.novelty
         descriptors = np.array([agent.behavior_descriptor for agent in survivors])
@@ -725,7 +733,9 @@ class Simulation:
             if cfg.archive_enabled and self._novelty_archive
             else None
         )
-        novelty = population_novelty(descriptors, cfg.neighbors, archive)
+        novelty = population_novelty(
+            descriptors, cfg.neighbors, archive, cfg.max_pool_size, self._rng
+        )
         for agent, score in zip(survivors, novelty):
             agent.novelty_score = float(score)
         if cfg.archive_enabled:

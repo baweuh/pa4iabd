@@ -101,6 +101,63 @@ def test_novelty_archive_lone_agent_not_zero() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# max_pool_size (poc3: bounds the O(pop²) cost at large population)
+# --------------------------------------------------------------------------- #
+def test_max_pool_size_zero_is_unchanged_from_before_the_param_existed() -> None:
+    rng = np.random.default_rng(0)
+    descriptors = rng.normal(size=(30, 4))
+    default = population_novelty(descriptors, neighbors=5)
+    explicit_unlimited = population_novelty(descriptors, neighbors=5, max_pool_size=0)
+    assert np.array_equal(default, explicit_unlimited)
+
+
+def test_max_pool_size_at_or_above_pool_is_exact() -> None:
+    """No subsampling kicks in once max_pool_size >= the pool itself."""
+    rng = np.random.default_rng(1)
+    descriptors = rng.normal(size=(20, 3))
+    exact = population_novelty(descriptors, neighbors=5)
+    capped_wide = population_novelty(
+        descriptors, neighbors=5, max_pool_size=20, rng=Random(0)
+    )
+    assert np.array_equal(exact, capped_wide)
+
+
+def test_max_pool_size_caps_cost_and_stays_deterministic() -> None:
+    """Same seed -> identical subsample -> identical scores (determinism)."""
+    rng = np.random.default_rng(2)
+    descriptors = rng.normal(size=(50, 4))
+    a = population_novelty(descriptors, neighbors=5, max_pool_size=10, rng=Random(7))
+    b = population_novelty(descriptors, neighbors=5, max_pool_size=10, rng=Random(7))
+    assert np.array_equal(a, b)
+    assert a.shape == (50,)
+    assert np.all(np.isfinite(a))  # no stray inf leaking into the mean
+
+
+def test_max_pool_size_excludes_self_even_when_sampled() -> None:
+    """An agent identical to itself must never count itself as a neighbour,
+    even when the random subsample happens to include its own index."""
+    descriptors = np.zeros((5, 2))  # every agent identical -> any nonzero
+    # score would mean self wasn't excluded.
+    for seed in range(20):  # try enough seeds that self gets sampled at least once
+        novelty = population_novelty(
+            descriptors, neighbors=2, max_pool_size=3, rng=Random(seed)
+        )
+        assert np.all(novelty == 0.0)
+
+
+def test_max_pool_size_with_archive() -> None:
+    """Subsampling composes with the archive (pool = descriptors ∪ archive)."""
+    rng = np.random.default_rng(3)
+    descriptors = rng.normal(size=(15, 3))
+    archive = rng.normal(size=(15, 3)) + 10.0  # visibly distant cluster
+    novelty = population_novelty(
+        descriptors, neighbors=5, archive=archive, max_pool_size=8, rng=Random(1)
+    )
+    assert novelty.shape == (15,)
+    assert np.all(np.isfinite(novelty))
+
+
+# --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
 def test_novelty_section_optional() -> None:
@@ -119,6 +176,22 @@ def test_novelty_section_optional() -> None:
 
     archive_lever = SimConfig.from_yaml("config/lever_novelty_archive.yaml").novelty
     assert archive_lever.archive_enabled and not lever.archive_enabled
+
+
+def test_max_pool_size_defaults_zero_and_rejects_negative() -> None:
+    import copy
+
+    import pytest
+    import yaml
+
+    from src.config import ConfigError
+
+    raw = copy.deepcopy(yaml.safe_load(open("config/default.yaml", encoding="utf-8")))
+    assert SimConfig.from_dict(raw).novelty.max_pool_size == 0
+
+    raw["novelty"] = {"max_pool_size": -1}
+    with pytest.raises(ConfigError, match="max_pool_size must be >= 0"):
+        SimConfig.from_dict(raw)
 
 
 # --------------------------------------------------------------------------- #
