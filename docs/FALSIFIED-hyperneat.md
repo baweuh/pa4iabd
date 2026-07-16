@@ -1,14 +1,16 @@
-# HyperNEAT (CPPN → substrat) — FALSIFIÉ en V1, V2 ET V3 (poc2.5)
+# HyperNEAT (CPPN → substrat) — FALSIFIÉ en V1, V2, V3 ET V4 (poc2.5)
 
 > Chantier n°4 de la feuille de route recherche, dernier point ouvert.
 > MVP dé-risqué implémenté, testé, câblé (`hyperneat.enabled`, off par
 > défaut = legacy), évalué par campagne 6 seeds (V1) — pire régression du
 > projet. Root cause diagnostiquée, corrigée, retesté (V2) — toujours
-> falsifié mais amélioration mesurable. V3 (bootstrap de nœuds cachés CPPN
+> falsifié mais amélioration mesurable. V3 (bootstrap d'1 nœud caché CPPN
 > à la genèse) referme un gros morceau de l'écart (moy 19%→68% à 30k, vs
 > 79% pour le défaut) mais reste **falsifié au sens strict** : un seed
-> s'effondre (123 : 82%→12%). Détails d'implémentation :
-> `docs/DESIGN-hyperneat-mvp.md`.
+> s'effondre (123 : 82%→12%). V4 (2 nœuds bootstrappés) teste si "plus de
+> nœuds = mieux" — **relation NON monotone, régresse nettement** (68%→39%) :
+> N=1 est un point de fonctionnement, pas un curseur à monter. Détails
+> d'implémentation : `docs/DESIGN-hyperneat-mvp.md`.
 
 ## Le mécanisme
 
@@ -200,35 +202,84 @@ peuvent encore aboutir à un CPPN fondateur dont la non-linéarité ne
 particulier. Non vérifié empiriquement (pas de sonde dédiée par seed) —
 resterait à instrumenter si le chantier continue.
 
+## V4 — 2 nœuds cachés bootstrappés, RELATION NON MONOTONE, régresse fort
+
+Décidé avec Robin (2026-07-16, « on pousse ») : tester si le lever V3 est
+un curseur qui continue d'aider en montant (2 nœuds cachés au lieu d'1),
+ou un point de fonctionnement isolé. Un sweep founder-level (0 tick,
+bootstrap 1/2/3) confirme à nouveau qu'aucune valeur ne dégénère
+statiquement (comme en V3, la question ne se voit pas à 0 tick) — même
+protocole, campagne lancée directement à 30k.
+
+**Config testée** : `config/lever_hyperneat_v4.yaml` = V3 + une seule
+variable changée — `hyperneat.bootstrap_hidden_nodes` 1→2.
+
+**Campagne 6 seeds/30k :**
+
+| seed | 42 | 7 | 123 | 1 | 5 | 99 | **moy** |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| défaut 30k | 98 | 76 | 82 | 68 | 96 | 56 | **79** |
+| HyperNEAT V3 30k (1 nœud) | 97 | 63 | 12 | 92 | 50 | 91 | **68** |
+| HyperNEAT V4 30k (2 nœuds) | 28 | 70 | 33 | 32 | 56 | 14 | **39** |
+| Δ (V4 vs V3) | **−69** | +7 | +21 | **−60** | +6 | **−77** | **−29** |
+
+**Falsifié, et RÉGRESSE nettement par rapport à V3 (68%→39%, −29)** —
+contredit l'hypothèse "plus de nœuds cachés = plus de décorrélation = plus
+compétent" :
+- **`hidden` moyen monte comme attendu** (0,87–1,40 en V3 → **2,03–2,73**
+  en V4 — le bootstrap fonctionne mécaniquement, le CPPN a bien 2 nœuds
+  cachés en moyenne), mais la compétence évoluée ne suit pas.
+- **Les 2 seeds qui battaient le défaut en V3 s'effondrent** : seed 1
+  (92→32, −60) et surtout seed 99 (91→14, −77, la pire chute de toute la
+  campagne V4). Seed 42, stable en V3 (97), chute aussi (97→28, −69).
+  `steer_median` repasse négatif sur 4/6 seeds (42, 123, 1, 99) — symptôme
+  de "pilotage anti-pommes" comme en V1, alors que V3 n'en avait aucun.
+- **Seule amélioration** : le pire cas de V3 (123, 12%) remonte un peu
+  (12→33, +21) sans devenir bon, et 2 seeds progressent marginalement (7,
+  5). Pas une contrepartie au reste.
+- **Diagnostic** : un second nœud caché double la dimension et la
+  profondeur du CPPN (6→hidden→hidden→1 ou 6→2×hidden→1 selon la
+  connexion splittée en second, `add_node` choisissant toujours au
+  hasard) — plus de paramètres à faire converger dans le même budget de
+  15-30k ticks, sur un opérateur de mutation (`add_node_rate` 0,03/tick,
+  `mutate_weights` 0,15) qui n'a pas été ajusté pour ce CPPN plus profond.
+  Le paysage de recherche s'est probablement complexifié plus vite que le
+  budget évolutif ne peut le suivre — la même dynamique que le volet 6
+  poc2.3 (génome fondateur sparse) et le nœud de biais poc2.4 : ajouter de
+  la complexité au génome fondateur sans ajuster le régime de mutation qui
+  doit l'exploiter dégrade, ça ne l'aide pas automatiquement. N=1 reste,
+  à ce stade, le seul point testé qui améliore le chantier ; ce n'est pas
+  un curseur monotone.
+
 ## Décision
 
-**Falsifié (V1, V2 et V3), non promu.** `default.yaml` garde
+**Falsifié (V1, V2, V3 et V4), non promu.** `default.yaml` garde
 `hyperneat.enabled` absent (=false, legacy). Mécanisme gardé câblé + testé
 comme référence (278 tests, `src/hyperneat.py`, `tools/inspect_network.py`,
-`tools/trace_lineage.py`). Trois itérations avec diagnostic root-cause à
+`tools/trace_lineage.py`). Quatre itérations avec diagnostic root-cause à
 chaque étape (pas juste un score) : V1→V2 (weight_scale) a corrigé la
-saturation fondatrice et la stabilité démographique ; V2→V3 (bootstrap de
-nœud caché) a comblé l'essentiel de l'écart de compétence restant
-(−48→−11) et fait mieux que le défaut sur 2/6 seeds, mais laisse un seed
-en échec sévère (123) — encore trop instable pour une promotion. Aller
-plus loin (V4 : plus de nœuds bootstrappés, taux de mutation CPPN dédié,
-ou diagnostic ciblé du cas 123) est **une décision à prendre avec Robin**,
-pas automatique — le rythme de progrès (facteur ~4-5 par itération) reste
-attractif, mais chaque itération coûte une campagne 6 seeds/30k complète
-(~30 min machine).
+saturation fondatrice ; V2→V3 (+1 nœud caché) a comblé l'essentiel de
+l'écart de compétence restant (−48→−11) et fait mieux que le défaut sur
+2/6 seeds ; V3→V4 (+2 nœuds cachés) a **régressé** (−11→−29), révélant que
+le lever n'est pas un curseur — N=1 est un point de fonctionnement précis,
+pas une direction à pousser plus loin sans autre changement (ex. adapter
+le taux de mutation CPPN à la profondeur). Le chantier s'arrête ici :
+meilleur résultat obtenu = V3 (`config/lever_hyperneat_v3.yaml`), toujours
+falsifié au sens strict (seed 123 s'y effondre), non promu.
 
 ## Artefacts
 
 - `src/hyperneat.py`, `src/geometry.py`, `HyperNEATConfig` (`src/config.py`,
   `weight_scale` + `connectivity` + `bootstrap_hidden_nodes`)
 - `src/agent.py` (`__init__`), `src/simulation.py` (`_spawn_agent`) —
-  câblage conditionnel, y compris le bootstrap V3 (`add_node` × N à la
+  câblage conditionnel, y compris le bootstrap V3/V4 (`add_node` × N à la
   genèse, avant le premier tick)
 - `src/network.py` — `activate()` généralisé à N sorties
 - `tools/inspect_network.py`, `tools/trace_lineage.py`
 - `tests/test_hyperneat.py` (24 tests, dont 3 verrouillent le diagnostic
   empiriquement), extensions `tests/test_config.py`
 - `config/lever_hyperneat_mvp.yaml` (V1), `config/lever_hyperneat_v2.yaml`
-  (V2), `config/lever_hyperneat_v3.yaml` (V3)
-- Campagnes : `logs/seed{42,7,123,1,5,99}/` (V1/V2, 15k) ; défaut + V3
+  (V2), `config/lever_hyperneat_v3.yaml` (V3, meilleur résultat du
+  chantier), `config/lever_hyperneat_v4.yaml` (V4, falsifié)
+- Campagnes : `logs/seed{42,7,123,1,5,99}/` (V1/V2, 15k) ; défaut + V3 + V4
   relancés frais à 30k pour cette comparaison (2026-07-16)

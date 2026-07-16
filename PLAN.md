@@ -427,7 +427,7 @@
         3 warnings pylint `renderer.py` corrigés (10.00/10). 249 tests
         verts, black clean, pylint propre.
 
-## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) ✅ FALSIFIÉ (V1+V2+V3)
+## Branche poc2.5 — HyperNEAT (encodage indirect, MVP) ✅ FALSIFIÉ (V1+V2+V3+V4), chantier clos
 > POC hors numérotation. Recherche n°4 (dernier point ouvert de la feuille de
 > route, voir memory `research-roadmap`) : au lieu que le génome décrive
 > directement le réseau, il décrit un CPPN interrogé sur la géométrie du
@@ -435,9 +435,12 @@
 > (2026-07-15) : MVP dé-risqué avant la version complète. **Verdict V1 :
 > pire régression du projet (moy 67%→15%), root cause diagnostiquée
 > (substrat dense + CPPN sans nœud caché sature et noie le signal).**
-> **V3 (2026-07-16, bootstrap nœud caché CPPN à la genèse) referme
+> **V3 (2026-07-16, bootstrap d'1 nœud caché CPPN à la genèse) referme
 > l'essentiel de l'écart à 30k (moy 19%→68%, vs 79% défaut) mais reste
-> falsifié au sens strict : un seed s'effondre (123 : 82%→12%).** Détails
+> falsifié au sens strict : un seed s'effondre (123 : 82%→12%).** **V4
+> (2 nœuds bootstrappés) régresse nettement (68%→39%) : la relation n'est
+> PAS monotone, N=1 est un point de fonctionnement, pas un curseur — chantier
+> clos sur ce constat, meilleur résultat = V3, non promu.** Détails
 > complets : `docs/DESIGN-hyperneat-mvp.md`, `docs/FALSIFIED-hyperneat.md`.
 - [x] **Session 1 — mécanique + outil d'itération rapide** : `src/geometry.py`
         (extrait de `agent.py`, casse un cycle d'import) ; `src/hyperneat.py`
@@ -525,3 +528,29 @@
         **à décider avec Robin**, pas engagé automatiquement. 278 tests
         verts, black clean, pylint 9.99/10. Détails complets :
         `docs/FALSIFIED-hyperneat.md`.
+- [x] ✅ **HyperNEAT V4 — 2 nœuds cachés bootstrappés, RELATION NON
+        MONOTONE, régresse fort — chantier clos** (2026-07-16, décidé avec
+        Robin : « on pousse » → teste si le lever V3 est un curseur qui
+        continue d'aider en montant, `hyperneat.bootstrap_hidden_nodes`
+        1→2, `config/lever_hyperneat_v4.yaml`). Sweep fondateur (0 tick,
+        bootstrap 1/2/3) confirme à nouveau qu'aucune valeur ne dégénère
+        statiquement — question invisible à 0 tick, campagne lancée
+        directement à 30k comme V3. **Campagne 6 seeds/30k : moy foragers
+        68%(V3)→39%(V4), −29** — contredit l'hypothèse "plus de nœuds =
+        mieux". `hidden` moyen monte comme prévu (0,87–1,40→2,03–2,73, le
+        bootstrap fonctionne mécaniquement) mais la compétence NE suit
+        PAS : les 2 seeds qui battaient le défaut en V3 s'effondrent (1 :
+        92→32, −60 ; 99 : 91→14, −77, pire chute de la campagne), seed 42
+        stable en V3 chute aussi (97→28, −69), `steer_median` repasse
+        négatif sur 4/6 seeds (symptôme V1). Seule amélioration : 123
+        (le pire cas V3) remonte un peu (12→33) sans devenir bon.
+        Diagnostic : un 2ᵉ nœud caché double la profondeur/dimension du
+        CPPN sans que le régime de mutation (`add_node_rate`,
+        `weight_mutation_rate`) soit ajusté pour cette complexité accrue —
+        même dynamique que le génome sparse poc2.3/le nœud de biais
+        poc2.4 (ajouter de la complexité fondatrice sans adapter le
+        régime évolutif qui doit l'exploiter dégrade). **Chantier
+        HyperNEAT clos** : meilleur résultat = V3 (`config/
+        lever_hyperneat_v3.yaml`), toujours falsifié au sens strict, non
+        promu ; `hyperneat.enabled` reste absent (=false) dans
+        `default.yaml`. Détails complets : `docs/FALSIFIED-hyperneat.md`.
