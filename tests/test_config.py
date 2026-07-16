@@ -246,6 +246,7 @@ def test_hyperneat_optional_section_defaults(raw: dict) -> None:
     cfg = SimConfig.from_dict(raw)
     assert cfg.hyperneat.enabled is False
     assert cfg.hyperneat.weight_scale == 3.0
+    assert cfg.hyperneat.bootstrap_hidden_nodes == 0
 
 
 def test_hyperneat_parsed_when_present(raw: dict) -> None:
@@ -258,6 +259,18 @@ def test_hyperneat_parsed_when_present(raw: dict) -> None:
 def test_hyperneat_rejects_non_positive_weight_scale(raw: dict) -> None:
     raw["hyperneat"] = {"weight_scale": 0.0}
     with pytest.raises(ConfigError, match="weight_scale must be > 0"):
+        SimConfig.from_dict(raw)
+
+
+def test_hyperneat_bootstrap_hidden_nodes_parsed(raw: dict) -> None:
+    raw["hyperneat"] = {"bootstrap_hidden_nodes": 2}
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.hyperneat.bootstrap_hidden_nodes == 2
+
+
+def test_hyperneat_rejects_negative_bootstrap_hidden_nodes(raw: dict) -> None:
+    raw["hyperneat"] = {"bootstrap_hidden_nodes": -1}
+    with pytest.raises(ConfigError, match="bootstrap_hidden_nodes must be >= 0"):
         SimConfig.from_dict(raw)
 
 

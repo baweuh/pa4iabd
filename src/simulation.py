@@ -198,6 +198,9 @@ class Simulation:
             num_outputs,
             self._rng,
         )
+        if self._config.hyperneat.enabled:
+            for _ in range(self._config.hyperneat.bootstrap_hidden_nodes):
+                genome.add_node(self._config.genome, self._rng)
         return Agent(
             genome, self._safe_spawn_position(), self._config, self.env, self._rng
         )

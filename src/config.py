@@ -416,10 +416,22 @@ class HyperNEATConfig:
     # 2010) uses a learned LEO output for; this is the simpler, fixed-
     # threshold version, one variable at a time per this project's discipline.
     connectivity: float = 1.0
+    # V3 (docs/FALSIFIED-hyperneat.md): V2 eliminated founder saturation
+    # (weight_scale) but the CPPN founder still starts at 0 hidden nodes —
+    # 6 weights only, purely linear, each one steering ~1/6th of every
+    # substrate weight simultaneously (a hard, highly-coupled landscape to
+    # climb by single-weight perturbations; `hidden` stayed near-zero after
+    # 15k ticks in V1/V2). Splitting N connections at genesis via the exact
+    # same ``Genome.add_node`` operator already used for in-life mutation
+    # (no new machinery) gives the CPPN a non-linearity from birth instead
+    # of waiting on `add_node_rate` to stumble into one. 0 (default) =
+    # legacy CPPN founder, byte-for-byte unchanged.
+    bootstrap_hidden_nodes: int = 0
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_scale")
         _require_rate(self, "connectivity")
+        _require_non_negative(self, "bootstrap_hidden_nodes")
 
 
 @dataclass(frozen=True)

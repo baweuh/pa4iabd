@@ -249,6 +249,27 @@ def test_lower_weight_scale_fixes_founder_saturation(cfg):
         assert steer_score(net, cfg.sensors) != 0.0
 
 
+def test_bootstrap_hidden_nodes_adds_nonlinearity_without_founder_degeneracy(cfg):
+    """V3 diagnosis (docs/FALSIFIED-hyperneat.md): V2 already zeroed out founder
+    saturation (weight_scale=0.5) — a fresh 0-tick sweep confirms bootstrapping
+    hidden nodes on top doesn't reintroduce degenerate founders (steer_score
+    exactly 0.0), it's an evolvability lever, not a founder-saturation fix.
+    """
+    v2_and_bootstrap = dataclasses.replace(
+        cfg.hyperneat, weight_scale=0.5, bootstrap_hidden_nodes=1
+    )
+    rng = random.Random(0)
+    for _ in range(30):
+        TRACKER.reset()
+        cppn = Genome.new_fully_connected(
+            cfg.genome, CPPN_NUM_INPUTS, CPPN_NUM_OUTPUTS, rng
+        )
+        cppn.add_node(cfg.genome, rng)
+        assert sum(1 for n in cppn.nodes if n.node_type == "hidden") == 1
+        net = build_substrate_network(cppn, cfg.sensors, cfg.network, v2_and_bootstrap)
+        assert steer_score(net, cfg.sensors) != 0.0
+
+
 # ------------------------------------------------------------------ #
 # End-to-end: Simulation / Agent wiring
 # ------------------------------------------------------------------ #
@@ -268,6 +289,28 @@ def test_hyperneat_founder_genome_is_cppn_shape(hn_cfg):
     genome = sim.population[0].genome
     assert len(genome.nodes) == CPPN_NUM_INPUTS + CPPN_NUM_OUTPUTS
     assert len(genome.connections) == CPPN_NUM_INPUTS * CPPN_NUM_OUTPUTS
+
+
+def test_hyperneat_bootstrap_hidden_nodes_wired_at_genesis(cfg):
+    """simulation._spawn_agent splits N connections at genesis (V3 lever)."""
+    hn_cfg = dataclasses.replace(
+        cfg,
+        hyperneat=dataclasses.replace(
+            cfg.hyperneat, enabled=True, bootstrap_hidden_nodes=2
+        ),
+    )
+    sim = Simulation(hn_cfg, random.Random(1))
+    for agent in sim.population:
+        hidden = [n for n in agent.genome.nodes if n.node_type == "hidden"]
+        assert len(hidden) == 2
+
+
+def test_hyperneat_bootstrap_hidden_nodes_defaults_to_legacy_zero(hn_cfg):
+    """hyperneat.bootstrap_hidden_nodes absent (=0) -> founders unaffected."""
+    assert hn_cfg.hyperneat.bootstrap_hidden_nodes == 0
+    sim = Simulation(hn_cfg, random.Random(1))
+    genome = sim.population[0].genome
+    assert not any(n.node_type == "hidden" for n in genome.nodes)
 
 
 def test_hyperneat_agent_network_is_substrate_shaped(hn_cfg):
