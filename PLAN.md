@@ -605,8 +605,29 @@
         avec sigma, écartée pour raison structurelle). Suite proposée non
         engagée → **V2 : trace d'éligibilité + baseline**
         (`dw = lr·(m−m̄)·e`, `e ← decay·e + x·y`), correction ciblée sur les
-        deux défauts, forme canonique R-STDP de Soltoggio. Référence
-        d'origine :
+        deux défauts, forme canonique R-STDP de Soltoggio.
+    - 🔄 **Plasticité Hebbienne — V2 IMPLÉMENTÉE, diagnostic PARTIEL (1
+        seed), ni promue ni falsifiée** (2026-07-20,
+        `docs/DIAGNOSTIC-hebbian-v2.md`). `dw = lr·(m−m̄)·e`,
+        `e ← decay·e + x·y`, appliquée chaque tick ; `eligibility_decay`
+        calibré sur `capture_lookback_ticks` (134 ticks) → 0,99 et non le
+        0,9 habituel ; chaque ingrédient ablatable en mettant son
+        paramètre à 0. **Mode d'échec n°1 corrigé** : l'écart
+        appris−inné n'est plus systématiquement négatif et devient parfois
+        positif (+0,024 / +0,034 / +0,033 selon les relevés). **Mode n°2
+        NON corrigé** : `steer_inné` reste très sous le témoin à tous les
+        réglages (0,229 / 0,165 / 0,061 vs **0,359**), donc la plasticité
+        continue de handicaper l'évolution elle-même. Coût perf mesuré
+        **−37%** (47 → 30 ticks/s, mise à jour par tick).
+        ⚠️ **Provisoire : 1 seed, 1 run, `steer_inné` bruité d'un relevé à
+        l'autre (le témoin fait 0,124→0,359).** À faire avant toute
+        conclusion : ablations trace-seule / baseline-seule (déjà câblées),
+        sweep `lr` vers le bas (0,001-0,003, la monotonie l'indique), puis
+        6 seeds seulement si un réglage rapproche `steer_inné` du témoin.
+        Hypothèse pour le mode 2 : bruit phénotypique masquant les
+        différences génétiques (« hiding ») — si c'est ça, aucun réglage ne
+        sauvera le levier, même conclusion structurelle que sigma.
+        Référence d'origine :
     - **Plasticité Hebbienne/neuromodulée pendant la vie de l'agent**
         (Stanley, Bryant & Miikkulainen 2003 — NEAT + règles Hebbiennes
         évoluées, testé sur un domaine de **foraging** conçu pour exiger

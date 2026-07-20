@@ -8,10 +8,18 @@
 # Rule (Soltoggio et al. 2018 "Born to Learn"; Stanley, Bryant & Miikkulainen
 # 2003, who evolved Hebbian rules on a foraging domain — the same task paradigm
 # as this project):
-#     dw = learning_rate * m * x * y
-# with m = apples eaten this tick. The update is reward-gated: nothing moves on
-# a tick where the agent ate nothing, so the connections reinforced are exactly
-# those that were active on the step that reached food.
+#     e  <- eligibility_decay * e + x * y        (trace, per connection)
+#     dw = learning_rate * (m - m_bar) * e       (contrastive update)
+# with m = apples eaten this tick and m_bar its running mean. Applied EVERY
+# tick, not only on captures: the traces must advance each tick, and a tick
+# with no capture carries a small negative contrast.
+#
+# This is V2. V1 was dw = lr*m*x*y — no trace, no baseline — and was falsified
+# at diagnosis (docs/DIAGNOSTIC-hebbian-v1.md): it reinforced the CAPTURE tick
+# (agent already on the apple, sensor saturated) instead of the approach, and
+# with pure positive reinforcement every active connection drifted up until the
+# tanh saturated. The trace fixes the first defect, the baseline the second.
+# Each is independently ablatable by setting its parameter to 0.
 #
 # Deliberately FIRST-ORDER: learning_rate is a plain constant here and no rule
 # parameter is evolved. docs/DIAGNOSTIC-self-adaptive-mutation.md established
@@ -157,5 +165,11 @@ render:
 hebbian:
   # THE single variable under test (see header).
   enabled: true
-  learning_rate: 0.01          # max weight move per apple (x, y are in (-1,1))
-  weight_max: 5.0              # clamp; the rule has no decay term, so required
+  learning_rate: 0.01
+  weight_max: 5.0              # clamp on plastic weights
+  # Effective trace window ~1/(1-decay) = 100 ticks. Scale set by the approach
+  # time already derived in this codebase: diagnostics.capture_lookback_ticks
+  # (ticks to cross the sensing range at max speed) = 134 here. The usual 0.9
+  # would cover ~10 ticks, under a tenth of an approach.
+  eligibility_decay: 0.99
+  baseline_rate: 0.01          # running mean of reward; 0 = no baseline

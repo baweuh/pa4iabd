@@ -321,15 +321,16 @@ class Agent:
         for apple in bitten:
             self.energy = min(self.energy + gain, self._config.agent.max_energy)
             self._env.mark_eaten(apple)
-        if bitten:
-            # Reward-modulated plasticity (no-op unless hebbian.enabled): the
-            # apple count is the modulatory signal, and the activations still
-            # held by the network are the ones from THIS tick's decide() — the
-            # forward pass that produced the move which reached the food. Driven
-            # from here rather than from Simulation so the learning signal stays
-            # where the reward is known, and so no measurement path can trigger
-            # it (see NeuralNetwork.apply_hebbian).
-            self.network.apply_hebbian(float(len(bitten)))
+        # Reward-modulated plasticity (no-op unless hebbian.enabled): the apple
+        # count is the modulatory signal, and the activations still held by the
+        # network are the ones from THIS tick's decide(). Called on EVERY tick,
+        # including empty ones — under V2 the eligibility traces must advance
+        # each tick, and a tick with no capture carries a small negative
+        # contrast against the reward baseline. Driven from here rather than
+        # from Simulation so the learning signal stays where the reward is
+        # known, and so no measurement path can trigger it (see
+        # NeuralNetwork.apply_hebbian).
+        self.network.apply_hebbian(float(len(bitten)))
         return bitten
 
     # ------------------------------------------------------------------ #

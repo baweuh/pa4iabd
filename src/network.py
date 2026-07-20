@@ -56,6 +56,11 @@ class NeuralNetwork:
         # Activations of the most recent activate(), kept only under plasticity
         # so apply_hebbian() can use the SAME tick's pre/postsynaptic values.
         self._last_values: dict[int, float] | None = None
+        # Eligibility trace per connection, parallel to _incoming's lists, and
+        # the running mean reward it is contrasted against. Allocated only under
+        # plasticity; both stay empty/zero on the legacy path.
+        self._trace: dict[int, list[float]] = {}
+        self._reward_baseline: float = 0.0
 
         node_type: dict[int, str] = {n.node_id: n.node_type for n in genome.nodes}
 
@@ -104,6 +109,8 @@ class NeuralNetwork:
         self._eval_order: list[int] = eval_order
         self._node_type: dict[int, str] = node_type
         self._incoming: dict[int, list[tuple[int, float]]] = incoming
+        if self._hebbian is not None:
+            self._trace = {nid: [0.0] * len(srcs) for nid, srcs in incoming.items()}
 
     def activate(self, inputs: Sequence[float]) -> tuple[float, ...]:
         """Run a forward pass; return one raw value per output node, in id order.
@@ -140,12 +147,20 @@ class NeuralNetwork:
         return tuple(values[nid] for nid in self.output_ids)
 
     def apply_hebbian(self, reward: float) -> None:
-        """Reward-modulated Hebbian update on the last forward pass.
+        """Advance the eligibility traces and apply one contrastive update.
 
-        ``dw = learning_rate * reward * x * y`` for every enabled connection,
-        clamped to ``+/- hebbian.weight_max``. No-op when plasticity is off,
-        when ``reward`` is zero (the rule is reward-gated), or before the first
-        :meth:`activate`.
+        Called once per tick per agent (V2 — the update is no longer gated on
+        a capture, since the traces must advance every tick):
+
+            e  <- eligibility_decay * e + x * y
+            dw = learning_rate * (reward - baseline) * e
+
+        clamped to ``+/- hebbian.weight_max``. No-op when plasticity is off or
+        before the first :meth:`activate`.
+
+        The baseline is read BEFORE folding in this tick's reward, so ``reward``
+        is measured against what was expected without it — a genuine surprise
+        signal rather than one that partly predicts itself.
 
         Deliberately NOT called from :meth:`activate`. Several callers activate
         a network purely to measure it — ``diagnostics.steer_score``, the
@@ -156,11 +171,16 @@ class NeuralNetwork:
         Mutates the compiled network's own weight copies, never the genome:
         learning is non-Lamarckian, children inherit the innate wiring.
         """
-        if self._hebbian is None or reward == 0.0 or self._last_values is None:
+        if self._hebbian is None or self._last_values is None:
             return
         values = self._last_values
-        step = self._hebbian.learning_rate * reward
-        limit = self._hebbian.weight_max
+        cfg = self._hebbian
+        decay = cfg.eligibility_decay
+        limit = cfg.weight_max
+        # Contrast against the reward expected BEFORE this tick's outcome.
+        step = cfg.learning_rate * (reward - self._reward_baseline)
+        self._reward_baseline += cfg.baseline_rate * (reward - self._reward_baseline)
+
         for nid, srcs in self._incoming.items():
             if not srcs:
                 continue
@@ -174,7 +194,10 @@ class NeuralNetwork:
                 # x and y are in (-1, 1), so one apple moves a weight by at
                 # most learning_rate.
                 post = math.tanh(post)
-            self._incoming[nid] = [
-                (src, max(-limit, min(limit, w + step * values[src] * post)))
-                for src, w in srcs
-            ]
+            trace = self._trace[nid]
+            updated: list[tuple[int, float]] = []
+            for pos, (src, w) in enumerate(srcs):
+                e = decay * trace[pos] + values[src] * post
+                trace[pos] = e
+                updated.append((src, max(-limit, min(limit, w + step * e))))
+            self._incoming[nid] = updated

@@ -479,17 +479,27 @@ class HebbianConfig:
     included in its ES form (see docs/DIAGNOSTIC-self-adaptive-mutation.md),
     acted between generations.
 
-    Rule (Soltoggio et al. 2018, "Born to Learn"; Stanley, Bryant &
-    Miikkulainen 2003 evolved Hebbian rules on a foraging domain):
+    Rule, V2 (Soltoggio et al. 2018, "Born to Learn"; Stanley, Bryant &
+    Miikkulainen 2003 evolved Hebbian rules on a foraging domain) — the
+    canonical R-STDP / neuromodulated form, applied EVERY tick:
 
-        dw = learning_rate * m * x * y
+        e  <- eligibility_decay * e + x * y            (trace, per connection)
+        dw = learning_rate * (m - m_bar) * e           (contrastive update)
 
     with ``m`` = apples eaten this tick (the modulatory/reward signal, already
-    computed by the tick loop), ``x`` the presynaptic activation and ``y`` the
-    postsynaptic one from the SAME tick's forward pass. The update is
-    reward-gated: nothing changes on a tick where the agent ate nothing, so the
-    connections reinforced are exactly those that were active on the step that
-    reached food.
+    computed by the tick loop), ``m_bar`` its running mean, ``x`` the
+    presynaptic activation and ``y`` the postsynaptic one from the current
+    tick's forward pass.
+
+    V1 was ``dw = learning_rate * m * x * y`` — no trace, no baseline, applied
+    only on capture ticks — and was falsified at diagnosis
+    (docs/DIAGNOSTIC-hebbian-v1.md) with both defects identified. V2 fixes
+    exactly those two, and each is independently ablatable by setting its
+    parameter to 0 (see ``eligibility_decay`` / ``baseline_rate``).
+
+    Note the update is no longer reward-gated: the trace advances every tick,
+    and a tick with no capture carries a small NEGATIVE contrast. That is the
+    baseline doing its job, not an oversight.
 
     Deliberately FIRST-ORDER: ``learning_rate`` is a plain YAML constant and no
     rule parameter is evolved. The sigma diagnostic established that this
@@ -520,9 +530,37 @@ class HebbianConfig:
     # (no decay term), so without a bound a repeatedly-rewarded connection would
     # grow without limit and saturate every downstream tanh.
     weight_max: float = 5.0
+    # V2 — eligibility trace. Per connection, every tick:
+    #     e <- eligibility_decay * e + x * y
+    # so the credit for a capture is spread over the ticks that LED to it, not
+    # dumped on the capture tick alone. V1 had no trace and was falsified partly
+    # for that reason (docs/DIAGNOSTIC-hebbian-v1.md): on the capture tick the
+    # agent is already ON the apple, sensor saturated — the reinforced state was
+    # not the approach, which is the only useful part of a foraging policy.
+    #
+    # Scale matters and is NOT the usual 0.9. The approach timescale is already
+    # derived in this codebase: diagnostics.capture_lookback_ticks = ticks to
+    # cross the whole sensing range at max speed = 134 under default.yaml. A
+    # trace whose effective window is ~1/(1-decay) ticks should be of that
+    # order, hence 0.99 (~100 ticks), not 0.9 (~10 ticks) which would cover
+    # under a tenth of an approach. Sweep around it rather than trusting it.
+    # 0.0 = no trace, current tick only (V1's behaviour — a clean ablation).
+    eligibility_decay: float = 0.99
+    # V2 — reward baseline. Running mean of the per-tick reward:
+    #     m_bar <- (1 - baseline_rate) * m_bar + baseline_rate * m
+    # and the weight update uses the CONTRAST (m - m_bar), not m. This is the
+    # second V1 defect: with pure positive reinforcement every active connection
+    # was reinforced, causal or not, so weights drifted up until the tanh
+    # saturated. With a baseline the drift over a lifetime is ~ lr*e*(sum m -
+    # sum m_bar), which the running mean drives to zero by construction — only
+    # a departure from the expected reward moves a weight, and a dry spell can
+    # now WEAKEN one.
+    # 0.0 = m_bar stays 0 forever, i.e. no baseline (the other clean ablation).
+    baseline_rate: float = 0.01
 
     def __post_init__(self) -> None:
         _require_positive(self, "learning_rate", "weight_max")
+        _require_rate(self, "eligibility_decay", "baseline_rate")
 
 
 @dataclass(frozen=True)

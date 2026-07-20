@@ -265,11 +265,17 @@ def test_hebbian_no_config_behaves_like_disabled(cfg):
     assert _weights(net) == before
 
 
-def test_hebbian_is_reward_gated(cfg):
+def test_no_update_when_reward_matches_baseline(cfg):
+    """V2 is contrastive: an outcome equal to the expectation moves nothing.
+
+    (V1 was reward-GATED — no update unless an apple was eaten. V2 replaces
+    that with a contrast, so this holds for reward == baseline, not reward == 0.)
+    """
     net = NeuralNetwork(_small_genome(), cfg.network, _plastic())
     net.activate([1.0, 1.0])
+    net._reward_baseline = 0.7
     before = _weights(net)
-    net.apply_hebbian(0.0)
+    net.apply_hebbian(0.7)
     assert _weights(net) == before
 
 
@@ -294,6 +300,7 @@ def test_activate_alone_never_changes_weights(cfg):
 
 
 def test_hebbian_update_matches_the_rule(cfg):
+    """On the FIRST update (empty trace, zero baseline) V2 reduces to V1."""
     lr = 0.1
     net = NeuralNetwork(_small_genome(), cfg.network, _plastic(learning_rate=lr))
     net.activate([1.0, 1.0])
@@ -346,3 +353,128 @@ def test_hebbian_changes_the_output(cfg):
         net.activate([1.0, 1.0])
         net.apply_hebbian(1.0)
     assert net.activate([1.0, 1.0]) != before
+
+
+# --------------------------------------------------------------------------- #
+# V2 — eligibility trace + reward baseline (the two V1 defects)
+# --------------------------------------------------------------------------- #
+
+
+def test_trace_carries_credit_from_earlier_ticks(cfg):
+    """Defect 1: V1 could only reinforce the capture tick.
+
+    Here the rewarded tick is SILENT (all-zero input, so x*y == 0 for the input
+    layer): any weight change on those connections can only come from activity
+    banked on earlier ticks.
+    """
+    net = NeuralNetwork(
+        _small_genome(), cfg.network, _plastic(learning_rate=0.1, eligibility_decay=0.9)
+    )
+    for _ in range(10):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(0.0)
+    before = _weights(net)
+    net.activate([0.0, 0.0])  # silent tick
+    net.apply_hebbian(5.0)  # ...but rewarded
+    assert _weights(net) != before
+
+
+def test_zero_decay_ablates_the_trace(cfg):
+    """eligibility_decay = 0 reduces the trace to the current tick (V1)."""
+    net = NeuralNetwork(
+        _small_genome(), cfg.network, _plastic(learning_rate=0.1, eligibility_decay=0.0)
+    )
+    for _ in range(10):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(0.0)
+    before = _weights(net)
+    net.activate([0.0, 0.0])
+    net.apply_hebbian(5.0)
+    assert _weights(net) == before  # nothing banked, silent tick moves nothing
+
+
+def test_trace_decays(cfg):
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic(eligibility_decay=0.5))
+    net.activate([1.0, 1.0])
+    net.apply_hebbian(0.0)
+    peak = max(abs(e) for tr in net._trace.values() for e in tr)
+    for _ in range(10):
+        net.activate([0.0, 0.0])
+        net.apply_hebbian(0.0)
+    assert max(abs(e) for tr in net._trace.values() for e in tr) < peak / 10
+
+
+def test_baseline_tracks_reward(cfg):
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic(baseline_rate=0.5))
+    assert net._reward_baseline == 0.0
+    for _ in range(20):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(1.0)
+    assert net._reward_baseline == pytest.approx(1.0, abs=1e-3)
+
+
+def test_zero_baseline_rate_ablates_the_baseline(cfg):
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic(baseline_rate=0.0))
+    for _ in range(20):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(1.0)
+    assert net._reward_baseline == 0.0
+
+
+def test_dry_tick_reverses_the_update_once_baseline_is_positive(cfg):
+    """Defect 2: V1 could only ever push weights up.
+
+    With a baseline, a tick that produces nothing carries a NEGATIVE contrast,
+    so it walks a weight back down.
+    """
+    net = NeuralNetwork(
+        _small_genome(), cfg.network, _plastic(learning_rate=0.1, baseline_rate=0.5)
+    )
+    for _ in range(20):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(1.0)
+    assert net._reward_baseline > 0.5
+    rewarded = _weights(net)
+    net.activate([1.0, 1.0])
+    net.apply_hebbian(0.0)  # dry tick
+    after = _weights(net)
+    moved = [
+        (after[nid][pos][1] - rewarded[nid][pos][1])
+        for nid, srcs in rewarded.items()
+        for pos in range(len(srcs))
+    ]
+    assert any(d != 0.0 for d in moved)
+    # Every connection whose trace is positive must have been pushed DOWN.
+    for nid, tr in net._trace.items():
+        for pos, e in enumerate(tr):
+            if e > 1e-9:
+                assert after[nid][pos][1] < rewarded[nid][pos][1]
+
+
+def test_baseline_keeps_lifetime_drift_bounded(cfg):
+    """The point of the baseline: no runaway positive drift over a life.
+
+    V1's failure mode was weights ratcheting up until the tanh saturated. Fed a
+    realistic sparse reward stream (~3 apples per 2000 ticks), V2's net drift
+    must stay small — much smaller than the same stream with the baseline off.
+    """
+
+    def drift(baseline_rate: float) -> float:
+        net = NeuralNetwork(
+            _small_genome(),
+            cfg.network,
+            _plastic(learning_rate=0.1, baseline_rate=baseline_rate),
+        )
+        start = _weights(net)
+        rng = random.Random(0)
+        for tick in range(2000):
+            net.activate([rng.uniform(0.0, 1.0), rng.uniform(0.0, 1.0)])
+            net.apply_hebbian(1.0 if tick % 666 == 0 else 0.0)
+        end = _weights(net)
+        return max(
+            abs(end[nid][pos][1] - start[nid][pos][1])
+            for nid, srcs in start.items()
+            for pos in range(len(srcs))
+        )
+
+    assert drift(0.01) < drift(0.0) / 2
