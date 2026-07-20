@@ -609,12 +609,26 @@
         compétition directe avec les anciens, plutôt qu'une isolation
         géographique. Mécanisme différent pour un objectif similaire
         (limiter la convergence prématurée) déjà tenté et raté une fois.
-    - **Mutation auto-adaptative** (façon evolution strategies — le taux
-        de mutation évolue lui-même par génome au lieu d'être une
-        constante YAML globale). Tension à trancher avec l'invariant n°1
-        (zéro valeur hardcodée, tout vient de `SimConfig`) : le taux
-        s'auto-règle par l'évolution, pas hardcodé, mais change la nature
-        du paramètre (plus une constante lue en config, un état évolué).
+    - ✅ **Mutation auto-adaptative** (façon evolution strategies — le
+        taux de mutation évolue lui-même par génome au lieu d'être une
+        constante YAML globale) — **implémentée puis FALSIFIÉE AU
+        DIAGNOSTIC, sans campagne** (2026-07-20,
+        `docs/DIAGNOSTIC-self-adaptive-mutation.md`). Le sweep
+        `sigma_tau_scale` (×1/×3/×6) est le test discriminant : le spread
+        de sigma explose (p90/p10 1,8 → 9,2) mais la **médiane reste
+        collée à sa valeur initiale 0,050** sur tous les réglages et tous
+        les seeds ⇒ dérive pure, aucun auto-réglage. Cause : ~3
+        générations de profondeur de lignée en 6k ticks (≈15-20 à 30k),
+        alors que l'auto-adaptation ES est un mécanisme de **second
+        ordre** (sigma n'est sélectionné qu'via le succès de ses enfants)
+        — or `N_e` ≈ 82-90 sur pop 400 montre que même la sélection de
+        premier ordre est noyée par la dérive (poc2.2). Levier
+        structurellement inapplicable à ce régime, pas « mauvais ». Code
+        conservé OFF par défaut. Tension avec l'invariant n°1 tranchée au
+        passage : sigma est un **état évolué du génome**, pas une
+        constante hardcodée — `sigma_min` et `sigma_tau_scale` restent en
+        YAML. 12e levier écarté, **le premier à coût quasi nul** (aucune
+        campagne 6 seeds/30k brûlée).
 
 **Sur les leviers "ML"** : le projet interdit tout framework ML
 (`neat-python`/torch/tensorflow/gym, cf. `CLAUDE.md`). Parmi les pistes

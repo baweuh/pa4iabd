@@ -361,7 +361,8 @@ class Genome:
         Under ``config.self_adaptive_mutation`` the perturbation amplitude is
         this genome's own evolved :attr:`sigma`, updated log-normally first
         (``sigma' = sigma * exp(tau * N(0,1))``, ``tau = 1/sqrt(n)`` with
-        ``n`` = connection count) and floored at ``config.sigma_min``. The
+        ``n`` = connection count, times ``config.sigma_tau_scale``) and floored
+        at ``config.sigma_min``. The
         update happens once per call, before any weight is touched, so a
         single reproduction event uses one consistent step size — canonical ES
         ordering (Schwefel 1981). Otherwise the global
@@ -372,6 +373,7 @@ class Genome:
             # n = 0 can happen if remove_connection stripped the genome bare;
             # fall back to tau = 1 rather than dividing by zero.
             tau = 1.0 / math.sqrt(len(self.connections)) if self.connections else 1.0
+            tau *= config.sigma_tau_scale
             self.sigma = max(
                 config.sigma_min, self.sigma * math.exp(tau * rng.gauss(0.0, 1.0))
             )

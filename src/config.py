@@ -242,10 +242,24 @@ class GenomeConfig:
     # and permanently freeze its own mutation (an absorbing state: with
     # sigma == 0 the log-normal update can never lift it back up).
     sigma_min: float = 0.001
+    # Multiplier on the canonical learning rate tau = 1/sqrt(n). Exists because
+    # the poc2.6 sigma diagnostic showed the canonical tau barely exercises the
+    # mechanism at this project's timescale: sigma drifts log-normally at
+    # tau*sqrt(G) per lineage, and a lineage only crosses G ~ 3 generations in
+    # 6k ticks (median; ~15-20 extrapolated to a 30k campaign). With n = 98
+    # connections, tau = 0.10, so 15 generations move sigma by a factor ~1.5 —
+    # measured: median 0.050 -> 0.051-0.056 over 6k ticks on seeds 42/7/123.
+    # A campaign at that setting would measure noise, not the lever. Scaling tau
+    # up trades ES asymptotic theory (which assumes many more generations and a
+    # sharper (mu,lambda) selection than this continuous-time sim has) for a
+    # step size that actually explores its range within the run's horizon.
+    # 1.0 = canonical Schwefel.
+    sigma_tau_scale: float = 1.0
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_init_range", "weight_perturbation")
         _require_positive(self, "weight_max", "sigma_min")
+        _require_positive(self, "sigma_tau_scale")
         _require_rate(
             self,
             "weight_mutation_rate",
