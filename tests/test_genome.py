@@ -402,3 +402,113 @@ def test_crossover_identical_parents_preserves_structure(config):
         c.innovation for c in g.connections
     }
     assert all(abs(c.weight) <= config.weight_max for c in g.connections)
+
+
+# --------------------------------------------------------------------------- #
+# Self-adaptive mutation (poc2.6) — off by default, opt-in via config
+# --------------------------------------------------------------------------- #
+@pytest.fixture(name="adaptive_config")
+def adaptive_config_fixture(config):
+    return dataclasses.replace(config, self_adaptive_mutation=True)
+
+
+def _founder(cfg, tracker, seed=1):
+    return Genome.new_fully_connected(
+        cfg, NUM_INPUTS, NUM_OUTPUTS, Random(seed), tracker
+    )
+
+
+def test_founder_sigma_none_when_disabled(config, tracker):
+    assert _founder(config, tracker).sigma is None
+
+
+def test_founder_sigma_seeded_from_weight_perturbation(adaptive_config, tracker):
+    g = _founder(adaptive_config, tracker)
+    assert g.sigma == adaptive_config.weight_perturbation
+
+
+def test_mutate_weights_leaves_sigma_none_when_disabled(config, tracker):
+    g = _founder(config, tracker)
+    g.mutate_weights(config, Random(2))
+    assert g.sigma is None
+
+
+def test_mutate_weights_evolves_sigma_when_enabled(adaptive_config, tracker):
+    g = _founder(adaptive_config, tracker)
+    before = g.sigma
+    g.mutate_weights(adaptive_config, Random(2))
+    assert g.sigma != before
+    assert g.sigma >= adaptive_config.sigma_min
+
+
+def test_sigma_evolution_is_deterministic_with_seed(adaptive_config, tracker):
+    a = _founder(adaptive_config, tracker)
+    b = _founder(adaptive_config, InnovationTracker())
+    for _ in range(10):
+        a.mutate_weights(adaptive_config, Random(3))
+        b.mutate_weights(adaptive_config, Random(3))
+    assert a.sigma == b.sigma
+
+
+def test_sigma_never_drops_below_floor(adaptive_config, tracker):
+    g = _founder(adaptive_config, tracker)
+    rng = Random(4)
+    for _ in range(500):  # many log-normal steps, some strongly downward
+        g.mutate_weights(adaptive_config, rng)
+        assert g.sigma >= adaptive_config.sigma_min
+
+
+def test_sigma_actually_drives_the_perturbation(adaptive_config, tracker):
+    """A large sigma must move weights further than a small one, same RNG."""
+    small, big = _founder(adaptive_config, tracker), _founder(adaptive_config, tracker)
+    base = [c.weight for c in small.connections]
+    # Pin sigma so the log-normal update cannot reorder the two runs: set the
+    # floor equal to the value we want, so max(floor, ...) clamps both.
+    tiny = dataclasses.replace(adaptive_config, sigma_min=1e-6)
+    huge = dataclasses.replace(adaptive_config, sigma_min=1.0)
+    small.sigma, big.sigma = 1e-9, 1e9  # driven back to the floors above
+    small.mutate_weights(tiny, Random(5))
+    big.mutate_weights(huge, Random(5))
+    drift_small = sum(abs(c.weight - w) for c, w in zip(small.connections, base))
+    drift_big = sum(abs(c.weight - w) for c, w in zip(big.connections, base))
+    assert drift_big > drift_small
+
+
+def test_clone_carries_sigma(adaptive_config, tracker):
+    g = _founder(adaptive_config, tracker)
+    g.mutate_weights(adaptive_config, Random(6))
+    assert g.clone().sigma == g.sigma
+
+
+def test_crossover_averages_parent_sigmas(adaptive_config, tracker):
+    a = _founder(adaptive_config, tracker, seed=1)
+    b = _founder(adaptive_config, tracker, seed=9)
+    a.sigma, b.sigma = 0.02, 0.08
+    assert Genome.crossover(a, b, Random(7)).sigma == pytest.approx(0.05)
+
+
+def test_crossover_sigma_none_when_a_parent_lacks_one(config, tracker):
+    a = _founder(config, tracker, seed=1)
+    b = _founder(config, tracker, seed=9)
+    a.sigma = 0.02  # b keeps None (legacy genome)
+    assert Genome.crossover(a, b, Random(7)).sigma is None
+
+
+def test_json_round_trip_preserves_sigma(adaptive_config, tracker):
+    g = _founder(adaptive_config, tracker)
+    g.mutate_weights(adaptive_config, Random(8))
+    assert Genome.from_json(g.to_json()).sigma == g.sigma
+
+
+def test_json_omits_sigma_in_legacy_regime(config, tracker):
+    g = _founder(config, tracker)
+    assert "sigma" not in g.to_dict()
+    assert Genome.from_json(g.to_json()).sigma is None
+
+
+def test_full_mutate_evolves_sigma(adaptive_config, tracker):
+    """The per-reproduction entry point (mutate) must drive sigma too."""
+    g = _founder(adaptive_config, tracker)
+    before = g.sigma
+    g.mutate(adaptive_config, Random(9), tracker)
+    assert g.sigma != before

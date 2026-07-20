@@ -14,6 +14,7 @@ Invariants honoured here:
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from random import Random
 from typing import Any
@@ -94,9 +95,14 @@ class Genome:
         self,
         nodes: list[NodeGene],
         connections: list[ConnectionGene],
+        sigma: float | None = None,
     ) -> None:
         self.nodes = nodes
         self.connections = connections
+        # Evolved mutation step size (GenomeConfig.self_adaptive_mutation).
+        # None when the feature is off: mutate_weights then falls back to the
+        # global config.weight_perturbation, exactly as before.
+        self.sigma = sigma
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -158,7 +164,8 @@ class Genome:
                         innovation=tracker.innovation_for(src_id, j),
                     )
                 )
-        return cls(nodes, connections)
+        sigma = config.weight_perturbation if config.self_adaptive_mutation else None
+        return cls(nodes, connections, sigma)
 
     @staticmethod
     def _founder_inputs_for(
@@ -198,7 +205,14 @@ class Genome:
             for node in parent.nodes:
                 node_by_id[node.node_id] = node.node_type
 
-        child = Genome(nodes=[], connections=[])
+        # Self-adaptive step size (if any) is inherited as the parents' mean —
+        # the standard ES treatment of sigma as just another heritable trait.
+        # None as soon as either parent lacks one (feature off).
+        sigma = None
+        if fitter.sigma is not None and other.sigma is not None:
+            sigma = (fitter.sigma + other.sigma) / 2.0
+
+        child = Genome(nodes=[], connections=[], sigma=sigma)
         # Same-class construction helper; pylint over-flags the static→instance hop.
         child._inherit(picks, node_by_id)  # pylint: disable=protected-access
         return child
@@ -269,14 +283,19 @@ class Genome:
                 ConnectionGene(c.in_node, c.out_node, c.weight, c.enabled, c.innovation)
                 for c in self.connections
             ],
+            sigma=self.sigma,
         )
 
     # ------------------------------------------------------------------ #
     # Serialisation
     # ------------------------------------------------------------------ #
     def to_dict(self) -> dict[str, Any]:
-        """Serialise the genome to a plain, JSON-ready dict."""
-        return {
+        """Serialise the genome to a plain, JSON-ready dict.
+
+        ``sigma`` is emitted only when self-adaptive mutation is in play, so
+        genomes dumped in the legacy regime keep their exact previous shape.
+        """
+        data: dict[str, Any] = {
             "nodes": [{"id": n.node_id, "type": n.node_type} for n in self.nodes],
             "connections": [
                 {
@@ -289,6 +308,9 @@ class Genome:
                 for c in self.connections
             ],
         }
+        if self.sigma is not None:
+            data["sigma"] = self.sigma
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Genome":
@@ -300,7 +322,9 @@ class Genome:
             )
             for c in data["connections"]
         ]
-        return cls(nodes, connections)
+        # Absent from every genome dumped before this feature (and whenever it
+        # is off) -> None, identical to a freshly built legacy genome.
+        return cls(nodes, connections, data.get("sigma"))
 
     def to_json(self) -> str:
         """Serialise the genome to a JSON string."""
@@ -332,10 +356,29 @@ class Genome:
             self.remove_node(rng)
 
     def mutate_weights(self, config: GenomeConfig, rng: Random) -> None:
-        """Perturb each connection weight; clamp to ±weight_max (anti-saturation)."""
+        """Perturb each connection weight; clamp to ±weight_max (anti-saturation).
+
+        Under ``config.self_adaptive_mutation`` the perturbation amplitude is
+        this genome's own evolved :attr:`sigma`, updated log-normally first
+        (``sigma' = sigma * exp(tau * N(0,1))``, ``tau = 1/sqrt(n)`` with
+        ``n`` = connection count) and floored at ``config.sigma_min``. The
+        update happens once per call, before any weight is touched, so a
+        single reproduction event uses one consistent step size — canonical ES
+        ordering (Schwefel 1981). Otherwise the global
+        ``config.weight_perturbation`` is used, unchanged.
+        """
+        perturbation = config.weight_perturbation
+        if config.self_adaptive_mutation and self.sigma is not None:
+            # n = 0 can happen if remove_connection stripped the genome bare;
+            # fall back to tau = 1 rather than dividing by zero.
+            tau = 1.0 / math.sqrt(len(self.connections)) if self.connections else 1.0
+            self.sigma = max(
+                config.sigma_min, self.sigma * math.exp(tau * rng.gauss(0.0, 1.0))
+            )
+            perturbation = self.sigma
         for conn in self.connections:
             if rng.random() < config.weight_mutation_rate:
-                conn.weight += rng.gauss(0.0, config.weight_perturbation)
+                conn.weight += rng.gauss(0.0, perturbation)
                 w = config.weight_max
                 conn.weight = max(-w, min(w, conn.weight))
 

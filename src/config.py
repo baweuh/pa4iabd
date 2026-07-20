@@ -221,10 +221,31 @@ class GenomeConfig:
     # (default) = legacy behaviour, no bias node exists anywhere in the
     # project (never promoted to default.yaml without a validated campaign).
     bias_enabled: bool = False
+    # Self-adaptive mutation, ES-style (Schwefel 1981; Beyer & Schwefel 2002).
+    # Instead of every genome in the population sharing the single global
+    # weight_perturbation constant, each genome CARRIES its own mutation step
+    # size (sigma), which itself mutates log-normally at every reproduction:
+    #   sigma' = sigma * exp(tau * N(0,1)),  tau = 1/sqrt(n)
+    # with n = the genome's connection count (its real-valued dimensionality —
+    # derived, never a magic constant, and genuinely per-genome in NEAT since
+    # topology varies). Lineages that benefit from bolder steps drift towards
+    # a larger sigma and vice versa: the mutation regime becomes an evolved
+    # trait rather than a hand-tuned constant. This is the poc2.6 "levier hors
+    # sélection/reproduction" — it changes HOW variation is produced, not who
+    # gets to reproduce (every previous lever touched selection). False
+    # (default) = legacy, weight_perturbation used directly, byte-for-byte
+    # unchanged. Only the weight step size adapts; the four structural rates
+    # (add/remove node/connection) stay global constants — one variable at a
+    # time, as always in this project.
+    self_adaptive_mutation: bool = False
+    # Floor for the evolved sigma, so a lineage cannot ratchet it down to ~0
+    # and permanently freeze its own mutation (an absorbing state: with
+    # sigma == 0 the log-normal update can never lift it back up).
+    sigma_min: float = 0.001
 
     def __post_init__(self) -> None:
         _require_positive(self, "weight_init_range", "weight_perturbation")
-        _require_positive(self, "weight_max")
+        _require_positive(self, "weight_max", "sigma_min")
         _require_rate(
             self,
             "weight_mutation_rate",
