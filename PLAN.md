@@ -565,6 +565,25 @@
 > précise avant d'engager toute campagne** (discipline du projet : jamais
 > de campagne sans diagnostic). Ordre et scope à trancher avec Robin.
 
+- [ ] **Multivers solo — 1 agent par cellule physiquement isolée
+        (proposition Robin, 2026-07-16, design fait, rien engagé).**
+        Question plus tranchée que la campagne d'échelle poc3 en cours :
+        isoler l'espace physique (qui rencontre qui, qui mange quoi) en
+        gardant la sélection/reproduction/novelty GLOBALES sur tous les
+        univers — teste si l'échelle aide par la taille de l'échantillon
+        évalué seule, ou si l'interaction multi-agents (compétition) est
+        elle-même nécessaire. Diffère explicitement du modèle d'îles
+        (falsifié, poc2.4) : les îles fragmentaient la sélection
+        elle-même (rouvrait la dérive fondatrice) — ici seule la
+        physique est fragmentée, la sélection reste sur la population
+        entière. Nécessite un vrai changement de code (pas juste un
+        fichier de config) : zone safe par cellule (`Environment`), murs
+        internes + perception de mur par cellule (`agent.py`, clamp +
+        raycast), mapping stable slot↔cellule pour le respawn
+        (`Simulation._spawn_agent`). Détails complets, options
+        considérées (sharding spatial recommandé vs multivers
+        process-level écarté), risques à vérifier avant campagne :
+        `docs/DESIGN-multiverse-solo.md`.
 - [ ] **HyperNEAT V5 — régime de mutation CPPN dédié.** Seule piste avec
         un diagnostic déjà établi (V2/V3, `docs/FALSIFIED-hyperneat.md`) :
         le CPPN fondateur progresse à peine structurellement (`hidden`
@@ -625,7 +644,7 @@ l'évolution pure ; un RL classique (Q-learning/policy gradient) sortirait
 du cadre du projet (boucle d'entraînement séparée, tension avec le
 principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
 
-## Branche poc3 — Topologie de réseau fixe + forward pass batché ✅
+## Branche poc3 — Topologie de réseau fixe + forward pass batché ✅ archi livrée, CLOSE sans verdict d'échelle
 > Ouverte depuis `poc2.6` (2026-07-16) après recherche littérature (Hamon
 > et al. 2023, Bejjani et al. 2025 : dans le même paradigme non-épisodique/
 > sélection implicite que ce projet, l'émergence de comportements complexes
@@ -707,6 +726,57 @@ principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
         attendu), `population_novelty` tombe à 10,8 %. 249 tests verts,
         black clean, pylint 9.99/10. Détails :
         `docs/DESIGN-poc3-fixed-topology.md` (addendum).
-- [ ] **Campagne de recherche à grande échelle** : pas encore lancée —
-        décider l'échelle cible avec Robin (maintenant techniquement
-        jouable jusqu'à 16k+ agents).
+- [x] ✅ **Campagne d'échelle round 1 (pop 400→4000) — RÉGRESSE, mais
+        résultat CONFONDU, non concluant** (2026-07-16,
+        `config/lever_scale_4000.yaml`, 6 seeds/30k,
+        `logs/campaign_runs/scale4000_20260716_200310.log`). Une seule
+        variable vs `default.yaml` : `population.max_size` 400→4000
+        (`initial_size` 200→2000, même ratio). **Moyenne foragers 38 %**
+        (42:54, 123:49, 5:38, 7:31, 99:30, 1:27), `steer_median` négatif
+        sur **4/6** seeds. **Deux réserves majeures interdisent d'en
+        conclure quoi que ce soit sur l'hypothèse d'échelle** :
+        (a) **confound nourriture** : 4000 agents pour 160 pommes
+            inchangées = compétition ~5× plus dense que le défaut — la
+            régression peut venir de « pas assez à manger par tête »,
+            pas de l'échelle elle-même ;
+        (b) **la population n'a jamais dépassé `initial_size`** (les 6
+            seeds finissent 1943–2010 sur un cap de 4000) : le régime
+            visé n'a tout simplement jamais été atteint, cohérent avec
+            une croissance bridée par la famine.
+        **Aucun delta fiable ne peut être annoncé, seulement la valeur
+        absolue mesurée** : il n'existe pas de campagne de référence
+        poc3 à 30k dans `logs/campaign_runs/`. Le « 72 % » cité comme
+        baseline dans `docs/DESIGN-multiverse-solo.md` n'est adossé à
+        aucun log de ce dépôt ; le 79 % historique est un chiffre
+        poc2.4, mesuré sous l'ancienne architecture NEAT, donc non
+        comparable directement à une run poc3.
+- [ ] ⛔ **Campagne d'échelle round 2 (pommes ×10, ratio pommes/agent
+        restauré) — LANCÉE PUIS ABANDONNÉE, aucun verdict** (2026-07-16,
+        `config/lever_scale_4000_scaled_food.yaml`,
+        `logs/campaign_runs/scale4000_scaled_food_20260716_214445.log`).
+        Devait lever le confound (a) du round 1 : `apple.count` 160→1600,
+        même ratio que `max_size` 400→4000, de sorte qu'une régression ne
+        puisse plus être imputée au manque de nourriture. **Interrompue à
+        ~4 % (1200/30000 ticks)**, aucun process actif depuis. Le
+        confound du round 1 reste donc entier.
+
+### Clôture de la branche poc3 (2026-07-20, décision Robin)
+Branche **close sans verdict** sur l'hypothèse d'échelle qui l'a motivée.
+Le travail d'architecture livré ci-dessus (topologie fixe, forward pass
+batché, `batch_eat`, `novelty.max_pool_size`) est réel, testé et mesuré —
+il reste ici comme checkpoint réutilisable. Le backlog de recherche
+repart de **poc2.6**, parce que ses candidats sont majoritairement liés à
+l'architecture NEAT que poc3 a justement retirée :
+- **HyperNEAT V5** dépend de l'API structurelle NEAT (CPPN → substrat),
+  supprimée en poc3 (`src/hyperneat.py` et son outillage effacés) — ne
+  peut vivre que sur l'archi poc2.5/poc2.6.
+- **Repro non canonique**, volet « `Genome.crossover` traite toujours
+  `self` comme le parent fitter sans comparer les fitness » : c'est un
+  défaut d'alignement propre à NEAT (gènes excess/disjoint hérités du
+  parent réputé fitter). Le `Genome.crossover` de poc3 est un tirage
+  élément-par-élément 50/50 sur un vecteur de poids plat, où l'argument
+  `fitter` n'a plus aucun effet — le point n'existe plus sous cette
+  forme.
+- Seules les pistes **indépendantes de la représentation** (plasticité
+  Hebbienne, MAP-Elites/NSLC, ALPS, mutation auto-adaptative)
+  s'appliqueraient indifféremment aux deux architectures.
