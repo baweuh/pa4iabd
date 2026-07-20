@@ -413,3 +413,90 @@ def test_child_inherits_parent_heading(cfg, env, genome):
     agent.energy = cfg.agent.reproduction_threshold
     child = agent.reproduce()
     assert child.heading == pytest.approx(0.5)
+
+
+# --------------------------------------------------------------------------- #
+# Reward-modulated Hebbian plasticity (poc2.6)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(name="plastic_cfg")
+def plastic_cfg_fixture(cfg):
+    """Default config with plasticity on and a step size big enough to see."""
+    return dataclasses.replace(
+        cfg,
+        hebbian=dataclasses.replace(cfg.hebbian, enabled=True, learning_rate=0.2),
+    )
+
+
+def _net_weights(agent):
+    return {nid: list(srcs) for nid, srcs in agent.network._incoming.items()}
+
+
+def test_eating_triggers_learning(plastic_cfg, env, genome):
+    agent = make_agent(plastic_cfg, env, genome, (100.0, 100.0))
+    env.apples.append(Apple(100.0, 100.0))
+    agent.decide(agent.sense())
+    before = _net_weights(agent)
+    assert agent.eat()  # actually ate
+    assert _net_weights(agent) != before
+
+
+def test_no_learning_without_eating(plastic_cfg, env, genome):
+    agent = make_agent(plastic_cfg, env, genome, (100.0, 100.0))
+    env.apples.clear()
+    agent.decide(agent.sense())
+    before = _net_weights(agent)
+    assert not agent.eat()
+    assert _net_weights(agent) == before
+
+
+def test_no_learning_when_disabled(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (100.0, 100.0))
+    env.apples.append(Apple(100.0, 100.0))
+    agent.decide(agent.sense())
+    before = _net_weights(agent)
+    assert agent.eat()
+    assert _net_weights(agent) == before
+
+
+def test_steer_score_is_memoised_without_plasticity(cfg, env, genome):
+    agent = make_agent(cfg, env, genome, (100.0, 100.0))
+    assert agent.steer_score == agent.steer_score
+    assert agent._steer_score is not None
+
+
+def test_steer_score_tracks_learning(plastic_cfg, env, genome):
+    """The campaign's headline metric must see the LEARNED network.
+
+    Memoising it under plasticity would report exactly zero effect for a lever
+    whose entire premise is that behaviour changes during life.
+    """
+    agent = make_agent(plastic_cfg, env, genome, (100.0, 100.0))
+    innate = agent.steer_score
+    assert agent._steer_score is None  # cache deliberately bypassed
+    for _ in range(30):
+        agent.decide(agent.sense())
+        agent.network.apply_hebbian(1.0)
+    assert agent.steer_score != innate
+
+
+def test_behavior_descriptor_tracks_learning(plastic_cfg, env, genome):
+    """Novelty search must see the learned policy, not the innate one."""
+    agent = make_agent(plastic_cfg, env, genome, (100.0, 100.0))
+    innate = agent.behavior_descriptor
+    assert agent._behavior_descriptor is None
+    for _ in range(30):
+        agent.decide(agent.sense())
+        agent.network.apply_hebbian(1.0)
+    assert agent.behavior_descriptor != innate
+
+
+def test_children_inherit_innate_wiring_not_learned(plastic_cfg, env, genome):
+    """Non-Lamarckian: learning dies with the agent."""
+    agent = make_agent(plastic_cfg, env, genome, (100.0, 100.0))
+    for _ in range(30):
+        agent.decide(agent.sense())
+        agent.network.apply_hebbian(1.0)
+    fresh = make_agent(plastic_cfg, env, agent.genome, (100.0, 100.0))
+    assert _net_weights(fresh) != _net_weights(agent)

@@ -286,3 +286,30 @@ def test_deepcopy_isolation(raw: dict) -> None:
     snapshot = copy.deepcopy(raw)
     raw["agent"]["max_speed"] = 99.0
     assert snapshot["agent"]["max_speed"] != raw["agent"]["max_speed"]
+
+
+def test_hebbian_optional_section_defaults(raw: dict) -> None:
+    assert "hebbian" not in raw
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.hebbian.enabled is False
+    assert cfg.hebbian.learning_rate == 0.01
+    assert cfg.hebbian.weight_max == 5.0
+
+
+def test_hebbian_parsed_when_present(raw: dict) -> None:
+    raw["hebbian"] = {"enabled": True, "learning_rate": 0.05}
+    cfg = SimConfig.from_dict(raw)
+    assert cfg.hebbian.enabled is True
+    assert cfg.hebbian.learning_rate == 0.05
+
+
+def test_hebbian_rejects_non_positive_learning_rate(raw: dict) -> None:
+    raw["hebbian"] = {"learning_rate": 0.0}
+    with pytest.raises(ConfigError, match="learning_rate must be > 0"):
+        SimConfig.from_dict(raw)
+
+
+def test_hebbian_rejects_non_positive_weight_max(raw: dict) -> None:
+    raw["hebbian"] = {"weight_max": -1.0}
+    with pytest.raises(ConfigError, match="weight_max must be > 0"):
+        SimConfig.from_dict(raw)

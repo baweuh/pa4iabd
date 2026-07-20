@@ -470,6 +470,62 @@ class HyperNEATConfig:
 
 
 @dataclass(frozen=True)
+class HebbianConfig:
+    """Reward-modulated Hebbian plasticity: the agent learns DURING its life.
+
+    poc2.6, second lever outside selection/reproduction — and the first
+    mechanism in this project where an agent's behaviour changes within its own
+    lifetime instead of only across generations. Every previous lever, plasticity
+    included in its ES form (see docs/DIAGNOSTIC-self-adaptive-mutation.md),
+    acted between generations.
+
+    Rule (Soltoggio et al. 2018, "Born to Learn"; Stanley, Bryant &
+    Miikkulainen 2003 evolved Hebbian rules on a foraging domain):
+
+        dw = learning_rate * m * x * y
+
+    with ``m`` = apples eaten this tick (the modulatory/reward signal, already
+    computed by the tick loop), ``x`` the presynaptic activation and ``y`` the
+    postsynaptic one from the SAME tick's forward pass. The update is
+    reward-gated: nothing changes on a tick where the agent ate nothing, so the
+    connections reinforced are exactly those that were active on the step that
+    reached food.
+
+    Deliberately FIRST-ORDER: ``learning_rate`` is a plain YAML constant and no
+    rule parameter is evolved. The sigma diagnostic established that this
+    project's regime (N_e ~ 82-90 on a population of 400 — selection already
+    swamped by drift) cannot carry a second-order signal, i.e. one selected only
+    through the offspring it produces. Here the learned weights change the
+    CARRIER's own foraging, so the selective signal is first-order. Evolving the
+    rule itself (per-connection ABCD coefficients) is the natural follow-up
+    ONLY if this first-order version shows an effect.
+
+    Learning is NON-LAMARCKIAN: plastic weights live in the agent's compiled
+    ``NeuralNetwork`` and are never written back to the genome, so children
+    inherit the innate wiring and must re-learn. That is the standard Baldwin
+    setup in the source literature.
+
+    False (default) = no plasticity anywhere, byte-for-byte unchanged: this
+    whole section may be omitted from a config. Never promoted to default.yaml
+    without a validated 6-seed campaign, same discipline as every other lever.
+    """
+
+    enabled: bool = False
+    # Step size of the plastic update. Multiplied by the reward m (apple count),
+    # so the effective per-event step is learning_rate * m * x * y with
+    # x, y in (-1, 1) — a single apple moves a weight by at most learning_rate.
+    learning_rate: float = 0.01
+    # Clamp on plastic weights, mirroring genome.weight_max's role for evolved
+    # ones. Required, not cosmetic: the rule is purely positive reinforcement
+    # (no decay term), so without a bound a repeatedly-rewarded connection would
+    # grow without limit and saturate every downstream tanh.
+    weight_max: float = 5.0
+
+    def __post_init__(self) -> None:
+        _require_positive(self, "learning_rate", "weight_max")
+
+
+@dataclass(frozen=True)
 class PopulationConfig:
     """Population bounds.
 
@@ -574,6 +630,7 @@ class SimConfig:
     novelty: NoveltyConfig
     diagnostics: DiagnosticsConfig
     hyperneat: HyperNEATConfig
+    hebbian: HebbianConfig
     population: PopulationConfig
     simulation: SimulationConfig
     logging: LoggingConfig
@@ -639,6 +696,13 @@ class SimConfig:
                 _build(HyperNEATConfig, "hyperneat", data)
                 if "hyperneat" in data
                 else HyperNEATConfig()
+            ),
+            # Optional section: absent -> plasticity disabled (backward-compatible,
+            # every pre-hebbian config keeps loading unchanged).
+            hebbian=(
+                _build(HebbianConfig, "hebbian", data)
+                if "hebbian" in data
+                else HebbianConfig()
             ),
             population=_build(PopulationConfig, "population", data),
             simulation=_build(SimulationConfig, "simulation", data),

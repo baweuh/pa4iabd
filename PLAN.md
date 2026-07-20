@@ -585,6 +585,28 @@
         qu'aucun diagnostic ne motive l'un ou l'autre spécifiquement.
 - [ ] **Pistes hors sélection/reproduction — recherche littérature
         2026-07-16, aucun diagnostic encore, à affiner :**
+    - 🔄 **Plasticité Hebbienne — V1 (modulée par récompense) FALSIFIÉE AU
+        DIAGNOSTIC, sans campagne** (2026-07-20,
+        `docs/DIAGNOSTIC-hebbian-v1.md`). Règle `dw = lr·m·x·y`, m = pommes
+        du tick, premier ordre assumé. Deux modes d'échec : (1)
+        `steer_appris` < `steer_inné` systématiquement (2 seeds) —
+        l'agent apprend contre son propre fourrage ; (2) `steer_inné`
+        s'effondre 0,359 → 0,138, donc la plasticité **handicape
+        l'évolution elle-même** — inverse de l'effet Baldwin, le bruit
+        d'apprentissage masque les différences génétiques là où la
+        sélection est déjà noyée par la dérive. Cause mécanique : la règle
+        est du renforcement positif pur, elle renforce le tick de capture
+        (agent *sur* la pomme) au lieu de l'approche, et sans baseline
+        toute connexion active est renforcée → saturation des tanh.
+        Contrainte dure mesurée au passage : **~3 pommes/vie médian**, soit
+        3 mises à jour par vie — analogue du budget générationnel qui avait
+        tué la mutation auto-adaptative, et non modifiable sans changer la
+        tâche. **Falsification de CETTE RÈGLE, pas du concept** (contraste
+        avec sigma, écartée pour raison structurelle). Suite proposée non
+        engagée → **V2 : trace d'éligibilité + baseline**
+        (`dw = lr·(m−m̄)·e`, `e ← decay·e + x·y`), correction ciblée sur les
+        deux défauts, forme canonique R-STDP de Soltoggio. Référence
+        d'origine :
     - **Plasticité Hebbienne/neuromodulée pendant la vie de l'agent**
         (Stanley, Bryant & Miikkulainen 2003 — NEAT + règles Hebbiennes
         évoluées, testé sur un domaine de **foraging** conçu pour exiger

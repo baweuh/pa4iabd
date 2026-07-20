@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from src.config import SimConfig
+from src.config import HebbianConfig, SimConfig
 from src.genome import (
     ConnectionGene,
     Genome,
@@ -233,3 +233,116 @@ def test_full_network_finite(cfg):
         vx, vy = nn.activate(inputs)
         assert math.isfinite(vx)
         assert math.isfinite(vy)
+
+
+# --------------------------------------------------------------------------- #
+# Reward-modulated Hebbian plasticity (poc2.6)
+# --------------------------------------------------------------------------- #
+
+
+def _plastic(**kwargs) -> HebbianConfig:
+    return HebbianConfig(enabled=True, **kwargs)
+
+
+def _weights(net: NeuralNetwork) -> dict[int, list[tuple[int, float]]]:
+    return {nid: list(srcs) for nid, srcs in net._incoming.items()}
+
+
+def test_hebbian_off_by_default(cfg):
+    assert cfg.hebbian.enabled is False
+    net = NeuralNetwork(_small_genome(), cfg.network, cfg.hebbian)
+    before = _weights(net)
+    net.activate([1.0, 1.0])
+    net.apply_hebbian(1.0)
+    assert _weights(net) == before
+
+
+def test_hebbian_no_config_behaves_like_disabled(cfg):
+    net = NeuralNetwork(_small_genome(), cfg.network)
+    before = _weights(net)
+    net.activate([1.0, 1.0])
+    net.apply_hebbian(3.0)
+    assert _weights(net) == before
+
+
+def test_hebbian_is_reward_gated(cfg):
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic())
+    net.activate([1.0, 1.0])
+    before = _weights(net)
+    net.apply_hebbian(0.0)
+    assert _weights(net) == before
+
+
+def test_hebbian_before_first_activate_is_noop(cfg):
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic())
+    before = _weights(net)
+    net.apply_hebbian(1.0)
+    assert _weights(net) == before
+
+
+def test_activate_alone_never_changes_weights(cfg):
+    """Measuring an agent must not modify its brain.
+
+    steer_score, the novelty descriptor and the HyperNEAT CPPN queries all call
+    activate() purely to observe. Only apply_hebbian may move a weight.
+    """
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic())
+    before = _weights(net)
+    for _ in range(50):
+        net.activate([1.0, -1.0])
+    assert _weights(net) == before
+
+
+def test_hebbian_update_matches_the_rule(cfg):
+    lr = 0.1
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic(learning_rate=lr))
+    net.activate([1.0, 1.0])
+    values = dict(net._last_values)
+    before = _weights(net)
+    reward = 2.0
+    net.apply_hebbian(reward)
+    after = _weights(net)
+    for nid, srcs in after.items():
+        for pos, (src, w) in enumerate(srcs):
+            post = values[nid]
+            if net._node_type[nid] == OUTPUT:
+                post = math.tanh(post)  # emitted value, not the raw linear sum
+            expected = before[nid][pos][1] + lr * reward * values[src] * post
+            assert w == pytest.approx(expected)
+
+
+def test_hebbian_clamps_to_weight_max(cfg):
+    net = NeuralNetwork(
+        _small_genome(), cfg.network, _plastic(learning_rate=10.0, weight_max=1.5)
+    )
+    for _ in range(200):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(5.0)
+    for srcs in net._incoming.values():
+        for _, w in srcs:
+            assert -1.5 <= w <= 1.5
+
+
+def test_hebbian_does_not_touch_the_genome(cfg):
+    """Learning is non-Lamarckian: children inherit the innate wiring."""
+    genome = _small_genome()
+    innate = [(c.in_node, c.out_node, c.weight) for c in genome.connections]
+    net = NeuralNetwork(genome, cfg.network, _plastic(learning_rate=0.5))
+    for _ in range(20):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(1.0)
+    assert [(c.in_node, c.out_node, c.weight) for c in genome.connections] == innate
+    assert _weights(net) != {
+        nid: list(srcs)
+        for nid, srcs in NeuralNetwork(genome, cfg.network)._incoming.items()
+    }
+
+
+def test_hebbian_changes_the_output(cfg):
+    """The whole point: the same input maps to a different action after learning."""
+    net = NeuralNetwork(_small_genome(), cfg.network, _plastic(learning_rate=0.2))
+    before = net.activate([1.0, 1.0])
+    for _ in range(10):
+        net.activate([1.0, 1.0])
+        net.apply_hebbian(1.0)
+    assert net.activate([1.0, 1.0]) != before

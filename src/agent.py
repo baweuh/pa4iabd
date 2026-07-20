@@ -64,8 +64,12 @@ class Agent:
                 genome, config.sensors, config.network, config.hyperneat
             )
             if config.hyperneat.enabled
-            else NeuralNetwork(genome, config.network)
+            else NeuralNetwork(genome, config.network, config.hebbian)
         )
+        # Under plasticity the network is NOT frozen for life, so the two
+        # measurements below cannot be memoised the way they are otherwise —
+        # see behavior_descriptor/steer_score.
+        self._plastic: bool = config.hebbian.enabled
 
         self.energy: float = config.agent.initial_energy
         self.age: int = 0
@@ -247,7 +251,15 @@ class Agent:
 
         Deterministic from the (frozen) network, so it is safe to memoise for the
         agent's whole life — mirrors how the network's topo-sort is cached once.
+
+        Under ``hebbian.enabled`` the network is no longer frozen, so the cache
+        is bypassed and the descriptor reflects the agent's CURRENT, learned
+        behaviour. Memoising here would feed novelty search the innate policy
+        and make an agent that learns look behaviourally identical to one that
+        does not.
         """
+        if self._plastic:
+            return _compute_descriptor(self.network, self._config.sensors)
         if self._behavior_descriptor is None:
             self._behavior_descriptor = _compute_descriptor(
                 self.network, self._config.sensors
@@ -261,7 +273,15 @@ class Agent:
         Deterministic from the (frozen) network, memoised for life like
         :attr:`behavior_descriptor`. Equal to
         ``src.diagnostics.steer_score(self.network, config.sensors)``.
+
+        Under ``hebbian.enabled`` the cache is bypassed for the same reason as
+        the descriptor — and here it decides whether the lever is measurable at
+        all: this is the campaign's headline metric, so scoring the innate
+        network would report exactly zero effect for a lever whose whole point
+        is that behaviour changes during life.
         """
+        if self._plastic:
+            return _compute_steer_score(self.network, self._config.sensors)
         if self._steer_score is None:
             self._steer_score = _compute_steer_score(self.network, self._config.sensors)
         return self._steer_score
@@ -301,6 +321,15 @@ class Agent:
         for apple in bitten:
             self.energy = min(self.energy + gain, self._config.agent.max_energy)
             self._env.mark_eaten(apple)
+        if bitten:
+            # Reward-modulated plasticity (no-op unless hebbian.enabled): the
+            # apple count is the modulatory signal, and the activations still
+            # held by the network are the ones from THIS tick's decide() — the
+            # forward pass that produced the move which reached the food. Driven
+            # from here rather than from Simulation so the learning signal stays
+            # where the reward is known, and so no measurement path can trigger
+            # it (see NeuralNetwork.apply_hebbian).
+            self.network.apply_hebbian(float(len(bitten)))
         return bitten
 
     # ------------------------------------------------------------------ #
