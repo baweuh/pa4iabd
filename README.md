@@ -150,7 +150,12 @@ python -m pytest tests/ -v     # suite de tests complète
 ## Pour aller plus loin
 
 - `CLAUDE.md` — invariants du projet et règles d'architecture.
-- `PLAN.md` — feuille de route et avancement (Phases 1 à 9 + investigation poc2.2).
+- `PLAN.md` — feuille de route et avancement : Phases 1 à 9, puis l'investigation
+  poc2.2 et les branches de recherche poc2.3 → poc2.6.
+- `docs/SYNTHESE.md` — **la vue d'ensemble à lire en premier** : la trajectoire
+  complète, ce qui a été promu (4 leviers, tous liés à l'échelle ou à
+  l'écologie) et ce qui a été falsifié (13 leviers, presque tous des mécanismes
+  de sélection).
 - `docs/Phase/PhaseN.md` — documentation post-implémentation de chaque phase.
 - `docs/Audits/` — audits darwiniens de la branche poc2.2 (v1, v2, v3). Le v3
   (`AUDIT-poc2.2-v3.md`) est le journal complet de l'investigation évolutive

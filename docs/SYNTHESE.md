@@ -668,8 +668,9 @@ positif).
 
 ### poc2.6 — hors sélection/reproduction : le budget d'événements (2026-07-20/21)
 
-Constat d'ouverture de Robin : les 11 leviers testés jusque-là agissaient
-**tous** sur la sélection/reproduction. La branche est donc allée chercher
+Constat d'ouverture de Robin : les 11 leviers **falsifiés** jusque-là agissaient
+**tous** sur la sélection/reproduction — quand les 4 promus, eux, tenaient tous à
+l'échelle ou à l'écologie. La branche est donc allée chercher
 ailleurs, et a engagé les deux seuls candidats compatibles avec le cadre du
 projet — le premier agissant **sur le génome lui-même**, le second **dans la vie
 de l'agent**.
@@ -754,8 +755,10 @@ dégradait −12 pp à pop=400 et n'a jamais été validée.
 **Statut réel : l'échelle n'est ni confirmée ni infirmée.** C'est le seul grand
 axe du projet resté ouvert — tous les autres ont un verdict.
 
-**Compteur du projet : 13 leviers écartés, 3 promus en défaut** (novelty +10,
-densité +4, K-sweep +13 — tous **additifs**, jamais réducteurs).
+**Compteur du projet : 13 leviers écartés, 4 promus en défaut** — repro ∝ pommes
+cumulées + population 200→400 (poc2.2 ÉTAPE 10, la percée fondatrice), novelty
++10, densité +4, K-sweep +13. Tous **additifs**, jamais réducteurs ; et tous liés
+à l'**échelle ou à l'écologie**, aucun au mécanisme de sélection.
 
 ## 7. Historique des commits clés
 

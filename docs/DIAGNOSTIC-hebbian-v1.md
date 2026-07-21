@@ -1,7 +1,17 @@
 # Plasticité Hebbienne modulée par récompense — V1, diagnostic pré-campagne
 
-**Statut : mécanisme falsifié au diagnostic. Aucune campagne lancée.**
+**Statut : règle V1 falsifiée au diagnostic. Aucune campagne lancée.**
 `hebbian.enabled` reste `false` par défaut.
+
+> ⚠️ **Ce document décrit l'état au 2026-07-20 et sa « suite proposée » a depuis
+> été implémentée ET falsifiée.** Ne pas le lire comme un chantier ouvert :
+> V2 (trace + baseline) a bien corrigé les deux défauts identifiés ici — les
+> ablations le prouvent — et a **échoué quand même**, l'apprentissage restant un
+> pile ou face (41-55 % de gagnants, 7 réglages × 2 seeds). Le chantier est CLOS.
+> Conséquence directe sur la conclusion ci-dessous (« falsification de la règle,
+> pas du concept ») : elle était juste à la date de ce document, mais **c'est
+> désormais le concept lui-même qui est falsifié sur CETTE tâche** — voir la
+> note en fin de section. Résultat complet : `docs/DIAGNOSTIC-hebbian-v2.md`.
 
 Date : 2026-07-20 · branche `poc2.6` · règle choisie avec Robin (option A)
 
@@ -105,7 +115,17 @@ raison *structurelle* (un mécanisme de second ordre est impossible à
 `N_e` ≈ 85, aucun réglage n'y change rien) — rien ici n'interdit *a priori*
 à une règle mieux construite de fonctionner.
 
-## Suite proposée — V2 : trace d'éligibilité + baseline
+> **Mise à jour 2026-07-21 — cette distinction n'a pas survécu.** V2 est
+> précisément « la règle mieux construite » : elle rétablit les deux ingrédients
+> jetés ici, et les ablations confirment que chacun fait son travail (la trace
+> fournit l'amplitude, la baseline borne la dérive). Elle échoue néanmoins. La
+> raison rejoint finalement celle de la mutation auto-adaptative : la trace couvre
+> ~100 ticks pour ~3 récompenses par vie, donc l'attribution de crédit est du
+> bruit — un fait sur la **parcimonie de la tâche**, qu'aucune forme de règle ne
+> change. La plasticité Hebbienne est donc écartée pour une raison structurelle
+> elle aussi, simplement découverte un cran plus tard.
+
+## Suite proposée — V2 : trace d'éligibilité + baseline  *(depuis IMPLÉMENTÉE puis FALSIFIÉE)*
 
 Correction exactement ciblée sur les deux défauts diagnostiqués :
 
@@ -118,9 +138,11 @@ l'apprentissage **contrastif** — une capture ordinaire ne renforce rien, seul
 un écart à l'attendu le fait, et une disette peut *affaiblir* (défaut 2).
 C'est la forme canonique R-STDP / Hebbien neuromodulé de la source.
 
-Coût : contenu (mêmes points d'accroche, la trace est un dict par réseau).
-Non engagé — c'est un changement de règle de même ampleur que le choix
-initial A/B/C, donc à trancher avant implémentation.
+Coût : contenu en implémentation, mais **−37 % de perf mesurés** une fois
+livrée (47 → 30 ticks/s : la mise à jour devient par tick et par connexion).
+
+~~Non engagé~~ — **engagé le 2026-07-20** (commit `aa19ae7`), diagnostiqué et
+falsifié le 2026-07-21 (commit `1001faf`). Voir `docs/DIAGNOSTIC-hebbian-v2.md`.
 
 À noter pour V2 : le budget de récompense (~3 pommes/vie médian) reste la
 contrainte dure, et il **n'est pas modifiable** sans changer la tâche. Toute
