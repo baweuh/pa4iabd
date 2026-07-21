@@ -716,9 +716,43 @@ d'ailleurs pas exprimable : `HebbianConfig` rejetait `learning_rate = 0`.
 **Trois entrées de la todo d'ouverture n'ont volontairement pas été
 engagées** — HyperNEAT V5, repro non canonique, MAP-Elites/NSLC/ALPS. Toutes
 sont des leviers de **sélection**, catégorie qui a déjà échoué 11 fois ici pour
-la raison voisine (la dérive noie la sélection). Le terrain pertinent est
-**poc3** (topologie fixe + batching, 16k agents jouables), où c'est justement le
-régime de dérive qui change. Détail et argument : `PLAN.md`, section poc2.6.
+la raison voisine (la dérive noie la sélection).
+
+⚠️ **Elles ne sont pas renvoyées à `poc3`** : cette branche a été close le
+2026-07-20 **sans verdict** (voir ci-dessous), et deux des trois ne peuvent pas
+y exister — HyperNEAT V5 est bâti sur l'API structurelle NEAT que poc3 a
+retirée, et le volet « parent fitter » de la repro n'a plus d'objet sur un
+crossover 50/50 en vecteur plat. Seules MAP-Elites/NSLC et ALPS sont
+indépendantes de la représentation. Détail par entrée : `PLAN.md`, section
+poc2.6.
+
+### poc3 — architecture livrée, hypothèse d'échelle SANS VERDICT (close 2026-07-20)
+
+Branche ouverte le 2026-07-16 sur un constat net : les 4 seuls leviers positifs
+du projet (population 200→400, K-sweep, densité, novelty) tiennent tous à
+l'**échelle/l'écologie**, jamais au mécanisme de sélection — et la littérature
+du même paradigme (Hamon et al. 2023 ; Bejjani et al. 2025, 60 000+ agents) dit
+que certains comportements **n'émergent qu'au-delà d'un seuil de taille**.
+Verrou identifié : le forward pass NEAT hétérogène, non batchable, 45 % du tick,
+payé pour une topologie qui n'évolue quasiment jamais (<0,5 nœud caché en
+moyenne après 30k ticks).
+
+**L'architecture a été livrée et mesurée** — topologie fixe + `batch_activate`
+(le verrou passe de 45 % à 2,8 % du tick), puis `batch_eat` et
+`novelty.max_pool_size` qui débloquent l'échelle réelle : 400 → 106 ticks/s,
+4000 → 19,3, 16000 → 6,7.
+
+**Mais l'hypothèse qui a motivé la branche n'a jamais été tranchée.** Round 1
+(pop 400→4000, 6 seeds/30k) régresse à 38 % de fourrageurs, résultat **confondu
+et donc inexploitable** : 4000 agents pour 160 pommes inchangées (compétition
+~5× plus dense), et la population n'a jamais dépassé `initial_size` (1943-2010
+sur un cap de 4000) — le régime visé n'a pas été atteint. Round 2 (pommes ×10,
+précisément conçu pour lever ce confound) a été **interrompu à 4 %**. S'ajoute
+que `novelty.max_pool_size`, l'approximation qui rend l'échelle jouable,
+dégradait −12 pp à pop=400 et n'a jamais été validée.
+
+**Statut réel : l'échelle n'est ni confirmée ni infirmée.** C'est le seul grand
+axe du projet resté ouvert — tous les autres ont un verdict.
 
 **Compteur du projet : 13 leviers écartés, 3 promus en défaut** (novelty +10,
 densité +4, K-sweep +13 — tous **additifs**, jamais réducteurs).

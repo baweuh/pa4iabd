@@ -633,13 +633,17 @@
 
 ### Non retenues sur poc2.6 — différées, avec la raison ⬜
 > Ces trois entrées de la todo d'ouverture n'ont **jamais été engagées**, et ce
-> n'est pas un oubli. Le résultat de la branche est qu'un mécanisme a besoin
-> d'un budget d'événements que cette tâche ne fournit pas ; or ces trois pistes
-> sont toutes des leviers de **sélection**, catégorie qui a déjà échoué 11 fois
-> ici pour la raison voisine (`N_e` ≈ 85 : la dérive noie la sélection). Les
-> tester sur poc2.x reviendrait à re-mesurer le même obstacle. Le terrain
-> pertinent est **poc3** (topologie fixe + batching, 16k agents jouables), où le
-> régime de dérive est justement ce qui change. Voir `docs/SYNTHESE.md`.
+> n'est pas un oubli : ce sont toutes des leviers de **sélection**, catégorie
+> qui a déjà échoué 11 fois ici (`N_e` ≈ 85 : la dérive noie la sélection).
+>
+> ⚠️ **Elles ne sont pas pour autant renvoyées à `poc3`** — cette branche a été
+> **close le 2026-07-20 sans verdict** sur l'hypothèse d'échelle (round 1
+> confondu : 4000 agents pour 160 pommes inchangées, population jamais montée
+> au-dessus de `initial_size` ; round 2 censé lever le confound interrompu à
+> 4 %), et sa propre note de clôture pose que **le backlog de recherche repart
+> de `poc2.6`**. Deux de ces trois entrées ne peuvent d'ailleurs **pas** exister
+> sur poc3 — voir le détail par entrée ci-dessous. La question de l'échelle,
+> elle, reste **entièrement ouverte** : ni confirmée ni infirmée.
 
 - [ ] ⬜ **HyperNEAT V5 — régime de mutation CPPN dédié.** Diagnostic établi
         (V2/V3, `docs/FALSIFIED-hyperneat.md`) : le CPPN fondateur progresse à
@@ -648,7 +652,9 @@
         Bien scopée, coût connu. **Différée** : le chantier HyperNEAT a été
         déclaré clos en poc2.5 après une relation NON monotone entre V3 et V4
         (bootstrap 1 nœud = meilleur résultat, 2 nœuds = forte régression), ce
-        qui rend le levier imprévisible avant d'être fin.
+        qui rend le levier imprévisible avant d'être fin. **Ne peut vivre que
+        sur poc2.x** : bâti sur l'API structurelle NEAT (CPPN → substrat), et
+        `src/hyperneat.py` + son outillage ont été supprimés en poc3.
 - [ ] ⬜ **Repro non canonique.** Deux écarts à la littérature repérés en audit,
         jamais testés : `Genome.crossover` traite toujours `self` comme parent
         « fitter » sans comparer les fitness ; la reproduction ne comble que les
@@ -656,16 +662,24 @@
         **Différée** : levier de reproduction, catégorie dont tous les
         représentants ont échoué ici (troncature, critère minimal, îles,
         crossover lui-même), et aucun diagnostic ne motive spécifiquement l'un
-        ou l'autre.
+        ou l'autre. **Volet « parent fitter » spécifique à poc2.x** : c'est un
+        défaut d'alignement propre à NEAT (gènes excess/disjoint hérités du
+        parent réputé fitter). Le `crossover` de poc3 est un tirage 50/50 sur un
+        vecteur de poids plat, où l'argument `fitter` n'a plus aucun effet — le
+        point n'y existe pas. Le volet « turnover forcé » reste, lui, valable
+        sur les deux architectures.
 - [ ] ⬜ **Quality-Diversity — MAP-Elites / NSLC** (Lehman & Stanley 2011 ;
         Mouret & Clune 2015) et **ALPS** (Hornby 2006). NSLC combine novelty
         (déjà promu en défaut) avec une compétition **locale** ; ALPS protège
         les jeunes génotypes par couches d'âge au lieu d'une isolation
         géographique. **Différées** : toutes deux restructurent la sélection
         pour préserver la diversité — exactement l'objectif des îles, falsifiées
-        en poc2.4 parce que 4 îles de 100 rouvrent la dérive fondatrice. À
-        reprendre sur poc3, où la population est assez grande pour que
-        subdiviser ne coûte pas la dérive.
+        en poc2.4 parce que 4 îles de 100 rouvrent la dérive fondatrice.
+        **Seules des trois à être indépendantes de la représentation** : elles
+        s'appliqueraient indifféremment à poc2.x et à une reprise de poc3. Elles
+        n'ont de sens qu'à une population assez grande pour que subdiviser ne
+        coûte pas la dérive — ce qui les lie à l'hypothèse d'échelle, restée
+        sans verdict.
 
 **Sur les leviers « ML »** : la contrainte « aucun framework ML » est levée sur
 toutes les branches depuis le 2026-07-20, `neat-python` et `gym` restant
