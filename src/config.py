@@ -524,6 +524,14 @@ class HebbianConfig:
     # Step size of the plastic update. Multiplied by the reward m (apple count),
     # so the effective per-event step is learning_rate * m * x * y with
     # x, y in (-1, 1) — a single apple moves a weight by at most learning_rate.
+    # 0.0 = plasticity fully wired but no weight ever moves — the THIRD clean
+    # ablation, and the harness control the other two need. Turning this section
+    # on also bypasses the steer_score and behavior_descriptor caches and makes
+    # novelty score the live network (see Agent), so a run with lr = 0 is what
+    # proves those side effects do not by themselves shift the measurements a
+    # plasticity result would be read from. Allowed for that reason: it was
+    # rejected as non-positive until poc2.6, which made the control impossible
+    # to express in YAML.
     learning_rate: float = 0.01
     # Clamp on plastic weights, mirroring genome.weight_max's role for evolved
     # ones. Required, not cosmetic: the rule is purely positive reinforcement
@@ -559,7 +567,8 @@ class HebbianConfig:
     baseline_rate: float = 0.01
 
     def __post_init__(self) -> None:
-        _require_positive(self, "learning_rate", "weight_max")
+        _require_non_negative(self, "learning_rate")
+        _require_positive(self, "weight_max")
         _require_rate(self, "eligibility_decay", "baseline_rate")
 
 

@@ -303,10 +303,27 @@ def test_hebbian_parsed_when_present(raw: dict) -> None:
     assert cfg.hebbian.learning_rate == 0.05
 
 
-def test_hebbian_rejects_non_positive_learning_rate(raw: dict) -> None:
-    raw["hebbian"] = {"learning_rate": 0.0}
-    with pytest.raises(ConfigError, match="learning_rate must be > 0"):
+def test_hebbian_rejects_negative_learning_rate(raw: dict) -> None:
+    raw["hebbian"] = {"learning_rate": -0.01}
+    with pytest.raises(ConfigError, match="learning_rate must be >= 0"):
         SimConfig.from_dict(raw)
+
+
+def test_hebbian_accepts_all_three_ablations_at_zero(raw: dict) -> None:
+    """Each ingredient must be switchable off from YAML alone.
+
+    The V2 rule is dw = learning_rate * (m - m_bar) * e, and the whole diagnostic
+    strategy is to zero one factor at a time: the trace (eligibility_decay), the
+    baseline (baseline_rate), and learning itself (learning_rate — the harness
+    control, which keeps every side effect of enabling plasticity while
+    guaranteeing no weight moves). learning_rate = 0 was rejected as non-positive
+    until poc2.6, so that control could not be expressed at all; this pins all
+    three down together.
+    """
+    for param in ("learning_rate", "eligibility_decay", "baseline_rate"):
+        raw["hebbian"] = {"enabled": True, param: 0.0}
+        cfg = SimConfig.from_dict(raw)
+        assert getattr(cfg.hebbian, param) == 0.0, param
 
 
 def test_hebbian_rejects_non_positive_weight_max(raw: dict) -> None:

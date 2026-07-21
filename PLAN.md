@@ -554,130 +554,124 @@
         lever_hyperneat_v3.yaml`), toujours falsifié au sens strict, non
         promu ; `hyperneat.enabled` reste absent (=false) dans
         `default.yaml`. Détails complets : `docs/FALSIFIED-hyperneat.md`.
-## Branche poc2.6 — todo grossière, à affiner avec Robin 🔄
-> Ouverte depuis `poc2.5` (2026-07-16) après clôture du chantier HyperNEAT
-> (V1→V4, falsifié) et feuille de route recherche 5/5. Constat de Robin :
-> la plupart des leviers testés jusqu'ici (fitness sharing, troncature,
-> crossover, génome sparse, critère minimal, îles, archive, biais,
-> HyperNEAT) reposent tous sur la **sélection/reproduction**. Cette liste
-> couvre 3 candidats — un seul a un diagnostic préalable (V5), les deux
-> autres sont volontairement grossiers, **à transformer en hypothèse
-> précise avant d'engager toute campagne** (discipline du projet : jamais
-> de campagne sans diagnostic). Ordre et scope à trancher avec Robin.
+## Branche poc2.6 — hors sélection/reproduction : 2 leviers falsifiés AU DIAGNOSTIC ✅
+> Ouverte depuis `poc2.5` (2026-07-16), close le 2026-07-21. Constat de Robin à
+> l'ouverture : la plupart des leviers testés jusqu'ici (fitness sharing,
+> troncature, crossover, génome sparse, critère minimal, îles, archive, biais,
+> HyperNEAT) reposent tous sur la **sélection/reproduction**. La branche est
+> donc allée chercher ailleurs — et les deux leviers engagés sont les deux
+> premiers du projet à agir **dans la vie de l'agent** ou **sur le génome
+> lui-même**, plutôt qu'entre générations.
+>
+> **Résultat transverse de la branche — les deux meurent du même budget
+> d'événements :**
+>
+> | levier | événements informatifs disponibles | mécanisme tué |
+> |---|---|---|
+> | sigma auto-adaptatif | ~3 générations de profondeur de lignée / 6k ticks | sélection de **second ordre** |
+> | plasticité Hebbienne | ~3 pommes par vie | attribution de crédit **intra-vie** |
+>
+> Même chiffre, même cause : **la tâche fournit de l'ordre de 3 événements
+> informatifs par agent.** Aucun mécanisme qui doit accumuler du signal — à
+> travers ses enfants ou à travers sa propre vie — ne fonctionne sur 3
+> événements, dans un régime où `N_e` ≈ 82-90 sur pop 400 (poc2.2) noie déjà la
+> sélection de premier ordre. Ce n'est pas un défaut de réglage : c'est une
+> propriété de la tâche.
+>
+> **Les deux ont été écartés SANS campagne 6 seeds** — première fois que la
+> branche paie ce prix-là deux fois de suite. 13 leviers écartés au total sur le
+> projet, 2 sans brûler de campagne (les deux ici).
 
-- [ ] **HyperNEAT V5 — régime de mutation CPPN dédié.** Seule piste avec
-        un diagnostic déjà établi (V2/V3, `docs/FALSIFIED-hyperneat.md`) :
-        le CPPN fondateur progresse à peine structurellement (`hidden`
-        quasi nul ou lentement croissant) avec le régime de mutation
-        hérité de l'encodage direct (`add_node_rate` 0,03/tick,
-        `weight_mutation_rate` 0,15) — jamais ajusté pour un génome à 6-14
-        poids fortement couplés. Bien scopée, coût connu (~30 min/itération,
-        sweep 0 tick + campagne 6 seeds/30k).
-- [ ] **Repro non canonique — à transformer en hypothèse avant campagne.**
-        Deux écarts à la littérature repérés en audit (memory
-        `research-roadmap`), jamais testés comme leviers : `Genome.
-        crossover` traite toujours `self` comme parent "fitter" sans
-        comparer les fitness ; la reproduction ne comble que les slots
-        vidés par la mort (pas de turnover forcé façon rtNEAT). Risque
-        élevé de falsification supplémentaire — quasi tous les leviers de
-        sélection/reproduction du projet ont échoué (troncature, critère
-        minimal, îles, crossover lui-même) — donc priorité basse tant
-        qu'aucun diagnostic ne motive l'un ou l'autre spécifiquement.
-- [ ] **Pistes hors sélection/reproduction — recherche littérature
-        2026-07-16, aucun diagnostic encore, à affiner :**
-    - 🔄 **Plasticité Hebbienne — V1 (modulée par récompense) FALSIFIÉE AU
-        DIAGNOSTIC, sans campagne** (2026-07-20,
-        `docs/DIAGNOSTIC-hebbian-v1.md`). Règle `dw = lr·m·x·y`, m = pommes
-        du tick, premier ordre assumé. Deux modes d'échec : (1)
-        `steer_appris` < `steer_inné` systématiquement (2 seeds) —
-        l'agent apprend contre son propre fourrage ; (2) `steer_inné`
-        s'effondre 0,359 → 0,138, donc la plasticité **handicape
-        l'évolution elle-même** — inverse de l'effet Baldwin, le bruit
-        d'apprentissage masque les différences génétiques là où la
-        sélection est déjà noyée par la dérive. Cause mécanique : la règle
-        est du renforcement positif pur, elle renforce le tick de capture
-        (agent *sur* la pomme) au lieu de l'approche, et sans baseline
-        toute connexion active est renforcée → saturation des tanh.
-        Contrainte dure mesurée au passage : **~3 pommes/vie médian**, soit
-        3 mises à jour par vie — analogue du budget générationnel qui avait
-        tué la mutation auto-adaptative, et non modifiable sans changer la
-        tâche. **Falsification de CETTE RÈGLE, pas du concept** (contraste
-        avec sigma, écartée pour raison structurelle). Suite proposée non
-        engagée → **V2 : trace d'éligibilité + baseline**
-        (`dw = lr·(m−m̄)·e`, `e ← decay·e + x·y`), correction ciblée sur les
-        deux défauts, forme canonique R-STDP de Soltoggio.
-    - 🔄 **Plasticité Hebbienne — V2 IMPLÉMENTÉE, diagnostic PARTIEL (1
-        seed), ni promue ni falsifiée** (2026-07-20,
-        `docs/DIAGNOSTIC-hebbian-v2.md`). `dw = lr·(m−m̄)·e`,
-        `e ← decay·e + x·y`, appliquée chaque tick ; `eligibility_decay`
-        calibré sur `capture_lookback_ticks` (134 ticks) → 0,99 et non le
-        0,9 habituel ; chaque ingrédient ablatable en mettant son
-        paramètre à 0. **Mode d'échec n°1 corrigé** : l'écart
-        appris−inné n'est plus systématiquement négatif et devient parfois
-        positif (+0,024 / +0,034 / +0,033 selon les relevés). **Mode n°2
-        NON corrigé** : `steer_inné` reste très sous le témoin à tous les
-        réglages (0,229 / 0,165 / 0,061 vs **0,359**), donc la plasticité
-        continue de handicaper l'évolution elle-même. Coût perf mesuré
-        **−37%** (47 → 30 ticks/s, mise à jour par tick).
-        ⚠️ **Provisoire : 1 seed, 1 run, `steer_inné` bruité d'un relevé à
-        l'autre (le témoin fait 0,124→0,359).** À faire avant toute
-        conclusion : ablations trace-seule / baseline-seule (déjà câblées),
-        sweep `lr` vers le bas (0,001-0,003, la monotonie l'indique), puis
-        6 seeds seulement si un réglage rapproche `steer_inné` du témoin.
-        Hypothèse pour le mode 2 : bruit phénotypique masquant les
-        différences génétiques (« hiding ») — si c'est ça, aucun réglage ne
-        sauvera le levier, même conclusion structurelle que sigma.
-        Référence d'origine :
-    - **Plasticité Hebbienne/neuromodulée pendant la vie de l'agent**
-        (Stanley, Bryant & Miikkulainen 2003 — NEAT + règles Hebbiennes
-        évoluées, testé sur un domaine de **foraging** conçu pour exiger
-        un changement de politique en cours de vie ; Soltoggio et al.
-        2018 « Born to Learn », survey EPANN). Catégorie fondamentalement
-        différente de tout ce qui a été tenté (adaptation individuelle
-        pendant la vie, pas seulement inter-générationnelle) ; nécessite
-        juste une règle de mise à jour de poids en NumPy pur, pas de
-        framework ML (respecte `CLAUDE.md`). Le lien le plus direct avec
-        la tâche de foraging du projet parmi toutes les pistes trouvées.
-    - **Quality-Diversity — MAP-Elites / Novelty Search with Local
-        Competition** (Lehman & Stanley 2011 ; Mouret & Clune 2015).
-        Remplace la sélection générationnelle par un archive de niches
-        comportementales retenant l'élite par niche. NSLC en particulier
-        combine directement novelty (déjà promu en défaut) avec une
-        compétition **locale** plutôt que globale — differe de l'archive
-        de nouveauté déjà falsifiée (mécanisme d'archive différent, pas
-        juste un stockage passif de comportements obsolètes).
-    - **ALPS — Age-Layered Population Structure** (Hornby 2006).
-        Alternative aux îles (déjà falsifiées, poc2.4) pour préserver la
-        diversité : couches d'âge protégeant les jeunes génotypes de la
-        compétition directe avec les anciens, plutôt qu'une isolation
-        géographique. Mécanisme différent pour un objectif similaire
-        (limiter la convergence prématurée) déjà tenté et raté une fois.
-    - ✅ **Mutation auto-adaptative** (façon evolution strategies — le
-        taux de mutation évolue lui-même par génome au lieu d'être une
-        constante YAML globale) — **implémentée puis FALSIFIÉE AU
-        DIAGNOSTIC, sans campagne** (2026-07-20,
+- [x] ✅ **Mutation auto-adaptative** (sigma ES par génome, façon evolution
+        strategies) — **FALSIFIÉE AU DIAGNOSTIC** (2026-07-20,
         `docs/DIAGNOSTIC-self-adaptive-mutation.md`). Le sweep
-        `sigma_tau_scale` (×1/×3/×6) est le test discriminant : le spread
-        de sigma explose (p90/p10 1,8 → 9,2) mais la **médiane reste
-        collée à sa valeur initiale 0,050** sur tous les réglages et tous
-        les seeds ⇒ dérive pure, aucun auto-réglage. Cause : ~3
-        générations de profondeur de lignée en 6k ticks (≈15-20 à 30k),
-        alors que l'auto-adaptation ES est un mécanisme de **second
-        ordre** (sigma n'est sélectionné qu'via le succès de ses enfants)
-        — or `N_e` ≈ 82-90 sur pop 400 montre que même la sélection de
-        premier ordre est noyée par la dérive (poc2.2). Levier
-        structurellement inapplicable à ce régime, pas « mauvais ». Code
-        conservé OFF par défaut. Tension avec l'invariant n°1 tranchée au
-        passage : sigma est un **état évolué du génome**, pas une
-        constante hardcodée — `sigma_min` et `sigma_tau_scale` restent en
-        YAML. 12e levier écarté, **le premier à coût quasi nul** (aucune
-        campagne 6 seeds/30k brûlée).
+        `sigma_tau_scale` (×1/×3/×6) est le test discriminant : le spread de
+        sigma explose (p90/p10 1,8 → 9,2) mais la **médiane reste collée à sa
+        valeur initiale 0,050** sur tous les réglages et tous les seeds ⇒
+        dérive pure, aucun auto-réglage. Cause : ~3 générations de profondeur
+        de lignée en 6k ticks, alors que l'auto-adaptation ES est un mécanisme
+        de **second ordre** (sigma n'est sélectionné qu'à travers le succès de
+        ses enfants). Levier structurellement inapplicable à ce régime, pas
+        « mauvais ». Code conservé OFF. Tension avec l'invariant n°1 tranchée
+        au passage : sigma est un **état évolué du génome**, pas une constante
+        hardcodée — `sigma_min` et `sigma_tau_scale` restent en YAML.
+- [x] ✅ **Plasticité Hebbienne — V1 puis V2, FALSIFIÉES AU DIAGNOSTIC**
+        (2026-07-20/21, `docs/DIAGNOSTIC-hebbian-v1.md` et
+        `docs/DIAGNOSTIC-hebbian-v2.md`). Premier mécanisme du projet où le
+        comportement d'un agent change **pendant sa propre vie**.
+    - **V1** `dw = lr·m·x·y` : deux modes d'échec — l'agent apprend contre son
+        propre fourrage, et `steer_inné` s'effondre 0,359 → 0,138 (la
+        plasticité handicape l'évolution elle-même). Cause mécanique
+        identifiée : renforcement positif pur, crédit sur le tick de **capture**
+        (agent déjà *sur* la pomme) au lieu de l'approche, pas de baseline donc
+        saturation des tanh. Falsification de CETTE RÈGLE, correction
+        identifiable → V2.
+    - **V2** `dw = lr·(m−m̄)·e`, `e ← decay·e + x·y`, `eligibility_decay = 0,99`
+        calibré sur `capture_lookback_ticks` (134 ticks). **Corrige bien la
+        forme** — les ablations le prouvent, chaque ingrédient joue son rôle :
+        la trace fournit l'amplitude, la baseline borne la dérive (trace seule
+        diverge, fourrage 86 % → 50 % ; baseline seule est inerte, delta
+        +0,000). **Et échoue quand même** : en mesure appariée par agent, le
+        taux de gagnants est **41–55 % à tous les réglages sur 2 seeds** — un
+        pile ou face. Le dégât à l'évolution est dose-dépendant et disparaît à
+        `lr = 0,001`, mais à ce réglage l'apprentissage ne fait plus rien : **il
+        n'existe aucune fenêtre où il aide**. Cause : trace de ~100 ticks pour
+        ~3 récompenses par vie ⇒ **l'attribution de crédit est du bruit**.
+        C'est une propriété de la parcimonie de la tâche, pas de la règle —
+        aucune variante (ABCD évolués, R-STDP) ne change le nombre d'événements
+        par vie. Ici la bonne politique est la même du premier au dernier tick :
+        il n'y a rien à apprendre qui ne puisse être inné, alors que Stanley,
+        Bryant & Miikkulainen 2003 avaient conçu leur domaine **pour exiger** un
+        changement de politique en cours de vie.
+    - **Corrigé au passage** : la mesure inné-vs-appris n'existait dans aucun
+        outil versionné (faite ad hoc, non reproductible) → `tools/hebbian_probe.py`,
+        appariée par agent ; et `HebbianConfig` **rejetait `learning_rate = 0`**,
+        rendant le contrôle du harnais inexprimable en YAML — or ce contrôle
+        s'avère identique au témoin ligne pour ligne, ce qui disculpe les
+        effets de bord de `hebbian.enabled` (contournement des caches
+        `steer_score`/`behavior_descriptor`, novelty sur réseau vivant).
 
-**Sur les leviers "ML"** : le projet interdit tout framework ML
-(`neat-python`/torch/tensorflow/gym, cf. `CLAUDE.md`). Parmi les pistes
-ci-dessus, la plasticité Hebbienne et la mutation auto-adaptative sont
-les deux qui restent dans ces clous (règles de mise à jour codées à la
-main, NumPy pur) tout en apportant une mécanique réellement différente de
-l'évolution pure ; un RL classique (Q-learning/policy gradient) sortirait
-du cadre du projet (boucle d'entraînement séparée, tension avec le
-principe "réseau feedforward + évolution seule") et n'est pas retenu ici.
+### Non retenues sur poc2.6 — différées, avec la raison ⬜
+> Ces trois entrées de la todo d'ouverture n'ont **jamais été engagées**, et ce
+> n'est pas un oubli. Le résultat de la branche est qu'un mécanisme a besoin
+> d'un budget d'événements que cette tâche ne fournit pas ; or ces trois pistes
+> sont toutes des leviers de **sélection**, catégorie qui a déjà échoué 11 fois
+> ici pour la raison voisine (`N_e` ≈ 85 : la dérive noie la sélection). Les
+> tester sur poc2.x reviendrait à re-mesurer le même obstacle. Le terrain
+> pertinent est **poc3** (topologie fixe + batching, 16k agents jouables), où le
+> régime de dérive est justement ce qui change. Voir `docs/SYNTHESE.md`.
+
+- [ ] ⬜ **HyperNEAT V5 — régime de mutation CPPN dédié.** Diagnostic établi
+        (V2/V3, `docs/FALSIFIED-hyperneat.md`) : le CPPN fondateur progresse à
+        peine structurellement avec le régime de mutation hérité de l'encodage
+        direct, jamais ajusté pour un génome à 6-14 poids fortement couplés.
+        Bien scopée, coût connu. **Différée** : le chantier HyperNEAT a été
+        déclaré clos en poc2.5 après une relation NON monotone entre V3 et V4
+        (bootstrap 1 nœud = meilleur résultat, 2 nœuds = forte régression), ce
+        qui rend le levier imprévisible avant d'être fin.
+- [ ] ⬜ **Repro non canonique.** Deux écarts à la littérature repérés en audit,
+        jamais testés : `Genome.crossover` traite toujours `self` comme parent
+        « fitter » sans comparer les fitness ; la reproduction ne comble que les
+        slots vidés par la mort (pas de turnover forcé façon rtNEAT).
+        **Différée** : levier de reproduction, catégorie dont tous les
+        représentants ont échoué ici (troncature, critère minimal, îles,
+        crossover lui-même), et aucun diagnostic ne motive spécifiquement l'un
+        ou l'autre.
+- [ ] ⬜ **Quality-Diversity — MAP-Elites / NSLC** (Lehman & Stanley 2011 ;
+        Mouret & Clune 2015) et **ALPS** (Hornby 2006). NSLC combine novelty
+        (déjà promu en défaut) avec une compétition **locale** ; ALPS protège
+        les jeunes génotypes par couches d'âge au lieu d'une isolation
+        géographique. **Différées** : toutes deux restructurent la sélection
+        pour préserver la diversité — exactement l'objectif des îles, falsifiées
+        en poc2.4 parce que 4 îles de 100 rouvrent la dérive fondatrice. À
+        reprendre sur poc3, où la population est assez grande pour que
+        subdiviser ne coûte pas la dérive.
+
+**Sur les leviers « ML »** : la contrainte « aucun framework ML » est levée sur
+toutes les branches depuis le 2026-07-20, `neat-python` et `gym` restant
+interdits (encodage/environnement RL tout faits — hors sujet scientifique, pas
+une question de perf). Les deux leviers de cette branche étaient de toute façon
+du NumPy écrit à la main. Un RL classique (Q-learning/policy gradient) reste
+hors cadre : boucle d'entraînement séparée, tension avec le principe « réseau
+feedforward + évolution seule » — et le résultat ci-dessus suggère qu'il
+buterait sur le même mur (~3 récompenses par vie).

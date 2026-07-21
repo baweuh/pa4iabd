@@ -5,8 +5,9 @@
 > `docs/Audits/*`, poc2.4 `docs/DESIGN-poc2.4-perf.md` (perf) +
 > `docs/RESULTS-novelty.md` (nouveauté), et poc2.5
 > `docs/DESIGN-hyperneat-mvp.md` + `docs/FALSIFIED-hyperneat.md` (HyperNEAT).
-> Rédigé le 2026-07-08, mis à jour le 2026-07-16 (poc2.5 : feuille de route
-> recherche close 5/5, HyperNEAT falsifié en V1+V2 — voir §6).
+> Rédigé le 2026-07-08, mis à jour le 2026-07-21 (poc2.6 close : plasticité
+> Hebbienne et mutation auto-adaptative falsifiées AU DIAGNOSTIC, sans campagne
+> — voir §6 et `docs/DIAGNOSTIC-hebbian-v2.md`).
 
 ---
 
@@ -35,8 +36,16 @@ Juil 15-16   poc2.5          HyperNEAT (encodage indirect, research-roadmap #4,
                              dernier point ouvert) : CPPN→substrat, 2 outils
                              (inspect_network, trace_lineage), V1 ❌ (pire
                              régression du projet, −52) puis V2 ❌ corrigée
-                             (root cause fixée, +4 seulement, −48 encore) —
-                             feuille de route recherche CLOSE (5/5)
+                             (root cause fixée, +4 seulement, −48 encore),
+                             V3 🟡 (meilleur résultat, re-falsifié) et V4 ❌
+                             (non monotone) — chantier CLOS
+   ↓
+Juil 20-21   poc2.6          HORS sélection/reproduction, pour la 1ère fois :
+                             mutation auto-adaptative (sigma ES) ❌ et
+                             plasticité Hebbienne V1 ❌ puis V2 ❌ — les deux
+                             falsifiées AU DIAGNOSTIC, sans campagne 6 seeds.
+                             Même cause : la tâche ne fournit que ~3 événements
+                             informatifs par agent (§6)
 ```
 
 Fil rouge unique de tout le projet **évolutif** : *le fourrage dirigé est trop
@@ -653,10 +662,66 @@ V3 (bootstrap nœuds cachés CPPN, mutation dédiée) identifié mais **non
 engagé** — décision à prendre avec Robin. Détails complets :
 `docs/DESIGN-hyperneat-mvp.md`, `docs/FALSIFIED-hyperneat.md`.
 
-**Feuille de route recherche : 5/5 items désormais traités** (fitness
-sharing, troncature, biais, îles, HyperNEAT = falsifiés ; novelty =
-seul levier positif). Aucun chantier recherche ouvert — prochaine
-direction à cadrer avec Robin depuis zéro.
+**Feuille de route recherche : 5/5 items traités** (fitness sharing,
+troncature, biais, îles, HyperNEAT = falsifiés ; novelty = seul levier
+positif).
+
+### poc2.6 — hors sélection/reproduction : le budget d'événements (2026-07-20/21)
+
+Constat d'ouverture de Robin : les 11 leviers testés jusque-là agissaient
+**tous** sur la sélection/reproduction. La branche est donc allée chercher
+ailleurs, et a engagé les deux seuls candidats compatibles avec le cadre du
+projet — le premier agissant **sur le génome lui-même**, le second **dans la vie
+de l'agent**.
+
+**Les deux ont été falsifiés AU DIAGNOSTIC, sans campagne 6 seeds** — première
+fois que le projet économise deux campagnes de suite. Et ils meurent du **même
+obstacle**, qui est le vrai résultat de la branche :
+
+| levier | événements informatifs disponibles | mécanisme tué |
+|--------|-----------------------------------|---------------|
+| **sigma auto-adaptatif** (ES) | ~3 générations de profondeur de lignée / 6k ticks | sélection de **second ordre** |
+| **plasticité Hebbienne** | ~3 pommes par vie | attribution de crédit **intra-vie** |
+
+Même chiffre, même cause : **la tâche fournit de l'ordre de 3 événements
+informatifs par agent.** Aucun mécanisme qui doit accumuler du signal — à
+travers ses enfants ou à travers sa propre vie — ne peut fonctionner sur 3
+événements, dans un régime où `N_e` ≈ 82-90 (poc2.2) noie déjà la sélection de
+premier ordre. Ce n'est pas un défaut de réglage, c'est une propriété de la
+tâche : les deux leviers ne sont pas « mauvais », ils sont **inapplicables ici**.
+
+- **Sigma auto-adaptatif** : le sweep `sigma_tau_scale` (×1/×3/×6) est le test
+  discriminant. Le spread de sigma explose (p90/p10 1,8 → 9,2) mais la
+  **médiane reste collée à 0,050**, sa valeur initiale, sur tous les réglages et
+  tous les seeds ⇒ dérive pure, aucun auto-réglage.
+  (`docs/DIAGNOSTIC-self-adaptive-mutation.md`)
+- **Plasticité Hebbienne** : V1 (`dw = lr·m·x·y`) échoue par sa **forme** —
+  crédit sur le tick de capture, agent déjà *sur* la pomme, et pas de baseline
+  donc saturation des tanh. V2 (`dw = lr·(m−m̄)·e`, trace calibrée sur
+  `capture_lookback_ticks`) **corrige la forme** — les ablations le prouvent, la
+  trace fournit l'amplitude et la baseline borne la dérive — **et échoue quand
+  même** : en mesure appariée par agent, le taux de gagnants est **41–55 % à
+  tous les réglages sur 2 seeds**, un pile ou face. Une trace de ~100 ticks pour
+  ~3 récompenses par vie ⇒ **l'attribution de crédit est du bruit**.
+  (`docs/DIAGNOSTIC-hebbian-v1.md`, `docs/DIAGNOSTIC-hebbian-v2.md`)
+
+Note méthodologique, valable au-delà de ce chantier : le diagnostic V2 partiel
+concluait exactement l'inverse (« mode 1 corrigé, mode 2 structurel »), sur
+**1 seed** et une comparaison de **deux moyennes de population**. Trois ajouts
+ont renversé les deux conclusions — une mesure **appariée par agent**
+(`tools/hebbian_probe.py`), un **contrôle de harnais** (`lr = 0`, qui s'avère
+identique au témoin ligne pour ligne) et un second seed. Le contrôle n'était
+d'ailleurs pas exprimable : `HebbianConfig` rejetait `learning_rate = 0`.
+
+**Trois entrées de la todo d'ouverture n'ont volontairement pas été
+engagées** — HyperNEAT V5, repro non canonique, MAP-Elites/NSLC/ALPS. Toutes
+sont des leviers de **sélection**, catégorie qui a déjà échoué 11 fois ici pour
+la raison voisine (la dérive noie la sélection). Le terrain pertinent est
+**poc3** (topologie fixe + batching, 16k agents jouables), où c'est justement le
+régime de dérive qui change. Détail et argument : `PLAN.md`, section poc2.6.
+
+**Compteur du projet : 13 leviers écartés, 3 promus en défaut** (novelty +10,
+densité +4, K-sweep +13 — tous **additifs**, jamais réducteurs).
 
 ## 7. Historique des commits clés
 
@@ -696,3 +761,9 @@ direction à cadrer avec Robin depuis zéro.
 | `fe58603` | poc2.5 : HyperNEAT MVP falsifié — campagne 6 seeds, pire régression du projet |
 | `694ccb5` | poc2.5 : HyperNEAT V2 — connectivity + diagnostic affiné (weight_scale) |
 | `d5910be` | poc2.5 : HyperNEAT V2 re-falsifié — amélioration réelle mais insuffisante |
+| `4f420e6` | poc2.5 : HyperNEAT V3 — bootstrap nœud caché CPPN (meilleur résultat, re-falsifié) |
+| `7e36ddb` | poc2.5 : HyperNEAT V4 — 2 nœuds, relation NON monotone, chantier clos |
+| `5e32408` | poc2.6 : mutation auto-adaptative (sigma ES par génome) |
+| `e3a4eff` | poc2.6 : sigma falsifié AU DIAGNOSTIC — médiane immobile, dérive pure, sans campagne |
+| `86aaefe` | poc2.6 : plasticité Hebbienne V1 — falsifiée au diagnostic (crédit sur la capture) |
+| `aa19ae7` | poc2.6 : plasticité Hebbienne V2 — trace d'éligibilité + baseline |

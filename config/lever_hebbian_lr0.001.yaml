@@ -1,0 +1,180 @@
+# SWEEP DOWN — learning_rate = 0.001, the low end of the extended sweep.
+# See config/lever_hebbian_lr0.003.yaml for the rationale. If the innate score
+# still sits below the control here, weakening the rule is not the answer and
+# the obstacle is structural rather than a matter of tuning.
+#
+# Lever test (poc2.6 — "plasticité Hebbienne modulée par récompense"). Identical
+# to config/default.yaml plus ONE section: hebbian.
+#
+# The second lever in this project outside selection/reproduction, and the first
+# mechanism of any kind where an agent's behaviour changes WITHIN ITS OWN LIFE
+# instead of only across generations.
+#
+# Rule (Soltoggio et al. 2018 "Born to Learn"; Stanley, Bryant & Miikkulainen
+# 2003, who evolved Hebbian rules on a foraging domain — the same task paradigm
+# as this project):
+#     e  <- eligibility_decay * e + x * y        (trace, per connection)
+#     dw = learning_rate * (m - m_bar) * e       (contrastive update)
+# with m = apples eaten this tick and m_bar its running mean. Applied EVERY
+# tick, not only on captures: the traces must advance each tick, and a tick
+# with no capture carries a small negative contrast.
+#
+# This is V2. V1 was dw = lr*m*x*y — no trace, no baseline — and was falsified
+# at diagnosis (docs/DIAGNOSTIC-hebbian-v1.md): it reinforced the CAPTURE tick
+# (agent already on the apple, sensor saturated) instead of the approach, and
+# with pure positive reinforcement every active connection drifted up until the
+# tanh saturated. The trace fixes the first defect, the baseline the second.
+# Each is independently ablatable by setting its parameter to 0.
+#
+# Deliberately FIRST-ORDER: learning_rate is a plain constant here and no rule
+# parameter is evolved. docs/DIAGNOSTIC-self-adaptive-mutation.md established
+# that this project's regime (N_e ~ 82-90 on pop 400 — selection already swamped
+# by drift) cannot carry a SECOND-order signal, i.e. one selected only through
+# the offspring it produces. Plasticity escapes that trap because the learned
+# weights change the carrier's OWN foraging. Evolving the rule itself
+# (per-connection ABCD coefficients, the full Stanley 2003 version) is the
+# follow-up only if this version shows an effect.
+#
+# Learning is NON-LAMARCKIAN: plastic weights live in the agent's compiled
+# network, never in the genome, so children inherit the innate wiring and must
+# re-learn. Standard Baldwin setup from the source literature.
+# Default simulation configuration.
+# Promoted from config/apple_repro_bigpop.yaml (poc2.2 ÉTAPE 10) after the poc2.3
+# sensor ablation (docs/Audits/AUDIT-poc2.3.md volet 5): the 67-input layout is
+# NOT robust (seed 123 : 43%→1% foraging) — no single added channel explains it,
+# adding inputs itself destabilises the fully-connected initial genome. The
+# 49-input legacy layout is the only one that reproduces robust 3-seed foraging
+# (86/77/42 at 15k ; 86/84/56 at 30k, cf. audit). Priority = agent performance.
+# Energy is expressed in apple-equivalent units (invariant n°2).
+#
+# world/agent.max_speed PROMOTED from config/lever_bigmap_slow.yaml (poc2.4,
+# 2026-07-10): Robin flagged live overcrowding (apples eaten within ~0.2s,
+# mostly by undirected collision, not steering — confirmed by
+# tools/apple_capture_probe). world ×√2 (thins static density) + max_speed
+# halved (thins per-tick sweep, so fewer random-walk collisions) fixes the
+# symptom directly (apple lifetime median 14→58 ticks) and, validated over
+# 30k ticks / 6 seeds, nets POSITIVE on the forager-% benchmark too (62%→66%,
+# seed 1 : 23%→58%) even though the same lever was mean-negative at 15k
+# (agents eat less per tick, so foraging selection needs more ticks to show).
+# See docs/RESULTS-density.md.
+#
+# agent.apples_per_offspring PROMOTED 3.0→1.5 (poc2.4, 2026-07-15, K-sweep
+# chantier): swept {1.5,2.0,2.5,3.0,3.5,4.0,5.0} at 6 seeds/15k looking for a
+# cheaper offspring gate to lift the seeds density left weak (99 was 32% at
+# 30k). K=1.5 won clearly at 15k (67% vs 58% default) and, confirmed at 30k,
+# is the best single-lever result in the project: mean 66%→79% (+13), 5/6
+# seeds UP (up to +24 on seed 99, 32→56) and the 6th essentially flat
+# (7: 77→76). Cheaper offspring means faster generational turnover per apple
+# eaten — more chances for selection to act per unit of foraging competence,
+# same direction as bigpop's "reduce founder drift" but via reproduction
+# cadence instead of population size. See docs/RESULTS-k-sweep.md.
+
+world:
+  width: 3200          # pixels (2263 * sqrt(2), rounded)
+  height: 1800          # pixels (1273 * sqrt(2), rounded)
+
+penalty_zone:
+  width: 141           # thickness from the wall, in pixels
+  max_drain: 0.003     # energy drained per tick at the wall (softened: was 0.005)
+
+agent:
+  radius: 11.31
+  max_speed: 2.122      # halved (was 4.243) — less ground swept per tick, see header
+  initial_energy: 1.0
+  max_energy: 2.0
+  energy_drain_per_tick: 0.0004   # ~2500 ticks of grace unfed (was 0.001 → 1000)
+  max_age: 5000        # ticks
+  reproduction_threshold: 1.1     # ~1 apple from start → birth; high-r bootstrap (was 1.3)
+  reproduction_cost: 0.35         # more offspring per apple keeps the pop viable (was 0.6)
+  end_of_life_ticks: 500
+  max_turn_rate: 0.2              # rad/tick egocentric cap control (~11°/tick)
+  move_cost: 0.0                  # energy/tick per unit forward speed (0.0 = free)
+  apples_per_offspring: 1.5      # >0 = fecundity from cumulative apples (structural)
+
+sensors:
+  num_rays: 16
+  max_distance: 283    # pixels
+  fov: 360             # degrees
+  split_distance: false   # legacy layout: 1 combined nearest-object distance/ray
+  proprioception: false   # legacy layout: no actual_speed input
+  apples_in_view: false   # legacy layout: no apples_in_view input
+
+network:
+  num_inputs: 49        # 3*num_rays + 1 : dist, apple_flag, wall_flag (×16) + energy
+  num_outputs: 2         # vx_brut, vy_brut (normalised post-output)
+  activation: "tanh"
+
+apple:
+  count: 160            # denser food → random walkers stumble on it sooner (was 50)
+  radius: 7.07
+  energy: 0.5
+  respawn_delay: 150   # ticks before an eaten apple reappears (CDC §5.2)
+
+genome:
+  weight_init_range: 1.0
+  weight_mutation_rate: 0.15
+  weight_perturbation: 0.05
+  add_node_rate: 0.03
+  add_connection_rate: 0.05
+  remove_node_rate: 0.01
+  remove_connection_rate: 0.02
+  weight_max: 5.0               # clamp after mutation (anti-saturation tanh)
+  crossover_rate: 0.0          # P(birth is sexual, intra-species); 0.0 = asexual
+
+speciation:
+  # NEAT compatibility-distance coefficients (Stanley & Miikkulainen 2002).
+  # Used to count species + measure genetic diversity in the metrics CSV, and
+  # (only when fitness_sharing: true) to divide reproduction priority by
+  # species size. fitness_sharing defaults to false: observability only, same
+  # as before — not yet promoted (needs a validated 3-seed campaign, see
+  # config/lever_fitness_sharing.yaml).
+  c_excess: 1.0
+  c_disjoint: 1.0
+  c_weight: 0.4
+  compatibility_threshold: 3.0   # genomes closer than this share a species
+  fitness_sharing: false
+
+# Additive behavioural-novelty bonus on reproduction priority (novelty search,
+# Lehman & Stanley 2011). PROMOTED to default in poc2.4: the first lever to lift
+# every seed without regressing any — validated 6-seed campaign (15k), mean
+# foragers 52% -> 62% (+10), seeds the baseline nearly fails (1:9->27, 99:6->25)
+# helped most. Additive (never penalises), unlike the falsified reducer levers.
+# weight=1.0 is the swept optimum (0.5-1.0 plateau; 2.0 over-dilutes foraging).
+# recompute_interval=10 amortises the O(pop^2) scoring back to baseline speed
+# with no loss of gain. See docs/RESULTS-novelty.md and config/lever_novelty.yaml.
+novelty:
+  enabled: true
+  weight: 1.0
+  neighbors: 15
+  recompute_interval: 10
+
+population:
+  initial_size: 200        # large initial pool → more random walkers find food naturally
+  max_size: 400            # accommodate growth from successful hunters
+
+simulation:
+  ticks_per_second: 60
+  max_ticks: 0         # 0 = run forever
+  seed: 42
+
+logging:
+  csv_path: "logs/metrics.csv"
+  log_interval_ticks: 100
+  best_genome_path: "logs/best_genome.json"
+
+render:
+  fps: 60
+  window_width: 3200
+  window_height: 1800
+
+hebbian:
+  # THE single variable under test (see header).
+  enabled: true
+  learning_rate: 0.001
+  weight_max: 5.0              # clamp on plastic weights
+  # Effective trace window ~1/(1-decay) = 100 ticks. Scale set by the approach
+  # time already derived in this codebase: diagnostics.capture_lookback_ticks
+  # (ticks to cross the sensing range at max speed) = 134 here. The usual 0.9
+  # would cover ~10 ticks, under a tenth of an approach.
+  eligibility_decay: 0.99
+  baseline_rate: 0.01          # running mean of reward; 0 = no baseline
