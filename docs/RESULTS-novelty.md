@@ -98,6 +98,16 @@ Campagne 6 seeds/15k, archive vs défaut (novelty sans archive) :
 | archive | 75 | 73 | 42 | 32 | 89 | 18 | **55** |
 | Δ | −11 | −18 | −13 | +5 | +2 | −7 | **−7** |
 
+> ℹ️ Cette ligne « défaut » (`86|91|55|27|87|25`) diffère par seed de la ligne
+> « novelty » de la campagne de promotion plus haut (`88|88|61|20|89|29`), pour
+> la **même moyenne de 62 %**. Ce n'est pas une contradiction : la promotion a
+> figé `recompute_interval: 10` (au lieu de 1), ce qui change la cadence de
+> scoring, donc l'ordre de consommation du RNG, donc la trajectoire de chaque
+> seed — sans changer le résultat agrégé. La baseline a été re-mesurée avec le
+> défaut promu avant de tester l'archive, ce qui est la comparaison correcte.
+> *(Note ajoutée le 2026-07-22 : les deux tableaux étaient publiés sans cette
+> explication.)*
+
 **Régresse 4/6 seeds**, et surtout régresse le seed qu'elle visait le plus
 (99, le pire en absolu : 25→18). Les deux légers gains (1, 5) ne compensent
 pas. Diagnostic : élargir le voisinage avec des comportements obsolètes dilue

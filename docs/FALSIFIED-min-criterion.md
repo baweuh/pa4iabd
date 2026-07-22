@@ -38,31 +38,48 @@ Observations : même à min_ticks=1000, la population restait épinglée (pop fi
 ## Validation complète (30k, 6 seeds) — 2026-07-15
 
 **Config** : `config/lever_min_criterion.yaml`, 30000 ticks, seeds 42/7/123/1/5/99.
-**Baseline comparaison** : `docs/RESULTS-density.md` (défaut 30k).
 
-| Seed | Défaut 30k | Min Criterion 30k | Δ | Verdict |
+> ⚠️ **BASELINE CORRIGÉE le 2026-07-22 (audit de traçabilité).** Ce document
+> comparait à la ligne `62 %` (`82|84|76|23|81|27`), qui est le défaut
+> **pré-densité**. Or `config/lever_min_criterion.yaml` porte `world 3200×1800`
+> + `max_speed 2.122` (densité déjà promue) et `apples_per_offspring: 3.0` : la
+> bonne référence est donc le défaut **post-densité, pré-K-sweep** = `66 %`
+> (`85|77|61|58|85|32`), soit la ligne « carte+vitesse 30k » de
+> `docs/RESULTS-density.md` et « défaut (K=3.0) 30k » de
+> `docs/RESULTS-k-sweep.md` — le même run sous deux noms.
+> **Le verdict (non promu) est inchangé, et même renforcé** : le levier passe de
+> « +1 neutre » à **−3**.
+
+**Baseline** : défaut post-densité K=3.0 30k (`docs/RESULTS-k-sweep.md`).
+
+| Seed | Défaut K=3.0 30k | Min Criterion 30k | Δ | Verdict |
 |------|-----------|------------------|---|---------|
-| 42 | 82% | 90% | +8 | ✅ gain |
-| 7 | 84% | 32% | **−52** | ❌ crash |
-| 123 | 76% | 62% | −14 | ❌ perte |
-| 1 | 23% | 37% | +14 | ✅ gain |
-| 5 | 81% | 79% | −2 | ❌ perte |
-| 99 | 27% | 79% | **+52** | ✅ gain massif |
-| **Mean** | **62%** | **63%** | **+1** | ⚠️ neutre/noise |
+| 42 | 85% | 90% | +5 | ✅ gain |
+| 7 | 77% | 32% | **−45** | ❌ crash |
+| 123 | 61% | 62% | +1 | ≈ stable |
+| 1 | 58% | 37% | **−21** | ❌ perte |
+| 5 | 85% | 79% | −6 | ❌ perte |
+| 99 | 32% | 79% | **+47** | ✅ gain massif |
+| **Mean** | **66%** | **63%** | **−3** | ❌ réducteur |
 
 Population end : 488–500 (tous seeds épinglés au cap).
 
+*(Pour mémoire, les Δ publiés jusqu'au 2026-07-22 contre la mauvaise baseline
+étaient : +8 / −52 / −14 / +14 / −2 / +52, moyenne +1. La correction ne change
+pas seulement la moyenne : le seed 1 passe de « +14 gain » à « −21 perte » et
+le seed 123 de « −14 perte » à « +1 stable ».)*
+
 ## Analyse d'échec
 
-**Signal 1 : Mean neutre (+1 %)** — bruit de mesure.
-- Hypothèse falsifiée : « min_ticks≥1000 = sélection stricte stricte = meilleur fourrage ».
+**Signal 1 : Mean négative (−3 %)** — pas le gain espéré.
+- Hypothèse falsifiée : « min_ticks≥1000 = sélection plus stricte = meilleur fourrage ».
 - Explication : le gate retarde la repro d'agents qui ont du potentiel (long credit_streak requis) mais qui ne l'expriment pas tout de suite. D'autres agents compensent.
 
-**Signal 2 : Variance extrême** (−52 / +52).
-- Seed 7 : 84%→32%, dégradation massive. Compatible avec les autres leviers falsifiés :
-  - `fitness_sharing` : variance −34 (bias_node pire), seed 42:86→58
-  - `bias_node` : pire projet, seed 42:62→9 (÷7)
-  - `archive_novelty` : variance modérée, moyenne−7
+**Signal 2 : Variance extrême** (−45 / +47).
+- Seed 7 : 77%→32%, dégradation massive. Compatible avec les autres leviers falsifiés :
+  - `fitness_sharing` : moyenne −9 (68→59), seed 42 : 86→58
+  - `bias_node` : pire régression jusqu'à HyperNEAT, moyenne −34 (62→28), seed 42 : 86→13
+  - `archive_novelty` : variance modérée, moyenne −7 (62→55)
 - Pattern : un levier qui « échange stabilité pour variance extrême » n'est jamais une victoire nette. Une seed gagne, une casse.
 
 **Signal 3 : Population NOT flottante**.
@@ -72,23 +89,45 @@ Population end : 488–500 (tous seeds épinglés au cap).
 
 ## Classement en tant que réducteur
 
-Ce levier est le **6e mécanisme falsifié** du projet, et rejoint la famille des **réducteurs** :
+Ce levier rejoint la famille des **réducteurs**.
 
-1. `crossover` (poc2.3) : moyenne −15 % (62%→47%)
-2. `crossover + bigpop` (poc2.3) : moyenne −18 % (62%→44%)
-3. `sparse_init_genome` (poc2.3) : moyenne −34 % (seule tentative génome)
-4. `fitness_sharing` (poc2.4) : moyenne −9 % (62%→53%), seed 42 −28
-5. `bias_node` (poc2.4) : moyenne −34 % (62%→28%), **pire du projet**
-6. `archive_novelty` (poc2.4) : moyenne −7 % (62%→55%)
-7. **`min_criterion`** (poc2.4) : moyenne +1 % (62%→63%), **mais variance extrême** (−52/+52)
+> ⚠️ **Liste entièrement réécrite le 2026-07-22 (audit de cohérence).** La
+> version publiée jusque-là contenait **cinq chiffres faux**, dont un de signe
+> inversé (le crossover y était donné à −15 % alors qu'il fait **+35**), et
+> comparait des leviers de branches différentes à une baseline unique qui
+> n'était valable pour aucun d'eux. Chaque ligne ci-dessous est désormais
+> sourcée sur son document primaire, avec sa propre baseline et son protocole.
 
-Le pattern est uniforme : quand on essaie de « réduire » la population ou « écrêter » l'exploration, on échange la stabilité pour la variance. La seule victoire du projet est l'**ajout** (`novelty` : +10 %, tous seeds up ou stable).
+| # | Levier | Campagne | Baseline → résultat | Δ | Source |
+|---|---|---|---|---|---|
+| 1 | `crossover` (poc2.3) | 3 seeds / 15k | 30 % → 65 % | **+35** | `AUDIT-poc2.3.md` volet 3 |
+| 2 | `crossover + bigpop` (poc2.3) | 3 seeds / 15k | 49 % (51/69/26) | — | `AUDIT-poc2.3.md` volet 4 |
+| 3 | `sparse_init_genome` (poc2.3) | 3 seeds / 15k | 68 % → 24 % | **−44** | `AUDIT-poc2.3.md` volet 6 |
+| 4 | `fitness_sharing` (2026-07-09) | 3 seeds / 15k | 68 % → 59 % | **−9** | `FALSIFIED-fitness-sharing.md` |
+| 5 | `bias_node` (poc2.4) | 6 seeds / 15k | 62 % → 28 % | **−34** | `FALSIFIED-bias-node.md` |
+| 6 | `archive_novelty` (poc2.4) | 6 seeds / 15k | 62 % → 55 % | **−7** | `RESULTS-novelty.md` |
+| 7 | **`min_criterion`** (poc2.4) | 6 seeds / 30k | 66 % → 63 % | **−3** | ce document |
+
+Deux précisions que l'ancienne liste écrasait :
+
+- **Le crossover n'est PAS un réducteur en moyenne** — il monte de 30 à 65 %.
+  Il a été écarté pour **non-robustesse** (le seed 123 régresse, 28 → 10 %),
+  pas pour une moyenne négative. C'est un opérateur **moyennant** : il
+  rapproche tous les seeds de ~50 % et réduit la variance inter-seeds.
+- **`crossover + bigpop` n'a pas de Δ interprétable** contre un défaut : le
+  point de la manip était de comparer la combinaison à **chaque levier seul**,
+  et elle sous-performe les deux (crossover seul 65 %, bigpop seul 76 %,
+  combinaison 49 %).
+
+Le pattern reste : quand on essaie de « réduire » la population ou « écrêter » l'exploration, on échange la stabilité pour la variance. Les victoires du projet sont toutes des **ajouts** (`novelty` +10, densité +4, K-sweep +13 — aucun seed ne s'effondre).
 
 ## Leçon
 
-Après 6 falsifications, le pattern est clair :
+Le pattern est clair :
 - **Additifs** (plus d'information, plus de signaux) : marche (novelty +10 %).
-- **Réducteurs** (gating, simplification, crossover, shrink) : échouent toujours.
+- **Réducteurs** (gating, simplification, shrink) : échouent, ou n'améliorent
+  la moyenne qu'en écrasant la variance (crossover), ce qui n'est pas la même
+  chose qu'améliorer la compétence.
 - Hypothèse : le système a atteint un minimum viable stable (population 400, capacité de charge, raycast efficace). Tout ce qui réduit *à l'intérieur* de ce régime déstabilise ; tout ce qui ajoute l'améliore.
 
 ## Artefact commit

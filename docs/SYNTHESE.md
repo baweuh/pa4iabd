@@ -1,7 +1,7 @@
 # Synthèse du projet — ALife Neuroevolution
 
 > Vue d'ensemble transverse : de la fondation technique (Phases 1-8) à la branche
-> `poc2.5`. Pour le détail, voir `docs/Phase/*` (implémentation), les audits
+> `poc2.6`, plus la branche `poc3` (abandonnée sans verdict). Pour le détail, voir `docs/Phase/*` (implémentation), les audits
 > `docs/Audits/*`, poc2.4 `docs/DESIGN-poc2.4-perf.md` (perf) +
 > `docs/RESULTS-novelty.md` (nouveauté), et poc2.5
 > `docs/DESIGN-hyperneat-mvp.md` + `docs/FALSIFIED-hyperneat.md` (HyperNEAT).
@@ -40,12 +40,21 @@ Juil 15-16   poc2.5          HyperNEAT (encodage indirect, research-roadmap #4,
                              V3 🟡 (meilleur résultat, re-falsifié) et V4 ❌
                              (non monotone) — chantier CLOS
    ↓
-Juil 20-21   poc2.6          HORS sélection/reproduction, pour la 1ère fois :
+Juil 16-20   poc3            HYPOTHÈSE D'ÉCHELLE : topologie fixe + batching,
+                             archi livrée (400→16000 agents jouables) mais
+                             l'hypothèse n'est NI confirmée NI infirmée
+                             (round 1 confondu, round 2 interrompu à 4 %).
+                             ⛔ Branche ABANDONNÉE le 2026-07-22 — c'est la
+                             LIMITE ASSUMÉE du travail (§6)
+   ↓
+Juil 20-22   poc2.6          HORS sélection/reproduction, pour la 1ère fois :
                              mutation auto-adaptative (sigma ES) ❌ et
                              plasticité Hebbienne V1 ❌ puis V2 ❌ — les deux
                              falsifiées AU DIAGNOSTIC, sans campagne 6 seeds.
                              Même cause : la tâche ne fournit que ~3 événements
-                             informatifs par agent (§6)
+                             informatifs par agent (§6).
+                             Clôture 2026-07-22 : double audit (cohérence
+                             documentaire + traçabilité), corrections §6/§6bis
 ```
 
 Fil rouge unique de tout le projet **évolutif** : *le fourrage dirigé est trop
@@ -274,8 +283,12 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 - ⬜ **Piste ouverte (historique)** : seed 123 et les seeds durs (1, 99) restaient bas
   en absolu (20-27 %) malgré la nouveauté — aidés, pas « résolus ». Suite additive
   tentée : **archive de nouveauté** (comportements passés) — falsifiée (voir plus bas).
-- ⬜ **À rectifier — durée de vie des pommes trop courte (observé en jeu,
-  2026-07-09, Robin)** : à population proche du plafond (`max_size: 400`) sur la
+- ✅ **RÉSOLU (2026-07-10) — durée de vie des pommes trop courte (observé en jeu,
+  2026-07-09, Robin).** Le correctif « carte ×√2 + `max_speed` ÷2 » a été
+  **promu en défaut** après validation 30k (durée de vie médiane d'une pomme
+  14 → 58 ticks, ×4 ; moyenne foragers 62 → 66 %). Voir `docs/RESULTS-density.md`
+  et la section poc2.4 ci-dessous. *Diagnostic d'origine conservé ci-après pour
+  la traçabilité du raisonnement :* à population proche du plafond (`max_size: 400`) sur la
   carte 2263×1273 avec 160 pommes, les pommes semblent mangées quasi
   instantanément (~1,5 s), probablement par des trajectoires d'agents non
   dirigées plutôt que par du fourrage skillé — la carte est surpeuplée relatif à
@@ -373,9 +386,9 @@ Sorties brutes : `logs/2026-07-08_bigpop67_screen/`, `logs/2026-07-08_arb67/`,
 
 ## 6. État du code & qualité
 
-- **148 tests verts**, `pylint` stable (9.93/10 — deux avertissements
-  `too-many-locals`/`too-many-statements` pré-existants dans `renderer.py`, non
-  liés aux volets 4-6), `black` clean.
+- **319 tests verts** (état de clôture, vérifié le 2026-07-22), `pylint` 9.99/10
+  sur `src/` (un seul avertissement : `src/simulation.py` dépasse 1000 lignes),
+  `black` clean sur `src/` + `tests/` + `tools/`.
 - Invariants respectés : capteur piloté par config (zéro nombre magique, invariant
   n°1), feedforward garanti dans crossover, spéciation câblée dans le choix du
   partenaire, génome fondateur toujours ≥1 connexion/output (jamais de sortie
@@ -599,8 +612,27 @@ bug de calibration connu : fenêtre dérivée de
 `sensors.max_distance/agent.max_speed`, plus de lookback fixe à 30 ticks),
 densité locale (échantillonnée aux captures) + globale, `effective_population_size`
 (N_e, Crow & Kimura, fenêtre glissante). CSV 13→26 colonnes. Vérifié en
-conditions réelles : N_e ~82-90 sur pop 400 — première mesure directe du
-diagnostic « sélection ≪ dérive » répété depuis poc2.2. 31 nouveaux tests.
+conditions réelles : **N_e ≈ 150 sur pop 400** (p10–p90 : 118–173, médiane sur
+10 101 lignes de CSV à population pleine, 65 runs poc2.x), soit **N_e/N ≈ 0,37**
+— première mesure directe du diagnostic « sélection ≪ dérive » répété depuis
+poc2.2. 31 nouveaux tests.
+
+> ⚠️ **Correction du 2026-07-22 (audit de traçabilité).** Ce chiffre a longtemps
+> été publié comme « N_e ≈ 82-90 sur pop 400 » (N_e/N ≈ 0,21) dans ce document
+> et dans les deux diagnostics de poc2.6. C'était faux : le relevé avait été
+> fait pendant la **phase de croissance** de la population (pop 200-350, où la
+> médiane est effectivement ~101 et où 12,7 % des lignes tombent dans 82-90),
+> puis étiqueté « sur pop 400 ». À population réellement pleine, seules **0,7 %**
+> des lignes tombent dans cette bande. L'argument « la dérive pèse lourd et noie
+> la sélection » survit à la correction — 150 reproducteurs efficaces pour une
+> tâche à ~3 événements informatifs par agent, c'est toujours le point — mais il
+> est moins spectaculaire qu'annoncé, et la version publiée était réfutable en
+> ouvrant n'importe quel CSV du dépôt.
+>
+> Artefact repéré au passage, sans effet sur les verdicts : `effective_population_size`
+> décroche brutalement (~152 → 61 → 144) à chaque multiple exact de 5000 ticks,
+> soit `agent.max_age` — la cohorte fondatrice meurt en bloc dans la fenêtre
+> glissante.
 
 **Audit profond du code (demandé par Robin)** (2026-07-15, `c25263b`) :
 lecture intégrale de `src/`+`tools/`, chaque hypothèse vérifiée
@@ -621,7 +653,50 @@ Bilan de session (2026-07-15) : 249 tests verts, black clean, pylint 9.96/10
 redondant, `open()` sans context manager, 3 warnings pylint renderer)
 tous corrigés, 249 tests verts, pylint 10/10.
 
-### poc2.5 — HyperNEAT (encodage indirect), V1 et V2 falsifiées (2026-07-15/16)
+### ⚠️ Traçabilité des campagnes — la conséquence du bug `f070f64`
+
+**Le fait, énoncé sans détour : `tools/campaign.py` n'a jamais appelé
+`open_csv_logger()` avant le commit `f070f64` du 2026-07-15 à 16:16.** Toutes
+les campagnes lancées avant cette date n'ont donc écrit **aucune donnée brute** —
+seul le tableau récapitulatif de fin de run était affiché, et il n'a pas été
+redirigé vers un fichier. Le premier CSV de campagne présent sur disque date du
+2026-07-15 à 20:57, soit 4 h après le correctif.
+
+Ce que ça implique, par branche (audit du 2026-07-22) :
+
+| branche | part des résultats chiffrés adossés à une donnée brute |
+|---|---|
+| poc2.2 | partielle — le diagnostic fondateur est traçable (`logs/2026-06-12_140936/`), la percée `apple_repro_bigpop` n'a que ses génomes |
+| poc2.3 | **~100 %** — les sorties `run_and_probe` avaient été sauvegardées à la main (`logs/2026-07-08_*/*.txt`) |
+| poc2.4 | **~10 %** — c'est le trou, et il contient **les 4 leviers promus** (novelty, densité, K-sweep 15k) plus fitness sharing, biais, archive, critère minimal, troncature |
+| poc2.5 | **~90 %** — seul chantier dont les docs citaient déjà leurs chemins de logs |
+| poc2.6 | **~5 %** de logs, mais **100 % ré-exécutable** : les sondes (`tools/hebbian_probe.py`) et les 6 configs d'ablation sont versionnées |
+
+**Pourquoi ce n'est pas une perte de résultats.** Le simulateur est
+strictement déterministe, et ça a été vérifié **deux fois** : (1) relancer
+`config/default.yaml` seed 42 produit un CSV **bit-à-bit identique** au run
+archivé du 2026-07-16 (population, `forager_pct`, `mean_steer_score`, toutes
+colonnes) ; (2) la baseline K=3.0 30k, dont la mesure d'origine n'avait laissé
+aucune trace, a été **entièrement rejouée le 2026-07-22** et rend
+`85|77|61|58|85|32` → 66 % — **les six valeurs publiées, à l'identique**, sept
+jours et deux branches de recherche plus tard.
+Un log manquant coûte donc **du temps de calcul, pas la vérité du résultat** —
+environ 20 min pour une campagne 6 seeds × 15k, 40 min pour 30k, sur une
+machine 12 cœurs. C'est une situation qualitativement différente d'une
+expérience physique dont la donnée perdue l'est définitivement.
+
+**Et la revendication la plus exposée est celle qui est le mieux étayée** : le
+79 % du K-sweep, le chiffre que ce projet met en avant, a son CSV
+(`logs/seed*/2026-07-16_111426/`), a été **recalculé** (79,38 %) et
+**re-produit à l'identique**. La baseline qui lui donne son « +13 » a été
+**rejouée le 2026-07-22** pour combler le trou (`config/lever_k3.0.yaml`,
+`logs/seed*/2026-07-22_121235/`).
+
+*(`logs/` est dans `.gitignore` : les sorties brutes vivent sur la machine, pas
+dans le dépôt. Les tableaux des `RESULTS-*` / `FALSIFIED-*` sont la trace
+conservée et versionnée.)*
+
+### poc2.5 — HyperNEAT (encodage indirect), V1 à V4 falsifiées, chantier CLOS (2026-07-15/16)
 
 Dernier point ouvert de la feuille de route recherche (#4) : au lieu que
 le génome décrive directement le réseau 49→2, il décrit un **CPPN**
@@ -656,21 +731,49 @@ vraie cause et est corrigée — mais la compétence évoluée reste très
 faible : `hidden` moyen quasi nul (0,05–0,17), CPPN à 6 poids fortement
 couplés, hypothèse d'évolvabilité limitée non résolue.
 
+**V3 (bootstrap d'1 nœud caché CPPN à la genèse) — MEILLEUR RÉSULTAT DU
+CHANTIER, mais re-falsifié.** `hyperneat.bootstrap_hidden_nodes` appelle
+`Genome.add_node` N fois sur le CPPN fondateur — réutilise l'opérateur de split
+NEAT existant, aucune machinerie nouvelle. Campagne 6 seeds/**30k** (défaut
+relancé frais à 30k pour comparaison directe) : moyenne **79 % → 68 % (−11)**,
+soit un écart réduit d'un facteur ~4-5 vs V2 (−48) et V1 (−52). Le CPPN
+complexifie enfin structurellement (`hidden` moyen 0,05–0,17 → **0,87–1,40**),
+et **2/6 seeds dépassent le défaut** pour la première fois du chantier
+(1 : 68→92, +24 ; 99 : 56→91, +35). Mais 2 régressent lourdement, dont un
+effondrement (5 : 96→50 ; **123 : 82→12**, `steer_median` à 0,000). Falsifié au
+sens strict — pas de campagne 6/6 stable — mais progrès net et diagnostiqué.
+
+**V4 (2 nœuds bootstrappés) — RELATION NON MONOTONE, chantier clos.** Test du
+« et si on pousse ? » : moyenne **68 % → 39 % (−29)**. Le bootstrap fonctionne
+mécaniquement (`hidden` 2,03–2,73) mais la compétence ne suit pas : les 2 seeds
+qui battaient le défaut en V3 s'effondrent (1 : 92→32 ; 99 : 91→14), 42 chute
+aussi (97→28), `steer_median` repasse négatif sur 4/6 seeds. **N=1 est un point
+de fonctionnement, pas un curseur.** Diagnostic : doubler la profondeur du CPPN
+sans ajuster le régime de mutation qui doit l'exploiter dégrade — même dynamique
+que le génome sparse (poc2.3 volet 6) et le nœud de biais (poc2.4).
+
+**Chantier CLOS** sur ce constat. Meilleur résultat = V3
+(`config/lever_hyperneat_v3.yaml`), toujours falsifié, non promu.
 `hyperneat.enabled` reste absent (=false) dans `default.yaml`. Mécanisme +
-outils gardés câblés/testés comme référence (273 tests, pylint 9.97/10).
-V3 (bootstrap nœuds cachés CPPN, mutation dédiée) identifié mais **non
-engagé** — décision à prendre avec Robin. Détails complets :
+outils gardés câblés/testés comme référence (278 tests, pylint 9.99/10).
+
+**Données brutes** — seul chantier du projet dont les 4 campagnes sont
+intégralement traçables (vérifié le 2026-07-22, 6 seeds × 30k chacune) :
+`logs/seed*/2026-07-15_205721/` (V1), `_233942/` (V2),
+`logs/seed*/2026-07-16_111432/` (V3), `_115603/` (V4). Détails complets :
 `docs/DESIGN-hyperneat-mvp.md`, `docs/FALSIFIED-hyperneat.md`.
 
-**Feuille de route recherche : 5/5 items traités** (fitness sharing,
-troncature, biais, îles, HyperNEAT = falsifiés ; novelty = seul levier
-positif).
+**Feuille de route recherche : 5/5 items traités** — n°1 fitness sharing,
+n°2 troncature, n°3 novelty, n°4 HyperNEAT, n°5 biais **+** îles (regroupés en
+un seul item dans la feuille de route d'origine, d'où 6 mécanismes pour 5
+items). Tous falsifiés **sauf** novelty, seul levier positif de la liste.
 
 ### poc2.6 — hors sélection/reproduction : le budget d'événements (2026-07-20/21)
 
 Constat d'ouverture de Robin : les 11 leviers **falsifiés** jusque-là agissaient
-**tous** sur la sélection/reproduction — quand les 4 promus, eux, tenaient tous à
-l'échelle ou à l'écologie. La branche est donc allée chercher
+sur la sélection/reproduction **ou sur le génome fondateur** — et aucun n'agissait
+pendant la vie de l'agent ; quand les 4 promus, eux, tenaient tous à l'échelle ou
+à l'écologie. La branche est donc allée chercher
 ailleurs, et a engagé les deux seuls candidats compatibles avec le cadre du
 projet — le premier agissant **sur le génome lui-même**, le second **dans la vie
 de l'agent**.
@@ -687,8 +790,9 @@ obstacle**, qui est le vrai résultat de la branche :
 Même chiffre, même cause : **la tâche fournit de l'ordre de 3 événements
 informatifs par agent.** Aucun mécanisme qui doit accumuler du signal — à
 travers ses enfants ou à travers sa propre vie — ne peut fonctionner sur 3
-événements, dans un régime où `N_e` ≈ 82-90 (poc2.2) noie déjà la sélection de
-premier ordre. Ce n'est pas un défaut de réglage, c'est une propriété de la
+événements, dans un régime où `N_e` ≈ 150 sur pop 400 (N_e/N ≈ 0,37, cf. §6 et
+la note de correction du 2026-07-22) laisse déjà la dérive peser lourd sur la
+sélection de premier ordre. Ce n'est pas un défaut de réglage, c'est une propriété de la
 tâche : les deux leviers ne sont pas « mauvais », ils sont **inapplicables ici**.
 
 - **Sigma auto-adaptatif** : le sweep `sigma_tau_scale` (×1/×3/×6) est le test
@@ -719,17 +823,15 @@ engagées** — HyperNEAT V5, repro non canonique, MAP-Elites/NSLC/ALPS. Toutes
 sont des leviers de **sélection**, catégorie qui a déjà échoué 11 fois ici pour
 la raison voisine (la dérive noie la sélection).
 
-⚠️ **Elles ne sont pas renvoyées à `poc3`** : cette branche a été close le
-2026-07-20 **sans verdict** (voir ci-dessous), et deux des trois ne peuvent pas
-y exister — HyperNEAT V5 est bâti sur l'API structurelle NEAT que poc3 a
-retirée, et le volet « parent fitter » de la repro n'a plus d'objet sur un
-crossover 50/50 en vecteur plat. Seules MAP-Elites/NSLC et ALPS sont
-indépendantes de la représentation. Détail par entrée : `PLAN.md`, section
-poc2.6.
+⚠️ **Elles ne sont pas non plus renvoyées à `poc3`, qui a été abandonnée
+définitivement le 2026-07-22.** Ces trois pistes resteront non explorées : ce
+sont des limites assumées du travail, pas un backlog. Détail par entrée :
+`PLAN.md`, section poc2.6.
 
-### poc3 — architecture livrée, hypothèse d'échelle SANS VERDICT (close 2026-07-20)
+### poc3 — architecture livrée, hypothèse d'échelle NON TESTÉE (branche ABANDONNÉE)
 
-Branche ouverte le 2026-07-16 sur un constat net : les 4 seuls leviers positifs
+Branche ouverte le 2026-07-16, close le 2026-07-20, **abandonnée définitivement
+le 2026-07-22 : elle ne sera pas reprise.** Ouverte sur un constat net : les 4 seuls leviers positifs
 du projet (population 200→400, K-sweep, densité, novelty) tiennent tous à
 l'**échelle/l'écologie**, jamais au mécanisme de sélection — et la littérature
 du même paradigme (Hamon et al. 2023 ; Bejjani et al. 2025, 60 000+ agents) dit
@@ -750,15 +852,75 @@ et donc inexploitable** : 4000 agents pour 160 pommes inchangées (compétition
 sur un cap de 4000) — le régime visé n'a pas été atteint. Round 2 (pommes ×10,
 précisément conçu pour lever ce confound) a été **interrompu à 4 %**. S'ajoute
 que `novelty.max_pool_size`, l'approximation qui rend l'échelle jouable,
-dégradait −12 pp à pop=400 et n'a jamais été validée.
+dégradait −12 pp à pop=400 et n'a jamais été validée. **Ces deux mesures
+manquantes ne seront pas produites** — c'est précisément pourquoi aucun verdict
+d'échelle n'est revendiqué.
 
-**Statut réel : l'échelle n'est ni confirmée ni infirmée.** C'est le seul grand
-axe du projet resté ouvert — tous les autres ont un verdict.
+**Statut réel : l'hypothèse d'échelle n'a pas été testée, et ne le sera pas dans
+ce projet.** C'est la **limite assumée** de ce travail — tous les autres axes ont
+un verdict. Elle est d'autant plus notable que 4 des 5 leviers promus tiennent à
+l'échelle ou à l'écologie : la direction qui a le mieux marché est aussi celle
+dont on ignore jusqu'où elle porte. Le projet sait ce qu'il n'a pas démontré.
 
-**Compteur du projet : 13 leviers écartés, 4 promus en défaut** — repro ∝ pommes
-cumulées + population 200→400 (poc2.2 ÉTAPE 10, la percée fondatrice), novelty
-+10, densité +4, K-sweep +13. Tous **additifs**, jamais réducteurs ; et tous liés
-à l'**échelle ou à l'écologie**, aucun au mécanisme de sélection.
+**Données brutes** (les deux seules campagnes poc3 sont traçables) :
+`logs/campaign_runs/scale4000_20260716_200310.log` + `logs/seed*/2026-07-16_200310/`
+(round 1, tableau complet : 54/31/49/27/38/30, moyenne 38 %, pop 1943-2010) ;
+`logs/campaign_runs/scale4000_scaled_food_20260716_214445.log` (round 2, dont les
+CSV sont vides — la trace de l'interruption est elle-même la preuve).
+
+## 6bis. Le bilan complet — 13 leviers écartés, 4 promus
+
+> Ce tableau a été créé le 2026-07-22 (audit de cohérence) : le chiffre
+> « 13 écartés / 4 promus » était affirmé en trois endroits du corpus mais
+> **n'était listé nulle part**, donc non reconstructible par un lecteur.
+
+**Convention de comptage** (sans laquelle le total est ambigu) :
+1. les **versions successives d'un même mécanisme** comptent pour un levier
+   (HyperNEAT V1→V4, Hebbien V1→V2, plafond plat + round-robin) ;
+2. les **réglages purement paramétriques** de poc2.2 (mutation, drain,
+   `max_energy`, densité de nourriture, `move_cost`) ne sont pas comptés — ils
+   relèvent de la campagne de calibration, pas de leviers de mécanisme ; en les
+   comptant on ajouterait ~8 falsifications ;
+3. l'étape « carte agrandie seule » n'est pas comptée comme un levier écarté :
+   c'est la **première moitié** du levier densité, finalement promu sous la
+   forme « carte + vitesse ÷2 ».
+
+### Les 13 écartés
+
+| # | Levier | Branche | Campagne | Résultat | Document |
+|---|---|---|---|---|---|
+| 1 | Crossover NEAT intra-espèce | poc2.3 | 3 seeds / 15k | 30 → 65 % (+35) mais **non robuste** (123 : 28→10) | `Audits/AUDIT-poc2.3.md` v3 |
+| 2 | Crossover + bigpop | poc2.3 | 3 seeds / 15k | 49 % — sous chaque levier seul (65 / 76) | `Audits/AUDIT-poc2.3.md` v4 |
+| 3 | Capteur 67 entrées | poc2.3 | 3 seeds / 15k | casse la robustesse (123 : 43→1) | `Audits/AUDIT-poc2.3.md` v5 |
+| 4 | Génome fondateur sparse | poc2.3 | 3 seeds / 15k | 68 → 24 % (**−44**) | `Audits/AUDIT-poc2.3.md` v6 |
+| 5 | Fitness sharing NEAT | 2026-07-09 | 3 seeds / 15k | 68 → 59 % (−9) | `FALSIFIED-fitness-sharing.md` |
+| 6 | Archive de nouveauté | poc2.4 | 6 seeds / 15k | 62 → 55 % (−7) | `RESULTS-novelty.md` |
+| 7 | Nœud de biais NEAT | poc2.4 | 6 seeds / 15k | 62 → 28 % (**−34**) | `FALSIFIED-bias-node.md` |
+| 8 | Critère minimal de repro | poc2.4 | 6 seeds / 30k | 66 → 63 % (−3) | `FALSIFIED-min-criterion.md` |
+| 9 | Troncature adoucie | poc2.4 | 6 seeds / 30k | 66 → 65 % (−1) | `FALSIFIED-truncation.md` |
+| 10 | Modèle d'îles | poc2.4 | 6 seeds / 30k | 79 → 68 % (−11), **les 6 seeds régressent** | `FALSIFIED-islands.md` |
+| 11 | HyperNEAT (V1→V4) | poc2.5 | 4 × 6 seeds | meilleur = V3 : 79 → 68 % ; V1 −52, V4 non monotone | `FALSIFIED-hyperneat.md` |
+| 12 | Mutation auto-adaptative (sigma ES) | poc2.6 | **diagnostic, sans campagne** | sigma dérive sans s'auto-régler | `DIAGNOSTIC-self-adaptive-mutation.md` |
+| 13 | Plasticité Hebbienne (V1+V2) | poc2.6 | **diagnostic, sans campagne** | 41-55 % de gagnants = pile ou face | `DIAGNOSTIC-hebbian-v1/v2.md` |
+
+### Les 4 promus
+
+| # | Levier | Branche | Gain | Document |
+|---|---|---|---|---|
+| 1 | Repro ∝ pommes cumulées **+** population 200→400 | poc2.2 | la percée fondatrice — 1ʳᵉ émergence robuste ET stable | `Audits/AUDIT-poc2.2-v3.md` |
+| 2 | Novelty search (bonus additif) | poc2.4 | 52 → 62 % (**+10**), aucun seed ne régresse | `RESULTS-novelty.md` |
+| 3 | Densité — carte ×√2 + `max_speed` ÷2 | poc2.4 | 62 → 66 % (**+4** @30k) | `RESULTS-density.md` |
+| 4 | K-sweep — `apples_per_offspring` 3.0 → 1.5 | poc2.4 | 66 → 79 % (**+13**), 5/6 seeds montent | `RESULTS-k-sweep.md` |
+
+**Bilan bout-en-bout : de 52 % à 79 % de fourrageurs** (6 seeds) entre le défaut
+poc2.3 et le défaut de clôture. Attention en le citant : les trois gains
+intermédiaires sont mesurés à des horizons différents (novelty à 15k, densité et
+K-sweep à 30k) et chacun sur la baseline qui le précède — ils ne s'additionnent
+pas arithmétiquement.
+
+**Ce que le tableau montre d'un coup d'œil** : les 4 promus sont tous **additifs**
+et tiennent tous à l'**échelle ou à l'écologie** ; aucun levier agissant sur le
+**mécanisme de sélection** n'a jamais été promu, sur 13 tentatives.
 
 ## 7. Historique des commits clés
 

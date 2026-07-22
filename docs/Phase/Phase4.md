@@ -1,5 +1,10 @@
 # Phase 4 — Environnement : environment.py + apple.py + tests
 
+> ⚠️ **Archive** : décrit l'implémentation d'origine. `Environment.respawn()`
+> a depuis été **supprimée** (code mort, audit 2026-07-08 — `tick_respawns`
+> couvre le besoin, et `Apple.spawn_tick` est tracké nativement). Pour l'état
+> courant, voir `src/environment.py` et `PLAN.md`.
+
 ## Contexte
 
 Phases 1–3 en place (SimConfig, Genome, NeuralNetwork). Phase 4 introduit le

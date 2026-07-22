@@ -42,6 +42,36 @@ K=1.5 gagne clairement, tiré surtout par le seed le plus faible du défaut
 | K=1.5 30k | 98 | 76 | 82 | 68 | 96 | 56 | **79** |
 | Δ | +13 | −1 | +21 | +10 | +11 | +24 | **+13** |
 
+**Données brutes** (`logs/` n'est pas versionné — voir la note de traçabilité de
+`docs/SYNTHESE.md` §6) :
+
+| ligne | chemin | vérification |
+|---|---|---|
+| K=1.5 30k | `logs/seed{42,7,123,1,5,99}/2026-07-16_111426/metrics.csv` | ✅ recalculé le 2026-07-22 : **79,38 %**, et le run a été **re-produit bit-à-bit** en relançant `config/default.yaml` |
+| K=1.5 15k | `logs/seed*/2026-07-15_205719/metrics.csv` | ✅ correspondance exacte des 6 valeurs |
+| défaut K=3.0 30k | `logs/seed*/2026-07-22_121235/metrics.csv` | ✅ **rejoué le 2026-07-22** (`config/lever_k3.0.yaml`, 1800 s) — la mesure d'origine était antérieure au correctif CSV et n'avait laissé aucune donnée brute. **Reproduction exacte, seed pour seed** (voir ci-dessous) |
+| autres lignes du sweep 15k (K=2.0…5.0) | — | ❌ pas de CSV : campagnes antérieures au commit `f070f64` (2026-07-15 16:16). Ré-exécutables à l'identique (déterminisme vérifié), ~20 min par ligne |
+
+### Le rejeu de la baseline — contrôle de reproductibilité
+
+La ligne « défaut K=3.0 30k » a été **relancée intégralement le 2026-07-22**, sept
+jours après la mesure d'origine, sur un dépôt qui a connu deux branches de
+recherche supplémentaires entre-temps :
+
+| seed | 42 | 7 | 123 | 1 | 5 | 99 | **moy** |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| mesure d'origine (2026-07-15) | 85 | 77 | 61 | 58 | 85 | 32 | **66** |
+| rejeu (2026-07-22) | 85 | 77 | 61 | 58 | 85 | 32 | **66** |
+
+**Les six valeurs sont identiques.** C'est un contrôle utile à deux titres :
+il confirme que la baseline publiée était exacte (donc que le **+13** l'est
+aussi), et il vérifie empiriquement la propriété sur laquelle repose toute la
+réponse au trou de traçabilité — *le déterminisme du simulateur rend les
+campagnes perdues ré-exécutables à l'identique*. Voir `docs/SYNTHESE.md` §6.
+
+*(Détail du rejeu : `steer_med` +0,525 / +0,132 / +0,123 / +0,284 / +0,202 /
+−0,139 ; population 400/400 sur les 6 seeds ; 1800 s en 6 workers.)*
+
 **5/6 seeds montent (jusqu'à +24 sur le pire du défaut), le 6e est quasi
 stable (7 : 77→76, −1)** — même profil qualitatif que la novelty (aucun seed
 ne s'effondre) mais un gain net supérieur à tous les leviers précédents

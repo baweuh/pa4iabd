@@ -1,5 +1,12 @@
 # Audit poc2.2 — v2 : dynamique darwinienne, théorie + code + plan
 
+> ⚠️ **Archive** : audit intermédiaire, conservé pour la traçabilité du
+> raisonnement. Les items marqués « backlog » y décrivent l'état des priorités
+> **au 2026-07-06** — la plupart ont été traités depuis (clamp des poids, sortie
+> égocentrique, dispersion des nouveau-nés), et le journal complet de
+> l'investigation est dans `AUDIT-poc2.2-v3.md`. Pour l'état courant, voir
+> `PLAN.md` et `docs/SYNTHESE.md`.
+
 Cet audit prolonge `AUDIT-poc2.2.md` (qui couvrait les 7 invariants + 4 correctifs).
 Il ne répète pas ce qui y figure déjà. Objet : la simulation produit-elle une
 **évolution darwinienne authentique** (naissance → survie différentielle →

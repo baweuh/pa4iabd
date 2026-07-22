@@ -54,6 +54,15 @@ Le facteur monte avec le nombre de seeds jusqu'à la limite cœurs (12 dispo).
   n'ouvre **pas** de CSV (il ne collecte que les métriques finales) → non concerné.
   Si on veut les CSV en parallèle, préfixer le `run_dir` par le seed.
 
+  > ⚠️ **Ce « non concerné » était en réalité LE bug.** Corrigé le 2026-07-15
+  > (`f070f64`) : `campaign.py` n'ouvrait jamais le logger, ce qui a privé de
+  > données brutes **toutes les campagnes du projet antérieures à cette date** —
+  > y compris celles des 4 leviers promus. Les deux correctifs sont ceux
+  > anticipés ici : `_run_seed` ouvre/ferme le logger, et chaque seed reçoit son
+  > sous-dossier (`logs/…/seed<N>/<run_id>/`) pour éviter la collision de
+  > `run_id` (dont la résolution est à la seconde). Voir `PLAN.md` (poc2.4) et
+  > la note de traçabilité de `docs/SYNTHESE.md` §6.
+
 ### Statut : **implémenté**, prêt à l'emploi. ROI immédiat, risque nul.
 
 ---
@@ -85,7 +94,9 @@ au sein d'un tick), il supprime un artefact d'ordre de liste. La résolution de
 la capture, elle, ne change pas → pas de problème de double-mange.
 
 ### Chiffres mesurés
-**Perception isolée** (spike `spike_batch_perception.py`, pop 400, 16 rayons) :
+**Perception isolée** (spike `spike_batch_perception.py` — script jeté après
+mesure, non versionné ; l'équivalence bit-à-bit est verrouillée durablement par
+`tests/test_batch_sense.py`. Pop 400, 16 rayons) :
 équivalence **bit-à-bit** avec `sense()`, **15,2 ms → 1,6 ms = ×9,8**.
 
 **End-to-end après implémentation** (`config/default.yaml`, seed 42, 3000 ticks) :

@@ -534,9 +534,12 @@ class HebbianConfig:
     # to express in YAML.
     learning_rate: float = 0.01
     # Clamp on plastic weights, mirroring genome.weight_max's role for evolved
-    # ones. Required, not cosmetic: the rule is purely positive reinforcement
-    # (no decay term), so without a bound a repeatedly-rewarded connection would
-    # grow without limit and saturate every downstream tanh.
+    # ones. Required, not cosmetic. It was strictly necessary under the V1 rule
+    # (purely positive reinforcement, no decay term: a repeatedly-rewarded
+    # connection grew without bound and saturated every downstream tanh). V2 is
+    # contrastive (m - m_bar) so it no longer diverges by construction, but the
+    # bound stays useful: the eligibility trace can still accumulate, and the
+    # ablation runs showed trace-without-baseline diverging outright.
     weight_max: float = 5.0
     # V2 — eligibility trace. Per connection, every tick:
     #     e <- eligibility_decay * e + x * y

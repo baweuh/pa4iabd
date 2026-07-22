@@ -1,5 +1,9 @@
 # Phase 7 — Renderer Pygame + UI interactive
 
+> ⚠️ **Archive** : décrit l'implémentation d'origine du renderer. Le HUD, le
+> panneau réseau (touche `N`), la sparkline de fourrage et le plein écran (F11)
+> ont été ajoutés en poc2.3. Pour l'état courant, voir `src/renderer.py`.
+
 ## Contexte
 
 Phase 6 produit une Simulation stable (98 tests, headless 500 ticks OK).

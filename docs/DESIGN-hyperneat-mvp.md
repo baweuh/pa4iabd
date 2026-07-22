@@ -157,9 +157,9 @@ le régime pour lequel l'outil est prévu.
 - ~~`tools/trace_lineage.py`~~ FAIT (voir ci-dessus, session 2).
 - La campagne 6 seeds de falsification / décision de promotion — lancée
   en session 2 (`config/lever_hyperneat_mvp.yaml` vs `default.yaml`,
-  seeds 42/7/123/1/5/99, 15k ticks), résultat à documenter séparément
-  (`docs/RESULTS-hyperneat.md` ou `docs/FALSIFIED-hyperneat.md` selon le
-  verdict).
+  seeds 42/7/123/1/5/99, 15k ticks), résultat à documenter séparément.
+  **Verdict tombé** : falsifié (V1 → V4), voir `docs/FALSIFIED-hyperneat.md`.
+  Le `docs/RESULTS-hyperneat.md` évoqué ici n'existera donc pas.
 - Les améliorations listées plus haut (couche cachée, multi-activation,
   LEO, entrée distance) si le MVP s'avère prometteur.
 

@@ -1,5 +1,12 @@
 # Phase 6 — Simulation (boucle principale + population) ✅
 
+> ⚠️ **Archive** : décrit l'implémentation d'origine. Le CSV y compte **7
+> colonnes** ; il en compte **26** depuis l'instrumentation étendue de poc2.4
+> (`src/diagnostics.py` : densités, captures dirigées/fortuites, N_e). Par
+> ailleurs `Simulation.run()` n'est plus le chemin de production (`main.py` et
+> `tools/campaign.py` pilotent la boucle eux-mêmes). Pour l'état courant, voir
+> `src/simulation.py` et `PLAN.md`.
+
 ## Contexte
 
 Phases 1–5 en place (`SimConfig`, `Genome`, `NeuralNetwork`, `Environment`/`Apple`,

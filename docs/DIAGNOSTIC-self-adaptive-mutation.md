@@ -7,11 +7,15 @@ Date : 2026-07-20 · branche `poc2.6` · code : commit `5e32408` + `sigma_tau_sc
 
 ## Pourquoi ce levier
 
-Premier levier du projet qui ne touche **ni la sélection ni la
-reproduction** : il change *comment* la variation est produite, pas *qui*
-se reproduit. Les 11 leviers falsifiés jusqu'ici remodelaient tous la
-sélection/repro (fitness sharing, troncature, crossover, génome sparse,
-critère minimal, îles, archive de nouveauté, biais, HyperNEAT).
+Premier levier du projet qui touche au **régime de variation** plutôt qu'au
+tri : il change *comment* la variation est produite, pas *qui* se reproduit.
+
+Les 11 leviers falsifiés jusqu'ici se répartissent en deux familles, aucune
+n'étant celle-ci : la **sélection/reproduction** (fitness sharing, troncature,
+crossover, crossover+bigpop, critère minimal, îles, archive de nouveauté) et le
+**génome ou l'encodage fondateur** (génome sparse, nœud de biais, capteur 67,
+HyperNEAT). Ce qu'ils ont en commun n'est donc pas d'agir sur la sélection —
+c'est qu'aucun ne modifie quoi que ce soit **pendant la vie de l'agent**.
 
 Mécanisme (Schwefel 1981 ; Beyer & Schwefel 2002) : chaque génome porte
 son propre pas de mutation `sigma`, muté log-normalement à chaque
@@ -93,9 +97,9 @@ n'a aucune prise sur sigma. Si sigma était réellement sélectionné, la
 médiane convergerait vers une valeur reproductible ≠ 0,050 ; elle ne le
 fait pas, elle diffuse symétriquement autour de son point de départ.
 
-Cohérent avec le diagnostic historique du projet (memory
-`diagnostics-instrumentation`) : `N_e` ≈ 82–90 sur une population de 400,
-soit **sélection ≪ dérive** (poc2.2). L'auto-adaptation ES est un
+Cohérent avec le diagnostic historique du projet : `N_e` ≈ **150** sur une
+population de 400 (p10–p90 : 118–173), soit **N_e/N ≈ 0,37** — une dérive qui
+pèse lourd face à la sélection (poc2.2). L'auto-adaptation ES est un
 mécanisme de **second ordre** — sigma n'est sélectionné qu'indirectement,
 via le succès des enfants qu'il produit. Un régime où la sélection de
 premier ordre est déjà noyée par la dérive ne peut pas transporter un

@@ -54,12 +54,13 @@
 - [x] tests/test_main_cli_modes.py (9 tests : modes, overrides, déterminisme)
 - [x] PHASE8.md (architecture + décisions)
 
-## Phase 9 — AWS + Dashboard ⬜
-> **Hors périmètre de Claude — géré par un collègue de Robin.** Ne pas
-> attaquer cette phase, même une fois tout le reste clos (convenu 2026-07-15).
-- [ ] S3 (upload ZIP + génomes)
-- [ ] DynamoDB (métriques)
-- [ ] Amplify (dashboard)
+## Phase 9 — AWS + Dashboard ⛔ HORS PÉRIMÈTRE
+> **Non réalisée, et volontairement : hors du périmètre scientifique de ce
+> travail, et hors périmètre de Claude — infrastructure gérée par un collègue
+> de Robin** (convenu 2026-07-15). Ce n'est pas un reliquat de la checklist.
+- ⛔ S3 (upload ZIP + génomes)
+- ⛔ DynamoDB (métriques)
+- ⛔ Amplify (dashboard)
 
 ## Branche poc2.2 — Dynamique évolutive (investigation) ✅
 > POC hors numérotation des phases : rendre l'évolution *adaptative*, pas seulement
@@ -135,6 +136,20 @@
         longtemps ; le fully-connected agissait comme filet de sécurité perceptif.
         `initial_connectivity` reste à 1.0 (implicite) dans `default.yaml`. 155 tests
         verts, black clean, pylint stable. Mécanisme + config gardés comme référence.
+- [x] ✅ **Fitness sharing NEAT — FALSIFIÉ** (2026-07-09, fin poc2.3 /
+        inter-branche ; `config/lever_fitness_sharing.yaml`). *Entrée ajoutée le
+        2026-07-22 : ce chantier était documenté dans `docs/SYNTHESE.md` mais
+        **absent de PLAN.md**, alors que PLAN.md est la source of truth et que
+        c'est l'un des 13 leviers écartés.* Mécanisme canonique NEAT : la
+        priorité de reproduction d'un agent est divisée par la taille de son
+        espèce (`speciation.assign_species` déjà câblé, branché dans
+        `_priority_fn`), pour empêcher une espèce dominante de monopoliser les
+        slots. Campagne 3 seeds / 15k : moyenne **68 % → 59 % (−9)**, seed 42
+        86 → 58. A bien produit l'effet **structurel** visé (nœuds cachés moyens
+        0,05 → 0,80 : l'innovation structurelle est effectivement protégée) —
+        mais la structure ainsi préservée **n'améliore pas le fourrage**. 4ᵉ
+        mécanisme réducteur falsifié, même profil moyennant que le crossover.
+        Off par défaut, non promu, mécanisme gardé câblé + testé comme référence.
 
 ## Branche poc2.4 — Perf de simulation + nouveauté (1er levier positif) ✅
 > Débit de simulation (pour la boucle de recherche) + reprise recherche.
@@ -554,14 +569,62 @@
         lever_hyperneat_v3.yaml`), toujours falsifié au sens strict, non
         promu ; `hyperneat.enabled` reste absent (=false) dans
         `default.yaml`. Détails complets : `docs/FALSIFIED-hyperneat.md`.
+## Branche poc3 — hypothèse d'ÉCHELLE ⛔ ABANDONNÉE, sans verdict
+> *Section ajoutée le 2026-07-22 : `PLAN.md` est la source of truth du projet
+> mais ne décrivait poc3 nulle part — elle n'y apparaissait que par renvois
+> depuis poc2.6, citant les conclusions d'une branche jamais documentée ici.*
+>
+> Ouverte le 2026-07-16 depuis poc2.5, close le 2026-07-20, **abandonnée
+> définitivement le 2026-07-22.** Motivation : les 4 leviers promus du projet
+> tiennent **tous** à l'échelle ou à l'écologie, jamais au mécanisme de
+> sélection — et la littérature du même paradigme (Hamon et al. 2023 ; Bejjani
+> et al. 2025, 60 000+ agents) rapporte des comportements qui **n'émergent
+> qu'au-delà d'un seuil de taille de population**. Verrou identifié : le forward
+> pass NEAT hétérogène, non batchable, 45 % du tick, payé pour une topologie qui
+> n'évolue quasiment jamais (<0,5 nœud caché après 30k ticks).
+
+- [x] ✅ **Architecture livrée et mesurée** : topologie **FIXE**
+        (`network.hidden_size`, plus aucune mutation structurelle) +
+        `batch_activate` — le verrou passe de 45 % à **2,8 %** du tick ; puis
+        `batch_eat` et `novelty.max_pool_size` débloquent l'échelle réelle.
+        Débit : 400 → 106 ticks/s, 4000 → 19,3, 16 000 → 6,7.
+- ⛔ **L'hypothèse d'échelle elle-même n'a JAMAIS été tranchée.**
+    - **Round 1** (pop 400→4000, 6 seeds/30k) : régresse à 38 % de fourrageurs,
+        mais le résultat est **confondu et inexploitable** — 4000 agents pour
+        **160 pommes inchangées** (compétition ~5× plus dense), et la population
+        n'a jamais dépassé `initial_size` (1943-2010 sur un cap de 4000). Le
+        régime visé n'a pas été atteint.
+    - **Round 2** (pommes ×10, conçu précisément pour lever ce confond) :
+        **interrompu à 4 %**.
+    - S'ajoute que `novelty.max_pool_size`, l'approximation qui rend l'échelle
+        jouable, dégradait −12 pp à pop=400 et **n'a jamais été validée**.
+    - **Ces mesures ne seront pas produites.** L'hypothèse d'échelle est la
+        **limite assumée** de ce travail : le seul grand axe sans verdict, alors
+        que c'est la direction dont relèvent 4 des 5 leviers promus. Le projet
+        sait ce qu'il n'a pas démontré.
+- **Données brutes** (les 2 campagnes existantes sont traçables) :
+        `logs/campaign_runs/scale4000_20260716_200310.log` +
+        `logs/seed*/2026-07-16_200310/` (round 1) ;
+        `logs/campaign_runs/scale4000_scaled_food_20260716_214445.log`
+        (round 2, CSV vides — la trace de l'interruption est la preuve).
+- ⚠️ **Conséquence pour l'architecture** : `src/hyperneat.py` et son outillage
+        ont été **supprimés** sur poc3 (incompatibles avec la topologie fixe).
+        Les invariants n°3 et n°4 diffèrent donc entre poc2.x et poc3 — mais
+        poc3 étant abandonnée, **seule l'architecture poc2.x fait foi**.
+
 ## Branche poc2.6 — hors sélection/reproduction : 2 leviers falsifiés AU DIAGNOSTIC ✅
 > Ouverte depuis `poc2.5` (2026-07-16), close le 2026-07-21. Constat de Robin à
 > l'ouverture : la plupart des leviers testés jusqu'ici (fitness sharing,
 > troncature, crossover, génome sparse, critère minimal, îles, archive, biais,
 > HyperNEAT) reposent tous sur la **sélection/reproduction**. La branche est
-> donc allée chercher ailleurs — et les deux leviers engagés sont les deux
-> premiers du projet à agir **dans la vie de l'agent** ou **sur le génome
-> lui-même**, plutôt qu'entre générations.
+> donc allée chercher ailleurs. Précision de vocabulaire (corrigée le
+> 2026-07-22) : les 11 leviers précédents se répartissent entre **sélection/
+> reproduction** (fitness sharing, troncature, crossover, crossover+bigpop,
+> critère minimal, îles, archive) et **génome/encodage fondateur** (sparse,
+> biais, capteur 67, HyperNEAT) — agir « sur le génome » n'est donc pas une
+> première. Ce qui est réellement inédit ici : sigma touche au **régime de
+> variation** plutôt qu'au tri, et la plasticité Hebbienne est le **premier
+> mécanisme du projet à modifier quoi que ce soit pendant la vie de l'agent**.
 >
 > **Résultat transverse de la branche — les deux meurent du même budget
 > d'événements :**
@@ -574,9 +637,13 @@
 > Même chiffre, même cause : **la tâche fournit de l'ordre de 3 événements
 > informatifs par agent.** Aucun mécanisme qui doit accumuler du signal — à
 > travers ses enfants ou à travers sa propre vie — ne fonctionne sur 3
-> événements, dans un régime où `N_e` ≈ 82-90 sur pop 400 (poc2.2) noie déjà la
-> sélection de premier ordre. Ce n'est pas un défaut de réglage : c'est une
-> propriété de la tâche.
+> événements, dans un régime où `N_e` ≈ 150 sur pop 400 (N_e/N ≈ 0,37, poc2.2)
+> laisse déjà la dérive peser lourd sur la sélection de premier ordre. Ce n'est
+> pas un défaut de réglage : c'est une propriété de la tâche.
+>
+> ⚠️ `N_e` corrigé le 2026-07-22 : publié à tort « 82-90 » (relevé pris en phase
+> de croissance de la population puis étiqueté « pop 400 »). Voir la note de
+> correction dans `docs/SYNTHESE.md` §6 — la conclusion est inchangée.
 >
 > **Les deux ont été écartés SANS campagne 6 seeds** — première fois que la
 > branche paie ce prix-là deux fois de suite. 13 leviers écartés au total sur le
@@ -630,56 +697,85 @@
         s'avère identique au témoin ligne pour ligne, ce qui disculpe les
         effets de bord de `hebbian.enabled` (contournement des caches
         `steer_score`/`behavior_descriptor`, novelty sur réseau vivant).
+    - **Bilan qualité de clôture (2026-07-22)** : **319 tests verts**, `black`
+        clean (`src/` + `tests/` + `tools/`), `pylint` 9.99/10 sur `src/`
+        (unique avertissement : `simulation.py` dépasse 1000 lignes).
 
-### Non retenues sur poc2.6 — différées, avec la raison ⬜
+- [x] ✅ **Clôture de la branche — double audit avant soutenance** (2026-07-22).
+        Deux audits indépendants lancés en parallèle sur le corpus complet.
+    - **Cohérence documentaire** : 46 constats, dont 22 bloquants. Corrigés —
+        les 5 chiffres faux de `FALSIFIED-min-criterion.md` (dont le crossover
+        donné à −15 alors qu'il fait **+35**, signe inversé), HyperNEAT V3/V4
+        déclarés « non engagés » dans `SYNTHESE.md` alors que le chantier était
+        clos, « 148 tests » figé depuis poc2.3, README annonçant **33 entrées**
+        au lieu de 49, et le surclaim « les 11 leviers falsifiés agissaient
+        **tous** sur la sélection » (faux : sparse, biais, capteur 67 et
+        HyperNEAT n'agissent pas sur la sélection). Ajout du **tableau unique
+        des 13 leviers + convention de comptage** (`SYNTHESE.md` §6bis) : le
+        chiffre était affirmé trois fois et listé nulle part.
+    - **Traçabilité scientifique** : ~45 % seulement des résultats chiffrés
+        étaient adossés à une donnée brute, à cause du bug `f070f64`
+        (`tools/campaign.py` n'ouvrait pas le CSV avant le 2026-07-15 16:16) —
+        les 4 leviers promus sont dans ce trou. **Deux erreurs de fond
+        corrigées** : (1) `N_e ≈ 82-90 sur pop 400` était **faux**, mesuré en
+        phase de croissance sur un run de 3000 ticks — la vraie valeur est
+        **≈ 150** (N_e/N ≈ 0,37, 10 101 lignes de CSV, 65 runs) ; (2) le
+        critère minimal et la troncature étaient comparés au défaut
+        **pré-densité** alors que leurs configs portent la densité — deltas
+        corrigés de +1 → **−3** et +3 → **−1** (verdicts inchangés, renforcés).
+        Baseline K=3.0 30k **rejouée** (`config/lever_k3.0.yaml`, 6 seeds/30k,
+        1800 s) pour rendre le « +13 » du K-sweep traçable des deux côtés :
+        **reproduction exacte, seed pour seed** (`85|77|61|58|85|32` → 66 %,
+        soit les 6 valeurs publiées le 2026-07-15, sept jours et deux branches
+        plus tard) — ce qui vérifie du même coup la propriété sur laquelle
+        repose la réponse au trou de traçabilité. Note assumée ajoutée en
+        `SYNTHESE.md` §6.
+
+### Limites assumées — trois pistes non explorées, avec la raison
 > Ces trois entrées de la todo d'ouverture n'ont **jamais été engagées**, et ce
 > n'est pas un oubli : ce sont toutes des leviers de **sélection**, catégorie
-> qui a déjà échoué 11 fois ici (`N_e` ≈ 85 : la dérive noie la sélection).
+> qui a déjà échoué 11 fois ici (`N_e` ≈ 150 sur pop 400 : la dérive concurrence
+> lourdement la sélection).
 >
-> ⚠️ **Elles ne sont pas pour autant renvoyées à `poc3`** — cette branche a été
-> **close le 2026-07-20 sans verdict** sur l'hypothèse d'échelle (round 1
-> confondu : 4000 agents pour 160 pommes inchangées, population jamais montée
-> au-dessus de `initial_size` ; round 2 censé lever le confound interrompu à
-> 4 %), et sa propre note de clôture pose que **le backlog de recherche repart
-> de `poc2.6`**. Deux de ces trois entrées ne peuvent d'ailleurs **pas** exister
-> sur poc3 — voir le détail par entrée ci-dessous. La question de l'échelle,
-> elle, reste **entièrement ouverte** : ni confirmée ni infirmée.
+> ⚠️ **Elles ne sont pas non plus renvoyées à `poc3` : cette branche a été
+> ABANDONNÉE DÉFINITIVEMENT le 2026-07-22 et ne sera pas reprise.**
+> L'hypothèse d'échelle n'a donc **pas été tranchée, et ne le sera pas dans ce
+> projet** — round 1 est confondu (4000 agents pour 160 pommes inchangées, la
+> population n'est jamais montée au-dessus de `initial_size`), round 2, conçu
+> précisément pour lever ce confond, a été interrompu à 4 %. **C'est une limite
+> assumée de ce travail, pas un chantier en attente.** Elle est d'autant plus
+> notable que 4 des 5 leviers promus tiennent à l'échelle ou à l'écologie : le
+> projet reconnaît ne pas avoir démontré jusqu'où cette direction porte.
 
-- [ ] ⬜ **HyperNEAT V5 — régime de mutation CPPN dédié.** Diagnostic établi
+- **HyperNEAT V5 — régime de mutation CPPN dédié.** Diagnostic établi
         (V2/V3, `docs/FALSIFIED-hyperneat.md`) : le CPPN fondateur progresse à
         peine structurellement avec le régime de mutation hérité de l'encodage
         direct, jamais ajusté pour un génome à 6-14 poids fortement couplés.
-        Bien scopée, coût connu. **Différée** : le chantier HyperNEAT a été
+        Bien scopée, coût connu. **Non explorée** : le chantier HyperNEAT a été
         déclaré clos en poc2.5 après une relation NON monotone entre V3 et V4
         (bootstrap 1 nœud = meilleur résultat, 2 nœuds = forte régression), ce
-        qui rend le levier imprévisible avant d'être fin. **Ne peut vivre que
-        sur poc2.x** : bâti sur l'API structurelle NEAT (CPPN → substrat), et
-        `src/hyperneat.py` + son outillage ont été supprimés en poc3.
-- [ ] ⬜ **Repro non canonique.** Deux écarts à la littérature repérés en audit,
+        qui rend le levier imprévisible avant d'être affiné. Le chantier ayant
+        été clos sur ce constat, V5 n'a pas été tentée.
+- **Repro non canonique.** Deux écarts à la littérature repérés en audit,
         jamais testés : `Genome.crossover` traite toujours `self` comme parent
         « fitter » sans comparer les fitness ; la reproduction ne comble que les
         slots vidés par la mort (pas de turnover forcé façon rtNEAT).
-        **Différée** : levier de reproduction, catégorie dont tous les
+        **Non explorée** : levier de reproduction, catégorie dont tous les
         représentants ont échoué ici (troncature, critère minimal, îles,
         crossover lui-même), et aucun diagnostic ne motive spécifiquement l'un
-        ou l'autre. **Volet « parent fitter » spécifique à poc2.x** : c'est un
-        défaut d'alignement propre à NEAT (gènes excess/disjoint hérités du
-        parent réputé fitter). Le `crossover` de poc3 est un tirage 50/50 sur un
-        vecteur de poids plat, où l'argument `fitter` n'a plus aucun effet — le
-        point n'y existe pas. Le volet « turnover forcé » reste, lui, valable
-        sur les deux architectures.
-- [ ] ⬜ **Quality-Diversity — MAP-Elites / NSLC** (Lehman & Stanley 2011 ;
+        ou l'autre. Le volet « parent fitter » est un défaut d'alignement propre
+        à NEAT (gènes excess/disjoint hérités du parent réputé fitter) ; il reste
+        non testé, comme le volet « turnover forcé ».
+- **Quality-Diversity — MAP-Elites / NSLC** (Lehman & Stanley 2011 ;
         Mouret & Clune 2015) et **ALPS** (Hornby 2006). NSLC combine novelty
         (déjà promu en défaut) avec une compétition **locale** ; ALPS protège
         les jeunes génotypes par couches d'âge au lieu d'une isolation
-        géographique. **Différées** : toutes deux restructurent la sélection
+        géographique. **Non explorées** : toutes deux restructurent la sélection
         pour préserver la diversité — exactement l'objectif des îles, falsifiées
-        en poc2.4 parce que 4 îles de 100 rouvrent la dérive fondatrice.
-        **Seules des trois à être indépendantes de la représentation** : elles
-        s'appliqueraient indifféremment à poc2.x et à une reprise de poc3. Elles
-        n'ont de sens qu'à une population assez grande pour que subdiviser ne
-        coûte pas la dérive — ce qui les lie à l'hypothèse d'échelle, restée
-        sans verdict.
+        en poc2.4 parce que 4 îles de 100 rouvrent la dérive fondatrice. Elles
+        n'auraient de sens qu'à une population assez grande pour que subdiviser
+        ne coûte pas la dérive : elles dépendent donc de l'hypothèse d'échelle,
+        qui est précisément la limite non testée de ce travail.
 
 **Sur les leviers « ML »** : la contrainte « aucun framework ML » est levée sur
 toutes les branches depuis le 2026-07-20, `neat-python` et `gym` restant

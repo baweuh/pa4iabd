@@ -28,7 +28,7 @@ poids appris vivent dans le réseau compilé, jamais dans le génome.
 
 Délibérément **de premier ordre** — `learning_rate` est une constante YAML,
 aucun paramètre de règle n'est évolué. C'est la leçon directe de
-`docs/DIAGNOSTIC-self-adaptive-mutation.md` : ce régime (`N_e` ≈ 82-90 sur
+`docs/DIAGNOSTIC-self-adaptive-mutation.md` : ce régime (`N_e` ≈ 150 sur
 pop 400) ne peut pas porter un signal de second ordre. La plasticité échappe
 à ce piège parce que les poids appris changent le fourrage **du porteur**.
 
@@ -89,8 +89,8 @@ Ce ne sont pas les mêmes génomes qui sont sélectionnés. C'est l'**inverse de
 l'effet Baldwin** : le bruit d'apprentissage masque les différences
 génétiques, la sélection distingue moins bien les bons génomes (effet
 « hiding » documenté dans la littérature Baldwin). Dans un régime où la
-sélection est déjà noyée par la dérive (`N_e` ≈ 85), ajouter du bruit
-phénotypique est directement nuisible.
+sélection est déjà fortement concurrencée par la dérive (`N_e` ≈ 150 sur
+pop 400, N_e/N ≈ 0,37), ajouter du bruit phénotypique est directement nuisible.
 
 ## Diagnostic mécaniste — pourquoi cette règle-là ne pouvait pas marcher
 
@@ -112,7 +112,7 @@ que cette simplification a jetés. **C'est donc une falsification de CETTE
 RÈGLE, pas du concept de plasticité.** La distinction est réelle et il faut
 la tenir : contrairement à la mutation auto-adaptative — écartée pour une
 raison *structurelle* (un mécanisme de second ordre est impossible à
-`N_e` ≈ 85, aucun réglage n'y change rien) — rien ici n'interdit *a priori*
+`N_e` ≈ 150, aucun réglage n'y change rien) — rien ici n'interdit *a priori*
 à une règle mieux construite de fonctionner.
 
 > **Mise à jour 2026-07-21 — cette distinction n'a pas survécu.** V2 est

@@ -65,21 +65,42 @@ Cap≥3 ne s'active jamais sur ce seed (repro, record, steer score identiques au
 
 ## Campagne 30k (6 seeds) — round_robin (candidat le plus abouti)
 
-| Seed | Défaut 30k | Round-robin 30k | Δ |
-|------|-----------|-----------------|---|
-| 42 | 82% | 80% | −2 |
-| 7 | 84% | 70% | −14 |
-| 123 | 76% | 53% | **−23** |
-| 1 | 23% | 56% | **+33** |
-| 5 | 81% | 92% | +11 |
-| 99 | 27% | 38% | +11 |
-| **Mean** | **62%** | **65%** | **+3** |
+> ⚠️ **BASELINE CORRIGÉE le 2026-07-22 (audit de traçabilité).** Ce document
+> comparait à la ligne `62 %` (`82|84|76|23|81|27`), qui est le défaut
+> **pré-densité**. Or `config/lever_round_robin.yaml` porte `world 3200×1800` +
+> `max_speed 2.122` (densité déjà promue) et `apples_per_offspring: 3.0` : la
+> bonne référence est le défaut **post-densité, pré-K-sweep** = `66 %`
+> (`85|77|61|58|85|32`), soit « carte+vitesse 30k » dans
+> `docs/RESULTS-density.md` = « défaut (K=3.0) 30k » dans
+> `docs/RESULTS-k-sweep.md`. **Le verdict (non promu) est inchangé et
+> renforcé** : le levier passe de « +3 » à **−1**, et n'est donc même plus un
+> cas mixte à moyenne positive.
 
-Population stable à 400 sur tous les seeds (pas de risque d'extinction). Premier cas **mixte** du projet : ni victoire nette (novelty : aucun seed ne régresse) ni échec net (comme les 6 réducteurs précédents) — moyenne légèrement positive, mais variance forte (un seed à −23, un autre à +33).
+| Seed | Défaut K=3.0 30k | Round-robin 30k | Δ |
+|------|-----------|-----------------|---|
+| 42 | 85% | 80% | −5 |
+| 7 | 77% | 70% | −7 |
+| 123 | 61% | 53% | −8 |
+| 1 | 58% | 56% | −2 |
+| 5 | 85% | 92% | +7 |
+| 99 | 32% | 38% | +6 |
+| **Mean** | **66%** | **65%** | **−1** |
+
+*(Δ publiés jusqu'au 2026-07-22 contre la mauvaise baseline : −2 / −14 / −23 /
++33 / +11 / +11, moyenne +3. La correction change la lecture du résultat :
+ce n'était pas « moyenne positive mais variance forte » — c'est **4 seeds sur 6
+qui régressent modérément**, pour une moyenne légèrement négative.)*
+
+Population stable à 400 sur tous les seeds (pas de risque d'extinction). Contre la bonne baseline, le profil est celui d'un **réducteur modéré** : 4 seeds sur 6 régressent, aucun ne s'effondre, aucun ne gagne massivement — moyenne −1. (Contre la mauvaise baseline, ce résultat avait été lu comme le « premier cas mixte du projet », moyenne +3 avec un seed à −23 et un autre à +33. C'était un artefact de comparaison, pas une propriété du levier.)
 
 ## Diagnostic mécanique (seed 123, demande explicite de Robin)
 
-Avant de trancher sur un résultat mixte, Robin a demandé de comprendre MÉCANIQUEMENT pourquoi le seed 123 s'effondre. Deux runs headless complets (30k ticks, seed 123, config défaut vs `lever_round_robin.yaml`), CSV comparé tick par tick (`mean_forage_rate`, `species_count`, `max_generation`, population).
+Robin a demandé de comprendre MÉCANIQUEMENT pourquoi le seed 123 décroche (−8 contre la bonne baseline ; le chiffre de −23 qui a motivé la demande à l'époque venait de la mauvaise baseline). Deux runs headless complets (30k ticks, seed 123, config défaut vs `lever_round_robin.yaml`), CSV comparé tick par tick (`mean_forage_rate`, `species_count`, `max_generation`, population).
+
+**Données brutes** (vérifiées le 2026-07-22, 301 lignes chacune) :
+`logs/2026-07-15_134756/metrics.csv` (défaut) et
+`logs/2026-07-15_135505/metrics.csv` (round-robin). `logs/` n'est pas versionné
+— voir la note de traçabilité de `docs/SYNTHESE.md` §6.
 
 **Constat** : les deux trajectoires CSV sont **identiques bit à bit jusqu'à tick ~3000-3400** — population, espèces, taux de fourrage, taille moyenne de réseau, tout correspond à 6 décimales près. C'est exactement le moment où la population atteint `max_size=400` pour la première fois.
 
@@ -89,13 +110,13 @@ Avant de trancher sur un résultat mixte, Robin a demandé de comprendre MÉCANI
 
 ## Décision
 
-Robin, après diagnostic : **ne pas promouvoir**. Même profil de risque que les réducteurs à variance élevée déjà écartés (fitness_sharing, min_criterion) — un gain moyen modeste (+3) ne compense pas une régression de −23 points sur un seed auparavant solide, même si un autre seed historiquement faible gagne massivement (+33). Le seul critère qui a déjà fonctionné dans ce projet reste « aucun seed ne régresse » (novelty).
+Robin, après diagnostic : **ne pas promouvoir**. La décision a été prise sur la lecture « gain moyen modeste (+3) ne compensant pas une régression de −23 sur un seed solide » ; contre la bonne baseline, elle est **encore mieux fondée** — il n'y a aucun gain moyen à mettre en balance (−1), et 4 seeds sur 6 régressent. Le seul critère qui a déjà fonctionné dans ce projet reste « aucun seed ne régresse » (novelty).
 
 `default.yaml` garde `max_children_per_tick` (0) et `reproduction_round_robin` (false) absents/legacy.
 
 ## Classement
 
-Ce chantier est distinct des 6 réducteurs classiques (moyenne toujours négative) — c'est le premier cas **mixte** (moyenne positive, variance forte). Il confirme cependant la même leçon structurelle : dans ce régime, tout ce qui touche à l'ORDRE ou au POIDS de la sélection expose le système à une sensibilité chaotique aux effets fondateurs, gagnante pour certains seeds, perdante pour d'autres, jamais un gain net et robuste. Seuls les leviers purement **additifs** (novelty) ont livré un gain sans contrepartie.
+Ce chantier rejoint les réducteurs classiques (moyenne négative), avec un profil plus doux : pas d'effondrement, mais pas de gain non plus. Il confirme la même leçon structurelle : dans ce régime, tout ce qui touche à l'ORDRE ou au POIDS de la sélection expose le système à une sensibilité chaotique aux effets fondateurs, gagnante pour certains seeds, perdante pour d'autres, jamais un gain net et robuste. Seuls les leviers purement **additifs** (novelty) ont livré un gain sans contrepartie.
 
 ## Bonus livré au passage
 
@@ -108,4 +129,6 @@ Ce chantier est distinct des 6 réducteurs classiques (moyenne toujours négativ
 - `tests/test_simulation.py`, `tests/test_config.py` : 8 nouveaux tests
 - `tools/campaign.py` : progression périodique
 - `config/lever_truncation_cap{1,2,3,5}.yaml`, `config/lever_round_robin.yaml`
+  (les points `cap=8` et `cap=10` du sweep ont été testés par override, leurs
+  configs n'ont pas été conservées — résultat identique à `cap≥3` : no-op pur)
 - PLAN.md : entrée ✅ falsifiée

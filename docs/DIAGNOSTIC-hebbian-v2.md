@@ -206,7 +206,8 @@ Les deux leviers de la branche meurent du **même budget d'événements** :
 Même chiffre, même cause : **la tâche fournit de l'ordre de 3 événements
 informatifs par agent**. Aucun mécanisme qui a besoin d'accumuler du signal —
 que ce soit à travers ses enfants ou à travers sa propre vie — ne peut
-fonctionner sur 3 événements. Le régime (`N_e` ≈ 82-90 sur pop 400, poc2.2) ne
+fonctionner sur 3 événements. Le régime (`N_e` ≈ 150 sur pop 400, soit
+N_e/N ≈ 0,37 — chiffre corrigé le 2026-07-22, voir `docs/SYNTHESE.md` §6) ne
 laisse pas la marge.
 
 Nuance importante par rapport à sigma : **c'est une falsification de la règle

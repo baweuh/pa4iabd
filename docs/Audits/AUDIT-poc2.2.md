@@ -1,5 +1,13 @@
 # Audit poc2.2 — état des invariants + correctifs ✅
 
+> ⚠️ **Archive** : cet audit (v1) décrit l'état d'origine. Plusieurs de ses
+> constats ont été dépassés depuis — notamment l'invariant n°5, qui reposait
+> alors sur `clamp_velocity` (fonction **supprimée** comme code mort, audit
+> 2026-07-08) et dont le modèle de sortie est devenu **égocentrique**
+> (`heading`/`speed` via `tanh`) dès poc2.2. Pour le journal complet de
+> l'investigation évolutive, voir `AUDIT-poc2.2-v3.md` ; pour l'état courant,
+> `PLAN.md` et `docs/SYNTHESE.md`.
+
 Audit complet de la base poc2.1 (commit `7e3d32a`) contre les 7 invariants de
 CLAUDE.md, suivi de quatre correctifs. Baseline avant correctifs : 114 tests
 verts, pylint 10.00/10, black propre.

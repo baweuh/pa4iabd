@@ -74,7 +74,8 @@ déplacer la réponse — le signal utile est noyé dans un fond dense et
 corrélé. C'est une conséquence directe de deux simplifications assumées du
 MVP (`docs/DESIGN-hyperneat-mvp.md`) : **substrat dense** (pas de seuil
 LEO/sparsification) + **CPPN sans nœud caché à la genèse** (`add_node_rate`
-0,03/tick, campagne montre `hidden` moyen 0,10–0,45 après 15k ticks — la
+0,03 **par naissance** — `mutate()` est appelé à chaque reproduction, pas à
+chaque tick ; campagne montre `hidden` moyen 0,05–0,17 après 15k ticks — la
 topologie du CPPN n'a presque pas eu le temps de se complexifier). La
 littérature HyperNEAT (D'Ambrosio & Stanley 2010, citée dans
 `research-roadmap`) utilise justement un seuil d'expression de lien pour
@@ -241,8 +242,9 @@ compétent" :
   profondeur du CPPN (6→hidden→hidden→1 ou 6→2×hidden→1 selon la
   connexion splittée en second, `add_node` choisissant toujours au
   hasard) — plus de paramètres à faire converger dans le même budget de
-  15-30k ticks, sur un opérateur de mutation (`add_node_rate` 0,03/tick,
-  `mutate_weights` 0,15) qui n'a pas été ajusté pour ce CPPN plus profond.
+  15-30k ticks, sur un opérateur de mutation (`add_node_rate` 0,03 par
+  naissance, `mutate_weights` 0,15) qui n'a pas été ajusté pour ce CPPN plus
+  profond.
   Le paysage de recherche s'est probablement complexifié plus vite que le
   budget évolutif ne peut le suivre — la même dynamique que le volet 6
   poc2.3 (génome fondateur sparse) et le nœud de biais poc2.4 : ajouter de

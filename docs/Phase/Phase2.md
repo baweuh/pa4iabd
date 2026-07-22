@@ -1,5 +1,11 @@
 # Phase 2 — Génome : genome.py + tests
 
+> ⚠️ **Archive** : décrit l'implémentation d'origine. Les IDs d'output y sont
+> `{33, 34}` (génome fondateur 33→2) ; le capteur par défaut est passé à **49
+> entrées** en poc2.3 (volet 5), donc les outputs sont aujourd'hui `{49, 50}`
+> et `num_inputs` est **dérivé** de `SensorConfig`, jamais codé en dur. Pour
+> l'état courant, voir `src/genome.py` et `PLAN.md`.
+
 ## Contexte
 
 Phase 1 en place (SimConfig immuable, chargé depuis YAML). Phase 2 introduit

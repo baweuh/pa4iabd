@@ -18,8 +18,10 @@ chasse et d'évitement apparaissent toutes seules.
 
 **La boucle de vie d'un agent :**
 
-- **Percevoir** — 16 raycasts à 360° renvoient la distance et le type
-  (rien / pomme / mur) de ce qu'ils touchent → 33 entrées du réseau.
+- **Percevoir** — 16 raycasts à 360° renvoient ce qu'ils touchent → **49 entrées**
+  du réseau : 16 distances normalisées, 16 drapeaux « pomme », 16 drapeaux
+  « mur », plus l'énergie de l'agent. (Le layout est configurable, `num_inputs`
+  est dérivé des toggles `sensors.*` — jamais codé en dur.)
 - **Décider** — le réseau feedforward produit 2 sorties → un vecteur vitesse.
 - **Agir** — l'agent se déplace, consomme de l'énergie à chaque tick.
 - **Manger** — une pomme rend de l'énergie. La zone près des murs en draine
@@ -58,7 +60,13 @@ l'avancement phase par phase) :
 avant chaque connexion), énergie comptée par *tick* (jamais par frame), et le
 moteur de simulation ne touche jamais à Pygame.
 
-Stack : **Python 3.10+, Pygame, NumPy, PyYAML**. Aucun framework ML.
+Stack : **Python 3.10+, Pygame, NumPy, PyYAML**. Aucun framework ML n'est
+utilisé : le génome NEAT, le réseau, la spéciation et la nouveauté sont écrits
+à la main (NumPy pour la vectorisation uniquement). La contrainte formelle
+« aucun framework ML » a été levée en fin de projet (2026-07-20) sans qu'aucun
+n'ait été introduit ; `neat-python` et `gym` restent exclus par choix
+scientifique — ce sont des encodages et des environnements RL tout faits, ce
+qui viderait le sujet de sa substance.
 
 ---
 
@@ -149,13 +157,26 @@ python -m pytest tests/ -v     # suite de tests complète
 
 ## Pour aller plus loin
 
-- `CLAUDE.md` — invariants du projet et règles d'architecture.
 - `PLAN.md` — feuille de route et avancement : Phases 1 à 9, puis l'investigation
   poc2.2 et les branches de recherche poc2.3 → poc2.6.
 - `docs/SYNTHESE.md` — **la vue d'ensemble à lire en premier** : la trajectoire
   complète, ce qui a été promu (4 leviers, tous liés à l'échelle ou à
-  l'écologie) et ce qui a été falsifié (13 leviers, presque tous des mécanismes
-  de sélection).
+  l'écologie) et ce qui a été falsifié (13 leviers). Le **§6bis** en donne le
+  tableau complet, levier par levier, avec sa convention de comptage.
+- `docs/RESULTS-*.md` — un document par levier **promu** (novelty, densité,
+  K-sweep) ; `docs/FALSIFIED-*.md` et `docs/DIAGNOSTIC-*.md` — un document par
+  levier **écarté**, avec sa campagne et son verdict. C'est là que vivent les
+  résultats de recherche.
+- **Branche `poc3`** — tentative de valider l'hypothèse d'**échelle** (topologie
+  fixe + batching, jusqu'à 16 000 agents). Architecture livrée et mesurée, mais
+  l'hypothèse elle-même n'a **jamais été tranchée**, et la branche a été
+  **abandonnée** : c'est la limite assumée de ce travail. Voir
+  `docs/SYNTHESE.md` §6.
+
+> Note : le fichier `CLAUDE.md` (invariants d'architecture, utilisé comme
+> mémoire de l'assistant de développement) n'est **pas versionné** — il
+> n'apparaît donc pas dans un clone. Les invariants qu'il porte sont résumés
+> dans la section « Architecture » ci-dessus et détaillés dans `PLAN.md`.
 - `docs/Phase/PhaseN.md` — documentation post-implémentation de chaque phase.
 - `docs/Audits/` — audits darwiniens de la branche poc2.2 (v1, v2, v3). Le v3
   (`AUDIT-poc2.2-v3.md`) est le journal complet de l'investigation évolutive
