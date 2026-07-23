@@ -1,0 +1,824 @@
+     1→     1→     1→"""Typed, immutable simulation configuration loaded from YAML.
+     2→     2→     2→
+     3→     3→     3→Every tunable parameter in the project lives here and is read through a
+     4→     4→     4→``SimConfig`` instance (invariant n°1: no magic numbers in code). The config
+     5→     5→     5→is split into one frozen dataclass per domain, mapped 1:1 onto the sections of
+     6→     6→     6→``config/default.yaml``.
+     7→     7→     7→"""
+     8→     8→     8→
+     9→     9→     9→from __future__ import annotations
+    10→    10→    10→
+    11→    11→    11→from dataclasses import MISSING, dataclass, fields
+    12→    12→    12→from pathlib import Path
+    13→    13→    13→from typing import Any
+    14→    14→    14→
+    15→    15→    15→import yaml
+    16→    16→    16→
+    17→    17→    17→
+    18→    18→    18→class ConfigError(Exception):
+    19→    19→    19→    """Raised when a configuration file is missing, malformed or invalid."""
+    20→    20→    20→
+    21→    21→    21→
+    22→    22→    22→@dataclass(frozen=True)
+    23→    23→    23→class WorldConfig:
+    24→    24→    24→    """Dimensions of the toroidal-free, walled world (pixels)."""
+    25→    25→    25→
+    26→    26→    26→    width: float
+    27→    27→    27→    height: float
+    28→    28→    28→
+    29→    29→    29→    def __post_init__(self) -> None:
+    30→    30→    30→        _require_positive(self, "width", "height")
+    31→    31→    31→
+    32→    32→    32→
+    33→    33→    33→@dataclass(frozen=True)
+    34→    34→    34→class PenaltyZoneConfig:
+    35→    35→    35→    """Energy-draining border zone near the walls."""
+    36→    36→    36→
+    37→    37→    37→    width: float  # thickness from the wall, in pixels
+    38→    38→    38→    max_drain: float  # energy drained per tick at the wall (apple-equivalent)
+    39→    39→    39→
+    40→    40→    40→    def __post_init__(self) -> None:
+    41→    41→    41→        _require_positive(self, "width")
+    42→    42→    42→        _require_non_negative(self, "max_drain")
+    43→    43→    43→
+    44→    44→    44→
+    45→    45→    45→@dataclass(frozen=True)
+    46→    46→    46→class AgentConfig:
+    47→    47→    47→    """Physical and metabolic parameters of an agent."""
+    48→    48→    48→
+    49→    49→    49→    radius: float
+    50→    50→    50→    max_speed: float
+    51→    51→    51→    initial_energy: float
+    52→    52→    52→    max_energy: float
+    53→    53→    53→    energy_drain_per_tick: float
+    54→    54→    54→    max_age: int
+    55→    55→    55→    reproduction_threshold: float
+    56→    56→    56→    reproduction_cost: float
+    57→    57→    57→    end_of_life_ticks: int
+    58→    58→    58→    max_turn_rate: float  # radians/tick for egocentric heading control
+    59→    59→    59→    move_cost: float  # energy/tick per unit forward speed (0.0 = free movement)
+    60→    60→    60→    # Structural selection: apples of "reproduction credit" spent per offspring.
+    61→    61→    61→    # 0.0 disables it -> legacy energy-threshold reproduction. When > 0, fecundity
+    62→    62→    62→    # scales with CUMULATIVE apples eaten (competence), not instantaneous energy.
+    63→    63→    63→    apples_per_offspring: float
+    64→    64→    64→    # Minimal-criterion reproduction (Soros & Stanley 2016; non-episodic
+    65→    65→    65→    # neuroevolution, e.g. arXiv:2302.09334). Only meaningful on the foraging
+    66→    66→    66→    # path (apples_per_offspring > 0). An agent may reproduce only once it has
+    67→    67→    67→    # HELD reproduction credit >= apples_per_offspring for this many CONSECUTIVE
+    68→    68→    68→    # ticks — proof of durably sustained foraging competence, not an
+    69→    69→    69→    # instantaneous spike. When it fires the agent produces exactly ONE
+    70→    70→    70→    # offspring and its streak resets (a natural refractory period, so
+    71→    71→    71→    # reproduction is no longer a per-tick refill of whatever just died). 0 =
+    72→    72→    72→    # legacy behaviour (no sustain requirement, greedy slot-filling), so every
+    73→    73→    73→    # existing config is byte-for-byte unchanged. Meant to be paired with a
+    74→    74→    74→    # raised population.max_size so the population floats in a band below the
+    75→    75→    75→    # cap instead of being pinned at it. Never promoted without a validated
+    76→    76→    76→    # 6-seed campaign (extinction risk if too strict: births may stop matching
+    77→    77→    77→    # old-age deaths).
+    78→    78→    78→    reproduction_min_ticks: int = 0
+    79→    79→    79→    # Truncation softening (research-roadmap chantier n°2, untested until
+    80→    80→    80→    # poc2.4): both reproduction paths sort eligible agents by priority and let
+    81→    81→    81→    # the TOP one fill every open slot via a `while` loop before even looking
+    82→    82→    82→    # at the runner-up — the literature (Corus et al. 2021) flags this greedy
+    83→    83→    83→    # truncation as a mechanical driver of founder effects / diversity loss.
+    84→    84→    84→    # 0 = legacy (unbounded, current behaviour, byte-for-byte unchanged). N > 0
+    85→    85→    85→    # caps how many children ANY single agent may produce in one tick, forcing
+    86→    86→    86→    # slots that would have gone to the top agent to spill to the next eligible
+    87→    87→    87→    # agent instead — softer selection pressure, more parents represented per
+    88→    88→    88→    # tick. Applies to both _reproduce_by_energy and the legacy
+    89→    89→    89→    # (min_ticks == 0) branch of _reproduce_by_foraging; irrelevant once
+    90→    90→    90→    # reproduction_min_ticks > 0, since that gate already caps at one child.
+    91→    91→    91→    max_children_per_tick: int = 0
+    92→    92→    92→    # Truncation softening, take 2: a single-seed sweep of max_children_per_tick
+    93→    93→    93→    # (poc2.4, 2026-07-15) showed the flat per-agent cap either does nothing
+    94→    94→    94→    # (never binds when few agents compete for slots) or actively hurts
+    95→    95→    95→    # (binds too early, artificially throttling growth even absent real
+    96→    96→    96→    # competition). This alternative reshapes HOW slots are handed out instead
+    97→    97→    97→    # of how many any one agent may take: eligible agents (priority order) are
+    98→    98→    98→    # given children breadth-first, one per agent per PASS, looping back for a
+    99→    99→    99→    # second pass only once every still-qualifying agent has had its first —
+   100→   100→   100→    # so the top-priority agent can never claim a 2nd child before the
+   101→   101→   101→    # runner-up gets its 1st, but an agent facing no competition still gets
+   102→   102→   102→    # every slot across successive passes (no artificial ceiling). False (0,
+   103→   103→   103→    # default) = legacy greedy while-loop, byte-for-byte unchanged. Composes
+   104→   104→   104→    # with max_children_per_tick (still caps total per agent across passes,
+   105→   105→   105→    # 0 = unbounded). No-op once reproduction_min_ticks > 0 (already 1
+   106→   106→   106→    # child/agent/tick).
+   107→   107→   107→    reproduction_round_robin: bool = False
+   108→   108→   108→
+   109→   109→   109→    def __post_init__(self) -> None:
+   110→   110→   110→        _require_positive(
+   111→   111→   111→            self,
+   112→   112→   112→            "radius",
+   113→   113→   113→            "max_speed",
+   114→   114→   114→            "initial_energy",
+   115→   115→   115→            "max_energy",
+   116→   116→   116→            "max_age",
+   117→   117→   117→            "reproduction_threshold",
+   118→   118→   118→            "reproduction_cost",
+   119→   119→   119→            "end_of_life_ticks",
+   120→   120→   120→            "max_turn_rate",
+   121→   121→   121→        )
+   122→   122→   122→        _require_non_negative(
+   123→   123→   123→            self, "energy_drain_per_tick", "move_cost", "apples_per_offspring"
+   124→   124→   124→        )
+   125→   125→   125→        if self.reproduction_min_ticks < 0:
+   126→   126→   126→            raise ConfigError(
+   127→   127→   127→                "agent.reproduction_min_ticks must be >= 0, got "
+   128→   128→   128→                f"{self.reproduction_min_ticks}"
+   129→   129→   129→            )
+   130→   130→   130→        if self.max_children_per_tick < 0:
+   131→   131→   131→            raise ConfigError(
+   132→   132→   132→                "agent.max_children_per_tick must be >= 0, got "
+   133→   133→   133→                f"{self.max_children_per_tick}"
+   134→   134→   134→            )
+   135→   135→   135→
+   136→   136→   136→
+   137→   137→   137→@dataclass(frozen=True)
+   138→   138→   138→class SensorConfig:
+   139→   139→   139→    """Raycasting sensor layout.
+   140→   140→   140→
+   141→   141→   141→    The per-ray and scalar channels are toggleable so the input representation
+   142→   142→   142→    can be ablated without touching code (invariant n°1). Defaults reproduce the
+   143→   143→   143→    canonical 67-input layout (poc2.3). Turning all three off yields the legacy
+   144→   144→   144→    49-input layout (poc2.2 ``apple_repro_bigpop``): a single combined
+   145→   145→   145→    nearest-object distance per ray, two flags, plus energy.
+   146→   146→   146→    """
+   147→   147→   147→
+   148→   148→   148→    num_rays: int
+   149→   149→   149→    max_distance: float
+   150→   150→   150→    fov: float  # field of view, in degrees
+   151→   151→   151→    # Per-ray: True → separate apple_dist + wall_dist (2 channels); False → a
+   152→   152→   152→    # single combined nearest-object distance (1 channel).
+   153→   153→   153→    split_distance: bool = True
+   154→   154→   154→    proprioception: bool = True  # append actual_speed scalar
+   155→   155→   155→    apples_in_view: bool = True  # append fraction-of-rays-seeing-apple scalar
+   156→   156→   156→
+   157→   157→   157→    def __post_init__(self) -> None:
+   158→   158→   158→        _require_positive(self, "num_rays", "max_distance", "fov")
+   159→   159→   159→
+   160→   160→   160→    @property
+   161→   161→   161→    def num_inputs(self) -> int:
+   162→   162→   162→        """NN input count derived from the enabled channels (no magic number)."""
+   163→   163→   163→        per_ray = (2 if self.split_distance else 1) + 2  # distances + 2 flags
+   164→   164→   164→        scalars = 1 + int(self.proprioception) + int(self.apples_in_view)  # energy +
+   165→   165→   165→        return self.num_rays * per_ray + scalars
+   166→   166→   166→
+   167→   167→   167→
+   168→   168→   168→@dataclass(frozen=True)
+   169→   169→   169→class NetworkConfig:
+   170→   170→   170→    """Neural network shape and activation."""
+   171→   171→   171→
+   172→   172→   172→    num_inputs: int
+   173→   173→   173→    num_outputs: int
+   174→   174→   174→    activation: str
+   175→   175→   175→
+   176→   176→   176→    def __post_init__(self) -> None:
+   177→   177→   177→        _require_positive(self, "num_inputs", "num_outputs")
+   178→   178→   178→        if not self.activation:
+   179→   179→   179→            raise ConfigError("network.activation must be a non-empty string")
+   180→   180→   180→
+   181→   181→   181→
+   182→   182→   182→@dataclass(frozen=True)
+   183→   183→   183→class AppleConfig:
+   184→   184→   184→    """Food source parameters."""
+   185→   185→   185→
+   186→   186→   186→    count: int
+   187→   187→   187→    radius: float
+   188→   188→   188→    energy: float
+   189→   189→   189→    respawn_delay: int  # ticks before an eaten apple reappears (invariant n°2)
+   190→   190→   190→
+   191→   191→   191→    def __post_init__(self) -> None:
+   192→   192→   192→        _require_positive(self, "count", "radius", "energy", "respawn_delay")
+   193→   193→   193→
+   194→   194→   194→
+   195→   195→   195→@dataclass(frozen=True)
+   196→   196→   196→class GenomeConfig:
+   197→   197→   197→    """Mutation operator rates and weight initialisation."""
+   198→   198→   198→
+   199→   199→   199→    weight_init_range: float
+   200→   200→   200→    weight_mutation_rate: float
+   201→   201→   201→    weight_perturbation: float
+   202→   202→   202→    add_node_rate: float
+   203→   203→   203→    add_connection_rate: float
+   204→   204→   204→    remove_node_rate: float
+   205→   205→   205→    remove_connection_rate: float
+   206→   206→   206→    weight_max: float  # hard clamp applied after every weight perturbation
+   207→   207→   207→    crossover_rate: float = 0.0  # P(birth is sexual); 0.0 = legacy asexual cloning
+   208→   208→   208→    # Fraction of the full input×output bipartite graph wired at genesis.
+   209→   209→   209→    # 1.0 (default) = legacy fully-connected founder (every input -> every
+   210→   210→   210→    # output). Lower values start each output with a random SPARSE subset of
+   211→   211→   211→    # inputs (at least one, so no output is permanently silent) — reduces the
+   212→   212→   212→    # initial weight-vector size independently of num_inputs, so a rich sensor
+   213→   213→   213→    # layout need not mean a large mutation surface at birth (audit poc2.3
+   214→   214→   214→    # volet 5: initial connectivity, not input count, drove instability).
+   215→   215→   215→    initial_connectivity: float = 1.0
+   216→   216→   216→    # Canonical NEAT bias node: an extra founder source, always-on (value 1.0,
+   217→   217→   217→    # never fed from sensors), wired to outputs exactly like an input at
+   218→   218→   218→    # genesis and mutable like any other connection. Lets a node's response
+   219→   219→   219→    # curve shift independently of its inputs (e.g. steer by default even with
+   220→   220→   220→    # every ray silent) instead of always passing through the origin. False
+   221→   221→   221→    # (default) = legacy behaviour, no bias node exists anywhere in the
+   222→   222→   222→    # project (never promoted to default.yaml without a validated campaign).
+   223→   223→   223→    bias_enabled: bool = False
+   224→   224→   224→    # Self-adaptive mutation, ES-style (Schwefel 1981; Beyer & Schwefel 2002).
+   225→   225→   225→    # Instead of every genome in the population sharing the single global
+   226→   226→   226→    # weight_perturbation constant, each genome CARRIES its own mutation step
+   227→   227→   227→    # size (sigma), which itself mutates log-normally at every reproduction:
+   228→   228→   228→    #   sigma' = sigma * exp(tau * N(0,1)),  tau = 1/sqrt(n)
+   229→   229→   229→    # with n = the genome's connection count (its real-valued dimensionality —
+   230→   230→   230→    # derived, never a magic constant, and genuinely per-genome in NEAT since
+   231→   231→   231→    # topology varies). Lineages that benefit from bolder steps drift towards
+   232→   232→   232→    # a larger sigma and vice versa: the mutation regime becomes an evolved
+   233→   233→   233→    # trait rather than a hand-tuned constant. This is the poc2.6 "levier hors
+   234→   234→   234→    # sélection/reproduction" — it changes HOW variation is produced, not who
+   235→   235→   235→    # gets to reproduce (every previous lever touched selection). False
+   236→   236→   236→    # (default) = legacy, weight_perturbation used directly, byte-for-byte
+   237→   237→   237→    # unchanged. Only the weight step size adapts; the four structural rates
+   238→   238→   238→    # (add/remove node/connection) stay global constants — one variable at a
+   239→   239→   239→    # time, as always in this project.
+   240→   240→   240→    self_adaptive_mutation: bool = False
+   241→   241→   241→    # Floor for the evolved sigma, so a lineage cannot ratchet it down to ~0
+   242→   242→   242→    # and permanently freeze its own mutation (an absorbing state: with
+   243→   243→   243→    # sigma == 0 the log-normal update can never lift it back up).
+   244→   244→   244→    sigma_min: float = 0.001
+   245→   245→   245→    # Multiplier on the canonical learning rate tau = 1/sqrt(n). Exists because
+   246→   246→   246→    # the poc2.6 sigma diagnostic showed the canonical tau barely exercises the
+   247→   247→   247→    # mechanism at this project's timescale: sigma drifts log-normally at
+   248→   248→   248→    # tau*sqrt(G) per lineage, and a lineage only crosses G ~ 3 generations in
+   249→   249→   249→    # 6k ticks (median; ~15-20 extrapolated to a 30k campaign). With n = 98
+   250→   250→   250→    # connections, tau = 0.10, so 15 generations move sigma by a factor ~1.5 —
+   251→   251→   251→    # measured: median 0.050 -> 0.051-0.056 over 6k ticks on seeds 42/7/123.
+   252→   252→   252→    # A campaign at that setting would measure noise, not the lever. Scaling tau
+   253→   253→   253→    # up trades ES asymptotic theory (which assumes many more generations and a
+   254→   254→   254→    # sharper (mu,lambda) selection than this continuous-time sim has) for a
+   255→   255→   255→    # step size that actually explores its range within the run's horizon.
+   256→   256→   256→    # 1.0 = canonical Schwefel.
+   257→   257→   257→    sigma_tau_scale: float = 1.0
+   258→   258→   258→
+   259→   259→   259→    def __post_init__(self) -> None:
+   260→   260→   260→        _require_positive(self, "weight_init_range", "weight_perturbation")
+   261→   261→   261→        _require_positive(self, "weight_max", "sigma_min")
+   262→   262→   262→        _require_positive(self, "sigma_tau_scale")
+   263→   263→   263→        _require_rate(
+   264→   264→   264→            self,
+   265→   265→   265→            "weight_mutation_rate",
+   266→   266→   266→            "add_node_rate",
+   267→   267→   267→            "add_connection_rate",
+   268→   268→   268→            "remove_node_rate",
+   269→   269→   269→            "remove_connection_rate",
+   270→   270→   270→            "crossover_rate",
+   271→   271→   271→            "initial_connectivity",
+   272→   272→   272→        )
+   273→   273→   273→
+   274→   274→   274→
+   275→   275→   275→@dataclass(frozen=True)
+   276→   276→   276→class SpeciationConfig:
+   277→   277→   277→    """Coefficients for the NEAT compatibility-distance diversity metrics.
+   278→   278→   278→
+   279→   279→   279→    ``c_excess``/``c_disjoint``/``c_weight``/``compatibility_threshold`` feed
+   280→   280→   280→    ``src.speciation`` for both the read-only diversity metrics (species count,
+   281→   281→   281→    genetic diversity in the CSV) AND, when ``fitness_sharing`` is on, the
+   282→   282→   282→    species-relative reproduction priority. Defaults follow the canonical NEAT
+   283→   283→   283→    paper (Stanley & Miikkulainen 2002).
+   284→   284→   284→    """
+   285→   285→   285→
+   286→   286→   286→    c_excess: float  # weight of excess genes in the distance
+   287→   287→   287→    c_disjoint: float  # weight of disjoint genes in the distance
+   288→   288→   288→    c_weight: float  # weight of the mean matching-weight difference
+   289→   289→   289→    compatibility_threshold: float  # distance below which two genomes share a species
+   290→   290→   290→    # NEAT fitness sharing (f'_i = f_i / |species_i|): divides an agent's
+   291→   291→   291→    # reproduction priority by its species size before ranking for scarce
+   292→   292→   292→    # slots, protecting small/novel species from being crushed by a larger
+   293→   293→   293→    # one's raw fitness before they get a chance to improve. False (default)
+   294→   294→   294→    # = legacy behaviour, species purely observational (never promoted to
+   295→   295→   295→    # default.yaml without a validated 3-seed campaign).
+   296→   296→   296→    fitness_sharing: bool = False
+   297→   297→   297→
+   298→   298→   298→    def __post_init__(self) -> None:
+   299→   299→   299→        _require_positive(self, "compatibility_threshold")
+   300→   300→   300→        _require_non_negative(self, "c_excess", "c_disjoint", "c_weight")
+   301→   301→   301→
+   302→   302→   302→
+   303→   303→   303→@dataclass(frozen=True)
+   304→   304→   304→class NoveltyConfig:
+   305→   305→   305→    """Additive behavioural-novelty bonus on reproduction priority.
+   306→   306→   306→
+   307→   307→   307→    Novelty search (Lehman & Stanley 2011), used here as an ADDITIVE bonus on top
+   308→   308→   308→    of raw fitness — never replacing it. Behaviour is characterised by each
+   309→   309→   309→    network's turn-response profile (its steering reaction to a lone apple on
+   310→   310→   310→    each ray, deterministic and cached per agent). Novelty = mean distance to the
+   311→   311→   311→    ``neighbors`` nearest behaviours in the current population; the most novel
+   312→   312→   312→    agents get a bounded priority bonus of up to ``weight × mean(raw fitness)``.
+   313→   313→   313→
+   314→   314→   314→    Additive by design: it is the only pattern that has held up on this project
+   315→   315→   315→    (reducer mechanisms — crossover, richer sensors, sparse genome, fitness
+   316→   316→   316→    sharing — were all falsified). Disabled by default; the whole section may be
+   317→   317→   317→    omitted from a config (then off), so every pre-existing config keeps working.
+   318→   318→   318→    Never promoted to default.yaml without a validated 3-seed campaign.
+   319→   319→   319→
+   320→   320→   320→    Optional archive (``archive_enabled``): a persistent pool of past
+   321→   321→   321→    behaviours (extinct lineages, earlier generations) that agents are also
+   322→   322→   322→    measured novel against, not just the current population. Each scored
+   323→   323→   323→    survivor is added to it independently with probability ``archive_prob``
+   324→   324→   324→    (Lehman & Stanley 2011's random-injection scheme); oldest entries are
+   325→   325→   325→    evicted first past ``archive_max_size``. Meant to help seeds where the
+   326→   326→   326→    live population converges and stops offering anything novel to steer
+   327→   327→   327→    away from. Off by default; needs its own validated campaign.
+   328→   328→   328→    """
+   329→   329→   329→
+   330→   330→   330→    enabled: bool = False
+   331→   331→   331→    weight: float = 0.0  # bonus scale, in units of mean raw fitness
+   332→   332→   332→    neighbors: int = 15  # k for the k-nearest-behaviours novelty
+   333→   333→   333→    # Recompute the O(pop²) novelty scores every N reproduction ticks, reusing the
+   334→   334→   334→    # cached scores in between (behaviour drifts slowly — a few births/deaths per
+   335→   335→   335→    # tick out of hundreds). 1 = exact (recompute every tick); larger amortises the
+   336→   336→   336→    # cost with a negligible approximation. Applying the bonus stays per-tick.
+   337→   337→   337→    recompute_interval: int = 1
+   338→   338→   338→    archive_enabled: bool = False  # persistent behaviour pool (see class docstring)
+   339→   339→   339→    archive_prob: float = 0.01  # P(a scored agent is archived), per refresh
+   340→   340→   340→    archive_max_size: int = 500  # FIFO cap on the archive
+   341→   341→   341→
+   342→   342→   342→    def __post_init__(self) -> None:
+   343→   343→   343→        _require_non_negative(self, "weight")
+   344→   344→   344→        if self.neighbors < 1:
+   345→   345→   345→            raise ConfigError(f"novelty.neighbors must be >= 1, got {self.neighbors}")
+   346→   346→   346→        if self.recompute_interval < 1:
+   347→   347→   347→            raise ConfigError(
+   348→   348→   348→                "novelty.recompute_interval must be >= 1, got "
+   349→   349→   349→                f"{self.recompute_interval}"
+   350→   350→   350→            )
+   351→   351→   351→        if not 0.0 <= self.archive_prob <= 1.0:
+   352→   352→   352→            raise ConfigError(
+   353→   353→   353→                f"novelty.archive_prob must be in [0, 1], got {self.archive_prob}"
+   354→   354→   354→            )
+   355→   355→   355→        if self.archive_max_size < 1:
+   356→   356→   356→            raise ConfigError(
+   357→   357→   357→                "novelty.archive_max_size must be >= 1, got " f"{self.archive_max_size}"
+   358→   358→   358→            )
+   359→   359→   359→
+   360→   360→   360→
+   361→   361→   361→@dataclass(frozen=True)
+   362→   362→   362→class DiagnosticsConfig:
+   363→   363→   363→    """Observational instrumentation — CSV-only, never feeds back into the sim.
+   364→   364→   364→
+   365→   365→   365→    Every value here only shapes what gets LOGGED (capture classification,
+   366→   366→   366→    local density sampling, effective-population-size window); none of it is
+   367→   367→   367→    read by agent decisions, reproduction or mutation — changing this section
+   368→   368→   368→    cannot alter simulation outcomes, only what gets measured about them.
+   369→   369→   369→
+   370→   370→   370→    Capture classification (adjacent / directed / undirected) migrates the
+   371→   371→   371→    heuristic from ``tools/apple_capture_probe.py`` (2026-07-09) into a
+   372→   372→   372→    permanent runtime metric, fixing its known calibration bug along the way
+   373→   373→   373→    (docs/RESULTS-density.md): the probe's fixed ``lookback=30`` ticks did not
+   374→   374→   374→    scale with ``agent.max_speed``, so its "60% of the gap closed" threshold
+   375→   375→   375→    silently got harder to hit once max_speed was halved (poc2.4 density
+   376→   376→   376→    lever). The lookback window is now DERIVED (see
+   377→   377→   377→    ``src.diagnostics.capture_lookback_ticks``: ``ceil(sensors.max_distance /
+   378→   378→   378→    agent.max_speed)``, the ticks needed to cross the whole sensing range once
+   379→   379→   379→    at max speed) instead of a fixed magic number — invariant n°1.
+   380→   380→   380→    """
+   381→   381→   381→
+   382→   382→   382→    capture_close_mult: float = 1.5  # "adjacent" if already within this × reach
+   383→   383→   383→    capture_directed_ratio: float = 0.6  # fraction of the gap that must close
+   384→   384→   384→    capture_ahead_degrees: float = 90.0  # forward half-plane, egocentric
+   385→   385→   385→    # Local density (agents/apples within this radius), sampled ONLY at
+   386→   386→   386→    # capture events — not every tick (O(pop) or O(apples) per capture, not
+   387→   387→   387→    # per tick, so the cost scales with how often apples get eaten, not with
+   388→   388→   388→    # simulation length).
+   389→   389→   389→    local_density_radius: float = 150.0
+   390→   390→   390→    # Effective population size (N_e, Crow & Kimura) rolling window, in ticks.
+   391→   391→   391→    # APPROXIMATION for this project's overlapping-generation model (no
+   392→   392→   392→    # discrete generations): see src.diagnostics.effective_population_size.
+   393→   393→   393→    ne_window_ticks: int = 1000
+   394→   394→   394→    # steer_score threshold above which an agent counts as a "forager" for
+   395→   395→   395→    # forager_pct (CSV) — matches the value tools/campaign.py has used for
+   396→   396→   396→    # every verdict table since poc2.4's novelty campaign.
+   397→   397→   397→    forager_threshold: float = 0.1
+   398→   398→   398→
+   399→   399→   399→    def __post_init__(self) -> None:
+   400→   400→   400→        _require_positive(self, "capture_close_mult", "local_density_radius")
+   401→   401→   401→        _require_rate(self, "capture_directed_ratio")
+   402→   402→   402→        if not 0.0 < self.capture_ahead_degrees <= 180.0:
+   403→   403→   403→            raise ConfigError(
+   404→   404→   404→                "diagnostics.capture_ahead_degrees must be in (0, 180], got "
+   405→   405→   405→                f"{self.capture_ahead_degrees}"
+   406→   406→   406→            )
+   407→   407→   407→        if self.ne_window_ticks < 1:
+   408→   408→   408→            raise ConfigError(
+   409→   409→   409→                f"diagnostics.ne_window_ticks must be >= 1, got {self.ne_window_ticks}"
+   410→   410→   410→            )
+   411→   411→   411→
+   412→   412→   412→
+   413→   413→   413→@dataclass(frozen=True)
+   414→   414→   414→class HyperNEATConfig:
+   415→   415→   415→    """Indirect encoding: the genome evolves a CPPN queried over a fixed substrate.
+   416→   416→   416→
+   417→   417→   417→    Research-roadmap item #4 (last one standing after fitness sharing/
+   418→   418→   418→    truncation/bias/islands were falsified and novelty/K-sweep/density were
+   419→   419→   419→    promoted): instead of the genome directly wiring the 49→2 network,
+   420→   420→   420→    ``Agent.genome`` becomes a small CPPN (Compositional Pattern-Producing
+   421→   421→   421→    Network, Stanley 2007) — evolved with the exact same ``GenomeConfig``
+   422→   422→   422→    mutation operators — queried once per (sensor, output) pair at birth to
+   423→   423→   423→    derive the weights of a FIXED, direct (no hidden layer) substrate: the
+   424→   424→   424→    executable network an agent actually runs every tick. Query coordinates
+   425→   425→   425→    come from ``src.hyperneat`` (ring position + channel for sensors, fixed
+   426→   426→   426→    points for outputs), reusing the egocentric ray angles already computed
+   427→   427→   427→    for perception (``agent.ray_angles``). See docs/DESIGN-hyperneat-mvp.md.
+   428→   428→   428→
+   429→   429→   429→    False (default) = legacy direct encoding, byte-for-byte unchanged: this
+   430→   430→   430→    whole section may be omitted from a config. Never promoted to
+   431→   431→   431→    default.yaml without a validated 6-seed campaign, same discipline as
+   432→   432→   432→    every other lever in this project.
+   433→   433→   433→    """
+   434→   434→   434→
+   435→   435→   435→    enabled: bool = False
+   436→   436→   436→    # Bounds every derived substrate weight to (-weight_scale, weight_scale)
+   437→   437→   437→    # via tanh(cppn_output) * weight_scale — the CPPN's own output node is
+   438→   438→   438→    # linear (unbounded), so this keeps substrate weights in the same order
+   439→   439→   439→    # of magnitude as directly-encoded ones (genome.weight_max default 5.0).
+   440→   440→   440→    weight_scale: float = 3.0
+   441→   441→   441→    # Fraction of input sources kept per output, by |weight| (mirrors
+   442→   442→   442→    # genome.initial_connectivity's semantics/naming). 1.0 (default) = dense,
+   443→   443→   443→    # every input wired to every output — the original MVP, FALSIFIED
+   444→   444→   444→    # (docs/FALSIFIED-hyperneat.md): summing ~48 correlated substrate
+   445→   445→   445→    # connections into one output saturates tanh and drowns any single
+   446→   446→   446→    # ray's signal (steer_score exactly 0.0 on 74/100 random CPPN founders).
+   447→   447→   447→    # Lower values keep only the top-``connectivity`` fraction of edges per
+   448→   448→   448→    # output (at least 1, so no output is permanently silent — same floor
+   449→   449→   449→    # as ``Genome._founder_inputs_for``), directly reducing that background
+   450→   450→   450→    # sum — the sparsification the HyperNEAT literature (D'Ambrosio & Stanley
+   451→   451→   451→    # 2010) uses a learned LEO output for; this is the simpler, fixed-
+   452→   452→   452→    # threshold version, one variable at a time per this project's discipline.
+   453→   453→   453→    connectivity: float = 1.0
+   454→   454→   454→    # V3 (docs/FALSIFIED-hyperneat.md): V2 eliminated founder saturation
+   455→   455→   455→    # (weight_scale) but the CPPN founder still starts at 0 hidden nodes —
+   456→   456→   456→    # 6 weights only, purely linear, each one steering ~1/6th of every
+   457→   457→   457→    # substrate weight simultaneously (a hard, highly-coupled landscape to
+   458→   458→   458→    # climb by single-weight perturbations; `hidden` stayed near-zero after
+   459→   459→   459→    # 15k ticks in V1/V2). Splitting N connections at genesis via the exact
+   460→   460→   460→    # same ``Genome.add_node`` operator already used for in-life mutation
+   461→   461→   461→    # (no new machinery) gives the CPPN a non-linearity from birth instead
+   462→   462→   462→    # of waiting on `add_node_rate` to stumble into one. 0 (default) =
+   463→   463→   463→    # legacy CPPN founder, byte-for-byte unchanged.
+   464→   464→   464→    bootstrap_hidden_nodes: int = 0
+   465→   465→   465→
+   466→   466→   466→    def __post_init__(self) -> None:
+   467→   467→   467→        _require_positive(self, "weight_scale")
+   468→   468→   468→        _require_rate(self, "connectivity")
+   469→   469→   469→        _require_non_negative(self, "bootstrap_hidden_nodes")
+   470→   470→   470→
+   471→   471→   471→
+   472→   472→   472→@dataclass(frozen=True)
+   473→   473→   473→class HebbianConfig:
+   474→   474→   474→    """Reward-modulated Hebbian plasticity: the agent learns DURING its life.
+   475→   475→   475→
+   476→   476→   476→    poc2.6, second lever outside selection/reproduction — and the first
+   477→   477→   477→    mechanism in this project where an agent's behaviour changes within its own
+   478→   478→   478→    lifetime instead of only across generations. Every previous lever, plasticity
+   479→   479→   479→    included in its ES form (see docs/DIAGNOSTIC-self-adaptive-mutation.md),
+   480→   480→   480→    acted between generations.
+   481→   481→   481→
+   482→   482→   482→    Rule, V2 (Soltoggio et al. 2018, "Born to Learn"; Stanley, Bryant &
+   483→   483→   483→    Miikkulainen 2003 evolved Hebbian rules on a foraging domain) — the
+   484→   484→   484→    canonical R-STDP / neuromodulated form, applied EVERY tick:
+   485→   485→   485→
+   486→   486→   486→        e  <- eligibility_decay * e + x * y            (trace, per connection)
+   487→   487→   487→        dw = learning_rate * (m - m_bar) * e           (contrastive update)
+   488→   488→   488→
+   489→   489→   489→    with ``m`` = apples eaten this tick (the modulatory/reward signal, already
+   490→   490→   490→    computed by the tick loop), ``m_bar`` its running mean, ``x`` the
+   491→   491→   491→    presynaptic activation and ``y`` the postsynaptic one from the current
+   492→   492→   492→    tick's forward pass.
+   493→   493→   493→
+   494→   494→   494→    V1 was ``dw = learning_rate * m * x * y`` — no trace, no baseline, applied
+   495→   495→   495→    only on capture ticks — and was falsified at diagnosis
+   496→   496→   496→    (docs/DIAGNOSTIC-hebbian-v1.md) with both defects identified. V2 fixes
+   497→   497→   497→    exactly those two, and each is independently ablatable by setting its
+   498→   498→   498→    parameter to 0 (see ``eligibility_decay`` / ``baseline_rate``).
+   499→   499→   499→
+   500→   500→   500→    Note the update is no longer reward-gated: the trace advances every tick,
+   501→   501→   501→    and a tick with no capture carries a small NEGATIVE contrast. That is the
+   502→   502→   502→    baseline doing its job, not an oversight.
+   503→   503→   503→
+   504→   504→   504→    Deliberately FIRST-ORDER: ``learning_rate`` is a plain YAML constant and no
+   505→   505→   505→    rule parameter is evolved. The sigma diagnostic established that this
+   506→   506→   506→    project's regime (N_e ~ 82-90 on a population of 400 — selection already
+   507→   507→   507→    swamped by drift) cannot carry a second-order signal, i.e. one selected only
+   508→   508→   508→    through the offspring it produces. Here the learned weights change the
+   509→   509→   509→    CARRIER's own foraging, so the selective signal is first-order. Evolving the
+   510→   510→   510→    rule itself (per-connection ABCD coefficients) is the natural follow-up
+   511→   511→   511→    ONLY if this first-order version shows an effect.
+   512→   512→   512→
+   513→   513→   513→    Learning is NON-LAMARCKIAN: plastic weights live in the agent's compiled
+   514→   514→   514→    ``NeuralNetwork`` and are never written back to the genome, so children
+   515→   515→   515→    inherit the innate wiring and must re-learn. That is the standard Baldwin
+   516→   516→   516→    setup in the source literature.
+   517→   517→   517→
+   518→   518→   518→    False (default) = no plasticity anywhere, byte-for-byte unchanged: this
+   519→   519→   519→    whole section may be omitted from a config. Never promoted to default.yaml
+   520→   520→   520→    without a validated 6-seed campaign, same discipline as every other lever.
+   521→   521→   521→    """
+   522→   522→   522→
+   523→   523→   523→    enabled: bool = False
+   524→   524→   524→    # Step size of the plastic update. Multiplied by the reward m (apple count),
+   525→   525→   525→    # so the effective per-event step is learning_rate * m * x * y with
+   526→   526→   526→    # x, y in (-1, 1) — a single apple moves a weight by at most learning_rate.
+   527→   527→   527→    # 0.0 = plasticity fully wired but no weight ever moves — the THIRD clean
+   528→   528→   528→    # ablation, and the harness control the other two need. Turning this section
+   529→   529→   529→    # on also bypasses the steer_score and behavior_descriptor caches and makes
+   530→   530→   530→    # novelty score the live network (see Agent), so a run with lr = 0 is what
+   531→   531→   531→    # proves those side effects do not by themselves shift the measurements a
+   532→   532→   532→    # plasticity result would be read from. Allowed for that reason: it was
+   533→   533→   533→    # rejected as non-positive until poc2.6, which made the control impossible
+   534→   534→   534→    # to express in YAML.
+   535→   535→   535→    learning_rate: float = 0.01
+   536→   536→   536→    # Clamp on plastic weights, mirroring genome.weight_max's role for evolved
+   537→   537→   537→    # ones. Required, not cosmetic: the rule is purely positive reinforcement
+   538→   538→   538→    # (no decay term), so without a bound a repeatedly-rewarded connection would
+   539→   539→   539→    # grow without limit and saturate every downstream tanh.
+   540→   540→   540→    weight_max: float = 5.0
+   541→   541→   541→    # V2 — eligibility trace. Per connection, every tick:
+   542→   542→   542→    #     e <- eligibility_decay * e + x * y
+   543→   543→   543→    # so the credit for a capture is spread over the ticks that LED to it, not
+   544→   544→   544→    # dumped on the capture tick alone. V1 had no trace and was falsified partly
+   545→   545→   545→    # for that reason (docs/DIAGNOSTIC-hebbian-v1.md): on the capture tick the
+   546→   546→   546→    # agent is already ON the apple, sensor saturated — the reinforced state was
+   547→   547→   547→    # not the approach, which is the only useful part of a foraging policy.
+   548→   548→   548→    #
+   549→   549→   549→    # Scale matters and is NOT the usual 0.9. The approach timescale is already
+   550→   550→   550→    # derived in this codebase: diagnostics.capture_lookback_ticks = ticks to
+   551→   551→   551→    # cross the whole sensing range at max speed = 134 under default.yaml. A
+   552→   552→   552→    # trace whose effective window is ~1/(1-decay) ticks should be of that
+   553→   553→   553→    # order, hence 0.99 (~100 ticks), not 0.9 (~10 ticks) which would cover
+   554→   554→   554→    # under a tenth of an approach. Sweep around it rather than trusting it.
+   555→   555→   555→    # 0.0 = no trace, current tick only (V1's behaviour — a clean ablation).
+   556→   556→   556→    eligibility_decay: float = 0.99
+   557→   557→   557→    # V2 — reward baseline. Running mean of the per-tick reward:
+   558→   558→   558→    #     m_bar <- (1 - baseline_rate) * m_bar + baseline_rate * m
+   559→   559→   559→    # and the weight update uses the CONTRAST (m - m_bar), not m. This is the
+   560→   560→   560→    # second V1 defect: with pure positive reinforcement every active connection
+   561→   561→   561→    # was reinforced, causal or not, so weights drifted up until the tanh
+   562→   562→   562→    # saturated. With a baseline the drift over a lifetime is ~ lr*e*(sum m -
+   563→   563→   563→    # sum m_bar), which the running mean drives to zero by construction — only
+   564→   564→   564→    # a departure from the expected reward moves a weight, and a dry spell can
+   565→   565→   565→    # now WEAKEN one.
+   566→   566→   566→    # 0.0 = m_bar stays 0 forever, i.e. no baseline (the other clean ablation).
+   567→   567→   567→    baseline_rate: float = 0.01
+   568→   568→   568→
+   569→   569→   569→    def __post_init__(self) -> None:
+   570→   570→   570→        _require_non_negative(self, "learning_rate")
+   571→   571→   571→        _require_positive(self, "weight_max")
+   572→   572→   572→        _require_rate(self, "eligibility_decay", "baseline_rate")
+   573→   573→   573→
+   574→   574→   574→
+   575→   575→   575→@dataclass(frozen=True)
+   576→   576→   576→class PopulationConfig:
+   577→   577→   577→    """Population bounds.
+   578→   578→   578→
+   579→   579→   579→    There is no runtime population floor: extinction is a legitimate ALife
+   580→   580→   580→    outcome (the population dies out if it fails to forage). ``initial_size`` is
+   581→   581→   581→    the founder pool; ``max_size`` the carrying capacity.
+   582→   582→   582→    """
+   583→   583→   583→
+   584→   584→   584→    initial_size: int
+   585→   585→   585→    max_size: int
+   586→   586→   586→    # Island model (research-roadmap "modèle d'îles", structural alternative to
+   587→   587→   587→    # crossover): partitions the population into N quasi-isolated
+   588→   588→   588→    # sub-populations, each its own reproduction-slot budget (max_size split as
+   589→   589→   589→    # evenly as possible, see Simulation._island_capacities) and its own
+   590→   590→   590→    # eligible/priority ranking and mating pool — a dominant lineage in one
+   591→   591→   591→    # island cannot drain another island's slots. A few agents per island
+   592→   592→   592→    # migrate one step around a fixed ring every migration_interval_ticks,
+   593→   593→   593→    # giving bounded gene flow without merging selection pressure (unlike NEAT
+   594→   594→   594→    # fitness sharing, falsified 2026-07-09: species churn every tick, moyenne
+   595→   595→   595→    # 62->59%). 1 (default) = legacy single population, byte-for-byte
+   596→   596→   596→    # unchanged: no partitioning, no migration, zero extra RNG draws.
+   597→   597→   597→    num_islands: int = 1
+   598→   598→   598→    migration_interval_ticks: int = 500
+   599→   599→   599→    migration_count: int = 1
+   600→   600→   600→
+   601→   601→   601→    def __post_init__(self) -> None:
+   602→   602→   602→        _require_positive(self, "initial_size", "max_size")
+   603→   603→   603→        if self.num_islands < 1:
+   604→   604→   604→            raise ConfigError(
+   605→   605→   605→                f"population.num_islands must be >= 1, got {self.num_islands}"
+   606→   606→   606→            )
+   607→   607→   607→        if self.num_islands > self.max_size:
+   608→   608→   608→            raise ConfigError(
+   609→   609→   609→                "population.num_islands must be <= population.max_size, got "
+   610→   610→   610→                f"{self.num_islands} islands for max_size {self.max_size}"
+   611→   611→   611→            )
+   612→   612→   612→        if self.migration_interval_ticks < 1:
+   613→   613→   613→            raise ConfigError(
+   614→   614→   614→                "population.migration_interval_ticks must be >= 1, got "
+   615→   615→   615→                f"{self.migration_interval_ticks}"
+   616→   616→   616→            )
+   617→   617→   617→        if self.migration_count < 0:
+   618→   618→   618→            raise ConfigError(
+   619→   619→   619→                "population.migration_count must be >= 0, got "
+   620→   620→   620→                f"{self.migration_count}"
+   621→   621→   621→            )
+   622→   622→   622→
+   623→   623→   623→
+   624→   624→   624→@dataclass(frozen=True)
+   625→   625→   625→class SimulationConfig:
+   626→   626→   626→    """Time stepping and determinism."""
+   627→   627→   627→
+   628→   628→   628→    ticks_per_second: int
+   629→   629→   629→    max_ticks: int  # 0 == run forever
+   630→   630→   630→    seed: int
+   631→   631→   631→
+   632→   632→   632→    def __post_init__(self) -> None:
+   633→   633→   633→        _require_positive(self, "ticks_per_second")
+   634→   634→   634→        _require_non_negative(self, "max_ticks")
+   635→   635→   635→
+   636→   636→   636→
+   637→   637→   637→@dataclass(frozen=True)
+   638→   638→   638→class LoggingConfig:
+   639→   639→   639→    """Output paths and cadence for metrics and best-genome dumps."""
+   640→   640→   640→
+   641→   641→   641→    csv_path: str
+   642→   642→   642→    log_interval_ticks: int
+   643→   643→   643→    best_genome_path: str
+   644→   644→   644→
+   645→   645→   645→    def __post_init__(self) -> None:
+   646→   646→   646→        _require_positive(self, "log_interval_ticks")
+   647→   647→   647→        if not self.csv_path:
+   648→   648→   648→            raise ConfigError("logging.csv_path must be a non-empty string")
+   649→   649→   649→        if not self.best_genome_path:
+   650→   650→   650→            raise ConfigError("logging.best_genome_path must be a non-empty string")
+   651→   651→   651→
+   652→   652→   652→
+   653→   653→   653→@dataclass(frozen=True)
+   654→   654→   654→class RenderConfig:
+   655→   655→   655→    """Renderer window and frame rate."""
+   656→   656→   656→
+   657→   657→   657→    fps: int
+   658→   658→   658→    window_width: int
+   659→   659→   659→    window_height: int
+   660→   660→   660→
+   661→   661→   661→    def __post_init__(self) -> None:
+   662→   662→   662→        _require_positive(self, "fps", "window_width", "window_height")
+   663→   663→   663→
+   664→   664→   664→
+   665→   665→   665→@dataclass(frozen=True)
+   666→   666→   666→class SimConfig:
+   667→   667→   667→    """Root configuration aggregating every domain section."""
+   668→   668→   668→
+   669→   669→   669→    world: WorldConfig
+   670→   670→   670→    penalty_zone: PenaltyZoneConfig
+   671→   671→   671→    agent: AgentConfig
+   672→   672→   672→    sensors: SensorConfig
+   673→   673→   673→    network: NetworkConfig
+   674→   674→   674→    apple: AppleConfig
+   675→   675→   675→    genome: GenomeConfig
+   676→   676→   676→    speciation: SpeciationConfig
+   677→   677→   677→    novelty: NoveltyConfig
+   678→   678→   678→    diagnostics: DiagnosticsConfig
+   679→   679→   679→    hyperneat: HyperNEATConfig
+   680→   680→   680→    hebbian: HebbianConfig
+   681→   681→   681→    population: PopulationConfig
+   682→   682→   682→    simulation: SimulationConfig
+   683→   683→   683→    logging: LoggingConfig
+   684→   684→   684→    render: RenderConfig
+   685→   685→   685→
+   686→   686→   686→    def __post_init__(self) -> None:
+   687→   687→   687→        # Cross-section invariants.
+   688→   688→   688→        expected_inputs = self.sensors.num_inputs
+   689→   689→   689→        if self.network.num_inputs != expected_inputs:
+   690→   690→   690→            raise ConfigError(
+   691→   691→   691→                f"network.num_inputs ({self.network.num_inputs}) must equal the "
+   692→   692→   692→                f"count derived from the sensor layout ({expected_inputs})"
+   693→   693→   693→            )
+   694→   694→   694→        if self.network.num_outputs != 2:
+   695→   695→   695→            raise ConfigError(
+   696→   696→   696→                f"network.num_outputs must be 2, got {self.network.num_outputs}"
+   697→   697→   697→            )
+   698→   698→   698→        if self.penalty_zone.width >= min(self.world.width, self.world.height) / 2:
+   699→   699→   699→            raise ConfigError(
+   700→   700→   700→                "penalty_zone.width must be smaller than half the smallest world "
+   701→   701→   701→                "dimension to leave a safe zone"
+   702→   702→   702→            )
+   703→   703→   703→        if self.agent.reproduction_cost > self.agent.reproduction_threshold:
+   704→   704→   704→            raise ConfigError(
+   705→   705→   705→                "agent.reproduction_cost must be <= agent.reproduction_threshold"
+   706→   706→   706→            )
+   707→   707→   707→        if self.agent.max_energy < self.agent.initial_energy:
+   708→   708→   708→            raise ConfigError("agent.max_energy must be >= agent.initial_energy")
+   709→   709→   709→        if self.population.initial_size > self.population.max_size:
+   710→   710→   710→            raise ConfigError("population.initial_size must be <= population.max_size")
+   711→   711→   711→
+   712→   712→   712→    @classmethod
+   713→   713→   713→    def from_dict(cls, data: dict[str, Any]) -> "SimConfig":
+   714→   714→   714→        """Build a ``SimConfig`` from an already-parsed mapping."""
+   715→   715→   715→        if not isinstance(data, dict):
+   716→   716→   716→            raise ConfigError("configuration root must be a mapping")
+   717→   717→   717→        return cls(
+   718→   718→   718→            world=_build(WorldConfig, "world", data),
+   719→   719→   719→            penalty_zone=_build(PenaltyZoneConfig, "penalty_zone", data),
+   720→   720→   720→            agent=_build(AgentConfig, "agent", data),
+   721→   721→   721→            sensors=_build(SensorConfig, "sensors", data),
+   722→   722→   722→            network=_build(NetworkConfig, "network", data),
+   723→   723→   723→            apple=_build(AppleConfig, "apple", data),
+   724→   724→   724→            genome=_build(GenomeConfig, "genome", data),
+   725→   725→   725→            speciation=_build(SpeciationConfig, "speciation", data),
+   726→   726→   726→            # Optional section: absent -> novelty disabled (backward-compatible,
+   727→   727→   727→            # every pre-novelty config keeps loading unchanged).
+   728→   728→   728→            novelty=(
+   729→   729→   729→                _build(NoveltyConfig, "novelty", data)
+   730→   730→   730→                if "novelty" in data
+   731→   731→   731→                else NoveltyConfig()
+   732→   732→   732→            ),
+   733→   733→   733→            # Optional section: absent -> defaults (backward-compatible, every
+   734→   734→   734→            # pre-diagnostics config keeps loading unchanged).
+   735→   735→   735→            diagnostics=(
+   736→   736→   736→                _build(DiagnosticsConfig, "diagnostics", data)
+   737→   737→   737→                if "diagnostics" in data
+   738→   738→   738→                else DiagnosticsConfig()
+   739→   739→   739→            ),
+   740→   740→   740→            # Optional section: absent -> hyperneat disabled (backward-compatible,
+   741→   741→   741→            # every pre-hyperneat config keeps loading unchanged).
+   742→   742→   742→            hyperneat=(
+   743→   743→   743→                _build(HyperNEATConfig, "hyperneat", data)
+   744→   744→   744→                if "hyperneat" in data
+   745→   745→   745→                else HyperNEATConfig()
+   746→   746→   746→            ),
+   747→   747→   747→            # Optional section: absent -> plasticity disabled (backward-compatible,
+   748→   748→   748→            # every pre-hebbian config keeps loading unchanged).
+   749→   749→   749→            hebbian=(
+   750→   750→   750→                _build(HebbianConfig, "hebbian", data)
+   751→   751→   751→                if "hebbian" in data
+   752→   752→   752→                else HebbianConfig()
+   753→   753→   753→            ),
+   754→   754→   754→            population=_build(PopulationConfig, "population", data),
+   755→   755→   755→            simulation=_build(SimulationConfig, "simulation", data),
+   756→   756→   756→            logging=_build(LoggingConfig, "logging", data),
+   757→   757→   757→            render=_build(RenderConfig, "render", data),
+   758→   758→   758→        )
+   759→   759→   759→
+   760→   760→   760→    @classmethod
+   761→   761→   761→    def from_yaml(cls, path: str | Path) -> "SimConfig":
+   762→   762→   762→        """Load and validate configuration from a YAML file."""
+   763→   763→   763→        path = Path(path)
+   764→   764→   764→        try:
+   765→   765→   765→            text = path.read_text(encoding="utf-8")
+   766→   766→   766→        except OSError as exc:
+   767→   767→   767→            raise ConfigError(f"cannot read config file '{path}': {exc}") from exc
+   768→   768→   768→        try:
+   769→   769→   769→            data = yaml.safe_load(text)
+   770→   770→   770→        except yaml.YAMLError as exc:
+   771→   771→   771→            raise ConfigError(f"invalid YAML in '{path}': {exc}") from exc
+   772→   772→   772→        return cls.from_dict(data)
+   773→   773→   773→
+   774→   774→   774→
+   775→   775→   775→def _build(cls: type, section: str, data: dict[str, Any]) -> Any:
+   776→   776→   776→    """Instantiate a section dataclass, raising clear ``ConfigError``s."""
+   777→   777→   777→    if section not in data:
+   778→   778→   778→        raise ConfigError(f"missing config section '{section}'")
+   779→   779→   779→    payload = data[section]
+   780→   780→   780→    if not isinstance(payload, dict):
+   781→   781→   781→        raise ConfigError(f"config section '{section}' must be a mapping")
+   782→   782→   782→
+   783→   783→   783→    allowed = {f.name for f in fields(cls)}
+   784→   784→   784→    unknown = set(payload) - allowed
+   785→   785→   785→    if unknown:
+   786→   786→   786→        raise ConfigError(f"unknown key(s) {sorted(unknown)} in section '{section}'")
+   787→   787→   787→    # Fields carrying a default may be omitted (backward-compatible additions);
+   788→   788→   788→    # only fields without any default are mandatory.
+   789→   789→   789→    required = {
+   790→   790→   790→        f.name
+   791→   791→   791→        for f in fields(cls)
+   792→   792→   792→        if f.default is MISSING and f.default_factory is MISSING
+   793→   793→   793→    }
+   794→   794→   794→    missing = required - set(payload)
+   795→   795→   795→    if missing:
+   796→   796→   796→        raise ConfigError(f"missing key(s) {sorted(missing)} in section '{section}'")
+   797→   797→   797→    try:
+   798→   798→   798→        return cls(**payload)
+   799→   799→   799→    except (TypeError, ValueError) as exc:
+   800→   800→   800→        raise ConfigError(f"invalid section '{section}': {exc}") from exc
+   801→   801→   801→
+   802→   802→   802→
+   803→   803→   803→def _require_positive(obj: Any, *names: str) -> None:
+   804→   804→   804→    for name in names:
+   805→   805→   805→        value = getattr(obj, name)
+   806→   806→   806→        if value <= 0:
+   807→   807→   807→            raise ConfigError(f"{type(obj).__name__}.{name} must be > 0, got {value}")
+   808→   808→   808→
+   809→   809→   809→
+   810→   810→   810→def _require_non_negative(obj: Any, *names: str) -> None:
+   811→   811→   811→    for name in names:
+   812→   812→   812→        value = getattr(obj, name)
+   813→   813→   813→        if value < 0:
+   814→   814→   814→            raise ConfigError(f"{type(obj).__name__}.{name} must be >= 0, got {value}")
+   815→   815→   815→
+   816→   816→   816→
+   817→   817→   817→def _require_rate(obj: Any, *names: str) -> None:
+   818→   818→   818→    for name in names:
+   819→   819→   819→        value = getattr(obj, name)
+   820→   820→   820→        if not 0.0 <= value <= 1.0:
+   821→   821→   821→            raise ConfigError(
+   822→   822→   822→                f"{type(obj).__name__}.{name} must be in [0, 1], got {value}"
+   823→   823→   823→            )
+   824→   824→   824→
