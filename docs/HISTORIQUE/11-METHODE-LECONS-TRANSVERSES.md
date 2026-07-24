@@ -180,16 +180,3 @@ aussi le mieux étayé : CSV archivé + recalculé (79,38 %) + baseline rejouée
 a réfuté, et ce qu'il n'a pas démontré** — et qui a audité et corrigé ses propres
 chiffres avant de les présenter. C'est cette honnêteté méthodologique, plus qu'un
 score, qui constitue le résultat.
-
----
-
-## 6. Pour la fusion avec la partie web/infra
-
-Ce récit-ci est celui de la **science** : *pourquoi ça n'évolue pas, et par quels
-mécanismes le faire évoluer.* Le récit du collègue est celui de
-l'**observabilité/partage** : *rendre ces résultats visibles, stockés, partageables*
-(dashboard, S3/DynamoDB/Amplify — Phase 9). Deux angles complémentaires d'un même
-projet. Points de couture naturels : la **chronologie git** (`02`) comme axe
-temporel commun ; les **campagnes** de `06` produisaient précisément les données que
-l'infra consomme ; et le contraste narratif « chercher le mécanisme » / « rendre le
-résultat observable » peut structurer l'introduction fusionnée.

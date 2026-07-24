@@ -78,7 +78,7 @@ baseline qui le précède — **ils ne s'additionnent pas arithmétiquement** (1
 
 ---
 
-## Répartition par catégorie (pour la fusion / la soutenance)
+## Répartition par catégorie (pour la soutenance)
 
 | Catégorie | Écartés | Promus |
 |---|---|---|

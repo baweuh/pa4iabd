@@ -1,21 +1,43 @@
 # 02 — Chronologie git : la carte temporelle du projet
 
-> Analyse directe du dépôt (`git log --all --date-order`). Ce chapitre est la
-> **carte temporelle commune** sur laquelle la partie web/infra du collègue
-> viendra se poser. Toutes les dates en ISO, fuseau indiqué quand il est
-> significatif.
+> Analyse directe du dépôt, **restreinte à la chaîne `master → poc2.x` + `poc3`**
+> (voir §0 : le dépôt distant est partagé et contient d'autres histoires, hors
+> périmètre). Toutes les dates en ISO, fuseau indiqué quand il est significatif.
 
 ---
 
-## 1. Chiffres d'ensemble
+## 0. ⚠️ Périmètre : le dépôt distant est PARTAGÉ
 
-- **115 commits** au total, toutes références confondues.
-- **Empan** : 2026-05-21 → 2026-07-22, soit **~2 mois**.
-  - Tout premier commit : `2e7a5dc` « Initial commit » sur `origin/main`,
-    2026-05-21 14:28 — une **graine isolée sans descendance**.
-  - Le travail substantiel démarre le **2026-06-09** (`fe8ffbe` init projet ;
-    `92c7c32` « initial » ; `origin/poc2` Phases 1-2).
-  - Dernier commit : `db3dc19` sur `poc2.6`, 2026-07-22 13:39 (audit de clôture).
+Le remote `origin` (`github.com/baweuh/pa4iabd`) est le dépôt **du groupe**, pas
+celui de ce travail. Il contient **six histoires git indépendantes** (six commits
+racines sans parent commun), poussées par trois personnes différentes. Elles ne
+sont pas des variantes d'un même projet : elles n'ont **aucun ancêtre commun** et
+n'ont jamais été fusionnées.
+
+**Seule la chaîne `master → poc2.1 → … → poc2.6` (+ la latérale `poc3`) relève de
+ce travail.** Elle représente **106 commits, tous authorés `r-palmier`**, et ne
+contient aucun fichier provenant des autres histoires (vérifié). Les autres refs
+présentes dans un clone (`origin/main`, `origin/web-integration`,
+`origin/update-web`, `origin/poc2.4-web-integration` — 10 commits au total) sont
+le travail d'autres personnes sur d'autres sujets ; **ce corpus ne les documente
+pas et ne s'en réclame pas.**
+
+> Elles apparaissent malgré tout dans un `git branch -a` local parce que le
+> refspec de fetch par défaut (`+refs/heads/*:refs/remotes/origin/*`) rapatrie
+> toutes les branches du remote. C'est un artefact de configuration git, pas un
+> lien de parenté.
+
+---
+
+## 1. Chiffres d'ensemble (périmètre de ce travail uniquement)
+
+- **106 commits** sur la chaîne `master → poc2.x` + `poc3`, **100 % `r-palmier`**.
+  (Un `git rev-list --all --count` sur le dépôt partagé renvoie 116 : il compte
+  les 10 commits des autres histoires — voir §0.)
+- **Empan** : 2026-06-09 → 2026-07-24, soit **~1,5 mois** de travail effectif.
+  - Premier commit de ce travail : `92c7c32` « initial », 2026-06-09 10:47.
+  - Dernier commit de science : `db3dc19` sur `poc2.6`, 2026-07-22 13:39 (audit
+    de clôture) ; le présent corpus documentaire suit le 2026-07-24 (cf. §7).
 
 ---
 
@@ -35,13 +57,12 @@ master → poc2.1 → poc2.2 → poc2.3 → poc2.4 → poc2.5 → poc2.6   (tron
 - **`poc3`** est une branche **latérale** partant du *premier* commit de poc2.6
   (`e2cb60a`, 2026-07-16), **pas** de la pointe de poc2.6. Elle a tourné en
   parallèle et a été close le 2026-07-20.
-- **Cluster web/infra** (la partie du collègue) : `origin/web-integration`,
-  `origin/update-web`, `origin/poc2.4-web-integration`, branchés autour de
-  poc2.2/poc2.3, avec des commits authorés **en UTC (+0000)** — machine/outil
-  différents.
-- **Racines mortes** : `origin/main` (2026-05-21) et `origin/poc2` (Phases 1-2 du
-  2026-06-09). Un `refs/stash` et un « Merge remote-tracking branch 'origin/poc2' »
-  traînent près de la racine de master.
+- **`origin/poc2`** (racine `ae2a25e`, 2026-06-09) est une seconde racine
+  `r-palmier` : les Phases 1-2, fusionnée dans `master` par `fa152f8`. Elle
+  appartient bien à ce travail. Un `refs/stash` traîne près de la racine de
+  master.
+- Les autres refs du dépôt partagé **ne sont pas des branches de ce travail** et
+  ne figurent pas dans ce graphe (cf. §0).
 
 **Commits cumulés par pointe de branche :**
 
@@ -126,8 +147,7 @@ nouveauté, K-sweep, densité, population) a été promue en défaut.
 ## 5. Commits-clés commentés
 
 > Sélection des commits structurants (au-delà de la liste exhaustive du
-> `SYNTHESE.md §7`). Utile pour naviguer le dépôt et pour raccorder la partie
-> web/infra à la bonne date.
+> `SYNTHESE.md §7`). Utile pour naviguer le dépôt.
 
 **Fondations**
 - `ec3ac99` (06-10) — Phase 1 : config typée + default.yaml. Le socle « zéro
@@ -180,33 +200,6 @@ nouveauté, K-sweep, densité, population) a été promue en défaut.
 - `86aaefe` / `aa19ae7` / `1001faf` (07-20/21) — Hebbien V1 → V2, falsifié.
 - `80cf956` / `db3dc19` (07-21/22) — **les deux audits de clôture** (cohérence
   documentaire + traçabilité scientifique).
-
----
-
-## 6. Le cluster web/infra (partie du collègue) — repères datés
-
-Les commits authorés en **UTC (+0000)**, sur les branches `web-integration` /
-`update-web` / `poc2.4-web-integration` :
-
-| Commit | Date (UTC) | Message | Branche |
-|---|---|---|---|
-| `fa7434a` | 2026-07-07 14:34 | Initial commit | web-integration |
-| `13cd06c` | 2026-07-07 17:30 | (nom d'UUID) | web-integration |
-| `6b8332a` | 2026-07-07 17:47 | (nom d'UUID) | web-integration |
-| `153fa94` | 2026-07-07 18:22 | (nom d'UUID) | web-integration |
-| `fb67a90` | 2026-07-08 17:57 | removed unused files | web-integration |
-| `ee6ce2c` / `84d84ae` | 2026-07-08 18:04 | merged main project into web | update-web |
-| `a0cce84` | 2026-07-06 (local) | added web integration | (près de poc2.2) |
-| `e33c957` | 2026-07-11 16:58 | merge of poc2.4 and update-web | poc2.4-web-integration |
-
-**Ces commits sont le fil du collègue.** Ils ne portent pas de science de
-simulation ; ils intègrent le projet dans un contexte web (et, d'après Phase 9,
-probablement AWS S3 / DynamoDB / Amplify). Leur présence dans le graphe est le
-point de contact naturel où la fusion des deux récits s'ancre.
-
-> ⚠️ Note de fuseau : le `--date-order` de git interclasse ces commits UTC de
-> façon parfois trompeuse avec les commits locaux (+0200) du même jour. Pour la
-> fusion, se fier au **contenu** (web vs science) plus qu'à l'ordre brut.
 
 ---
 

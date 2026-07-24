@@ -21,14 +21,13 @@
 
 Les chapitres suivent l'ordre chronologique du projet (qui est aussi l'ordre des
 branches git). Chaque chapitre de branche a la **même structure** —
-*Intention → Ce qui a été fait → Résultats chiffrés → Diagnostic/Leçon →
-Verdict* — pour que la fusion avec la partie du collègue se fasse sans friction.
+*Intention → Ce qui a été fait → Résultats chiffrés → Diagnostic/Leçon → Verdict*.
 
 | Fichier | Contenu | Rôle |
 |---|---|---|
-| `00-INDEX.md` | Ce sommaire + le point de raccord collègue + le récap des 17 leviers | Entrée |
+| `00-INDEX.md` | Ce sommaire + le récap des 17 leviers | Entrée |
 | `01-INTENTION-ET-PARADIGME.md` | Le POURQUOI : question de recherche, paradigme ALife/NEAT, la contrainte « aucun framework ML », les invariants comme choix scientifiques | Cadre |
-| `02-CHRONOLOGIE-GIT.md` | L'analyse git : 115 commits, topologie des branches, backbone daté, commits-clés commentés | Carte temporelle |
+| `02-CHRONOLOGIE-GIT.md` | L'analyse git : périmètre du dépôt partagé, 106 commits, topologie des branches, backbone daté, commits-clés | Carte temporelle |
 | `03-FONDATIONS-Phases-1-8.md` | Le socle technique (master → poc2.1) : config, génome, réseau, environnement, agent, sim, rendu | Architecture |
 | `04-poc2.2-EMERGENCE.md` | Le cœur : diagnostic « ça survit mais ça n'apprend pas », les 5 correctifs, la 1ʳᵉ émergence robuste | Percée fondatrice |
 | `05-poc2.3-CAPTEURS-ET-STRUCTURE.md` | Capteurs 67, viz réseau, crossover, fitness sharing, sparse — les 6 volets | Relances structurelles |
@@ -97,41 +96,6 @@ au prix de 13 leviers falsifiés (chacun enterré avec sa preuve).
    pas mécanisme (sinon ~8 falsifications de plus) ;
 3. « carte agrandie seule » n'est pas un levier écarté : c'est la **première
    moitié** du levier densité, finalement promu sous la forme « carte + vitesse ÷2 ».
-
----
-
-## Raccord avec la partie web/infra (pour le collègue)
-
-Cette moitié du projet (Robin) est **100 % science/simulation**. La partie du
-collègue — faite « en sous-marin » — est l'**intégration web / infrastructure**,
-et elle est identifiable dans le dépôt :
-
-- **Branches git dédiées** (voir `02-CHRONOLOGIE-GIT.md`) : `origin/web-integration`,
-  `origin/update-web`, `origin/poc2.4-web-integration`. Leurs commits sont
-  authorés **sur une autre machine, en fuseau UTC (+0000)** — commits
-  `fa7434a` (« Initial commit », 2026-07-07), les trois commits à nom d'UUID
-  (`153fa94`, `6b8332a`, `13cd06c`), `a0cce84` (« added web integration »),
-  `ee6ce2c` / `84d84ae` (« merged main project into web »), `fb67a90`
-  (« removed unused files »), `e33c957` (« merge of poc2.4 and update-web »).
-- **Phase 9 (AWS + Dashboard)**, marquée « ⛔ HORS PÉRIMÈTRE » dans `PLAN.md`
-  côté science, avec la mention explicite « infrastructure gérée par un collègue
-  de Robin » (convenu 2026-07-15) : S3 (upload ZIP + génomes), DynamoDB
-  (métriques), Amplify (dashboard). **C'est très probablement le périmètre du
-  collègue.**
-
-**Points d'insertion naturels pour la fusion** :
-- la **chronologie git** (`02`) est la carte temporelle commune : les branches
-  web s'y posent aux dates indiquées (juillet 6-11 pour l'essentiel) ;
-- l'**état du déploiement / dashboard** vient compléter le chapitre `03`
-  (architecture) et le chapitre `06` (les campagnes produisaient les données que
-  le dashboard consomme) ;
-- le storytelling fusionné peut opposer/associer les deux fils : « la science
-  cherchait pourquoi ça n'évolue pas » / « l'infra rendait les résultats
-  observables et partageables ».
-
-**Ce dossier ne documente PAS la partie du collègue** — il se contente d'en
-marquer le raccord. Le collègue produit sa propre moitié, puis fusionne (c'est
-lui qui pilote la fusion).
 
 ---
 
