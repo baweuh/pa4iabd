@@ -1,0 +1,6 @@
+# Fichiers locaux ignorés par git à copier dans chaque worktree Claude
+# (syntaxe .gitignore ; seuls les fichiers aussi ignorés par git sont copiés)
+# CLAUDE.md contient les invariants du projet mais est ignoré par git.
+CLAUDE.md
+.env
+.env.local
